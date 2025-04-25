@@ -12,7 +12,7 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <flux:input
             label="Search by Name"
             wire:model.live="filters.search_name"
@@ -23,6 +23,10 @@
             wire:model.live="filters.search_code"
             placeholder="Search by code..."
         />
+        <div class="min-w-[100px] flex justify-end">
+            <flux:button variant="filled" class=" px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
+                         wire:click="clearFilters()"></flux:button>
+        </div>
     </div>
     <!-- Filters End -->
 
@@ -131,7 +135,7 @@
     </flux:table>
     <!-- Table End-->
 
-    <flux:modal name="component-sync" title="Manage Components" class="p-10">
+    <flux:modal name="component-sync" variant="flyout" title="Manage Components" class="p-10">
         @if($selectedModuleId)
             <livewire:saas.module-meta.component-sync :moduleId="$selectedModuleId"
                                                   :wire:key="'component-sync-'.$selectedModuleId"/>

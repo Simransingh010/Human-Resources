@@ -23,15 +23,10 @@
             wire:model.live="filters.search_code"
             placeholder="Search by code..."
         />
-        <flux:select
-            label="Filter by Component"
-            wire:model.live="filters.search_component_id"
-        >
-            <option value="">All Components</option>
-            @foreach($this->listsForFields['components'] as $id => $name)
-                <option value="{{ $id }}">{{ $name }}</option>
-            @endforeach
-        </flux:select>
+        <div class="min-w-[100px] flex justify-end">
+            <flux:button variant="filled" class=" px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
+                         wire:click="clearFilters()"></flux:button>
+        </div>
     </div>
     <!-- Filters End -->
 

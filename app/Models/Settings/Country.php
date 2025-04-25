@@ -6,35 +6,34 @@
 
 namespace App\Models\Settings;
 
-use App\Models\Saas\Firm;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-
 /**
- * Class DocumentType
+ * Class Country
  * 
  * @property int $id
- * @property int $firm_id
- * @property string $title
- * @property string $code
- * @property string|null $description
+ * @property int|null $firm_id
+ * @property string $name
+ * @property string|null $code
  * @property bool $is_inactive
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
  * 
- * @property Firm $firm
- * @property Collection|EmployeeDoc[] $employee_docs
+ * @property Firm|null $firm
+ * @property Collection|EmployeeAddress[] $employee_addresses
+ * @property Collection|Joblocation[] $joblocations
+ * @property Collection|State[] $states
  *
  * @package App\Models\Settings
  */
-class DocumentType extends Model
+class Country extends Model
 {
 	use SoftDeletes;
-	protected $table = 'document_types';
+	protected $table = 'countries';
 
 	protected $casts = [
 		'firm_id' => 'int',
@@ -43,9 +42,8 @@ class DocumentType extends Model
 
 	protected $fillable = [
 		'firm_id',
-		'title',
+		'name',
 		'code',
-		'description',
 		'is_inactive'
 	];
 
@@ -54,8 +52,18 @@ class DocumentType extends Model
 		return $this->belongsTo(Firm::class);
 	}
 
-	public function employee_docs()
+	public function employee_addresses()
 	{
-		return $this->hasMany(EmployeeDoc::class);
+		return $this->hasMany(EmployeeAddress::class);
+	}
+
+	public function joblocations()
+	{
+		return $this->hasMany(Joblocation::class);
+	}
+
+	public function states()
+	{
+		return $this->hasMany(State::class);
 	}
 }

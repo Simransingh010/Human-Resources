@@ -1,31 +1,28 @@
 <?php
 
-namespace App\Livewire\Saas;
+namespace App\Livewire\Settings\OnboardSettings;
 
-use App\Models\Saas\Agency;
-use App\Models\Saas\Module;
+use App\Models\Settings\Department;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Flux;
-use App\Models\Saas\Firm;
 
-class Modules extends Component
+class Departments extends Component
 {
     use WithPagination;
-    public $selectedModuleId = null;
+    
+    public $selectedDepartmentId = null;
     public array $listsForFields = [];
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
     public $formData = [
         'id' => null,
-        'name' => '',
+        'title' => '',
         'code' => '',
-        'wire' => '',
         'description' => '',
-        'icon' => '',
-        'order' => 0,
-        'is_inactive'=> 0,
+        'parent_department_id' => null,
+        'is_inactive' => 0,
     ];
 
     public $isEditing = false;
@@ -33,7 +30,7 @@ class Modules extends Component
 
     // Add filter properties
     public $filters = [
-        'search_name' => '',
+        'search_title' => '',
         'search_code' => '',
     ];
 
@@ -41,14 +38,24 @@ class Modules extends Component
     {
         $this->resetPage();
         $this->refreshStatuses();
+        $this->initListsForFields();
+    }
+
+    public function initListsForFields()
+    {
+        $this->listsForFields['departments'] = Department::where('firm_id', session('firm_id'))
+            ->where('is_inactive', 0)
+            ->pluck('title', 'id')
+            ->toArray();
     }
 
     #[\Livewire\Attributes\Computed]
     public function list()
     {
-        return Module::query()
-            ->when($this->filters['search_name'], function($query) {
-                $query->where('name', 'like', '%' . $this->filters['search_name'] . '%');
+        return Department::query()
+            ->where('firm_id', session('firm_id'))
+            ->when($this->filters['search_title'], function($query) {
+                $query->where('title', 'like', '%' . $this->filters['search_title'] . '%');
             })
             ->when($this->filters['search_code'], function($query) {
                 $query->where('code', 'like', '%' . $this->filters['search_code'] . '%');
@@ -60,12 +67,10 @@ class Modules extends Component
     public function store()
     {
         $validatedData = $this->validate([
-            'formData.name' => 'required|string|max:255',
+            'formData.title' => 'required|string|max:255',
             'formData.code' => 'nullable|string|max:255',
-            'formData.wire' => 'nullable|string|max:255',
             'formData.description' => 'nullable|string',
-            'formData.icon' => 'nullable|string',
-            'formData.order' => 'required|integer',
+            'formData.parent_department_id' => 'nullable|integer|exists:departments,id',
             'formData.is_inactive' => 'boolean',
         ]);
 
@@ -74,30 +79,28 @@ class Modules extends Component
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
+        // Add firm_id from session
+        $validatedData['formData']['firm_id'] = session('firm_id');
+
         if ($this->isEditing) {
-            $module = Module::findOrFail($this->formData['id']);
-            $module->update($validatedData['formData']);
-            $toastMsg = 'Module updated successfully';
+            $department = Department::findOrFail($this->formData['id']);
+            $department->update($validatedData['formData']);
+            $toastMsg = 'Department updated successfully';
         } else {
-            Module::create($validatedData['formData']);
-            $toastMsg = 'Module added successfully';
+            Department::create($validatedData['formData']);
+            $toastMsg = 'Department added successfully';
         }
 
-        // Reset the form and editing state after saving
         $this->resetForm();
         $this->refreshStatuses();
-        $this->modal('mdl-module')->close();
+        $this->modal('mdl-department')->close();
         Flux::toast(
             variant: 'success',
             heading: 'Changes saved.',
             text: $toastMsg,
         );
     }
-    public function showComponentSync($selectedModuleId)
-    {
-        $this->selectedModuleId = $selectedModuleId;
-        $this->modal('component-sync')->show();
-    }
+
     public function clearFilters()
     {
         $this->reset('filters');
@@ -106,49 +109,48 @@ class Modules extends Component
 
     public function edit($id)
     {
-        $this->formData = Module::findOrFail($id)->toArray();
+        $this->formData = Department::findOrFail($id)->toArray();
         $this->isEditing = true;
-        $this->modal('mdl-module')->show();
-
+        $this->modal('mdl-department')->show();
     }
 
     public function delete($id)
     {
-        Module::findOrFail($id)->delete();
+        Department::findOrFail($id)->delete();
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
-            text: 'Record has been deleted successfully',
+            text: 'Department has been deleted successfully',
         );
     }
 
     public function resetForm()
     {
         $this->reset(['formData']);
-        $this->formData['is_inactive'] = 0; // or false
+        $this->formData['is_inactive'] = 0;
         $this->isEditing = false;
     }
 
     public function refreshStatuses()
     {
-        $this->statuses = Module::pluck('is_inactive', 'id')
+        $this->statuses = Department::where('firm_id', session('firm_id'))
+            ->pluck('is_inactive', 'id')
             ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
             ->toArray();
     }
-    public function toggleStatus($firmId)
-    {
-        $firm = Module::find($firmId);
-        $firm->is_inactive = !$firm->is_inactive;
-        $firm->save();
 
-        $this->statuses[$firmId] = $firm->is_inactive;
+    public function toggleStatus($departmentId)
+    {
+        $department = Department::find($departmentId);
+        $department->is_inactive = !$department->is_inactive;
+        $department->save();
+
+        $this->statuses[$departmentId] = $department->is_inactive;
         $this->refreshStatuses();
     }
 
-
     public function render()
     {
-        return view()->file(app_path('Livewire/Saas/blades/modules.blade.php'));
+        return view()->file(app_path('Livewire/Settings/OnboardSettings/blades/departments.blade.php'));
     }
-
 }

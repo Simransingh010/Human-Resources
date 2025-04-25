@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Livewire\Saas;
+namespace App\Livewire\Settings\LocationHierarchy;
 
-use App\Models\Saas\Agency;
-use App\Models\Saas\Module;
+use App\Models\Settings\State;
+use App\Models\Settings\Country;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Flux;
-use App\Models\Saas\Firm;
 
-class Modules extends Component
+class States extends Component
 {
     use WithPagination;
-    public $selectedModuleId = null;
+    
+    public $selectedStateId = null;
     public array $listsForFields = [];
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
@@ -21,11 +21,8 @@ class Modules extends Component
         'id' => null,
         'name' => '',
         'code' => '',
-        'wire' => '',
-        'description' => '',
-        'icon' => '',
-        'order' => 0,
-        'is_inactive'=> 0,
+        'country_id' => '',
+        'is_inactive' => 0,
     ];
 
     public $isEditing = false;
@@ -35,24 +32,39 @@ class Modules extends Component
     public $filters = [
         'search_name' => '',
         'search_code' => '',
+        'search_country' => '',
     ];
 
     public function mount()
     {
         $this->resetPage();
         $this->refreshStatuses();
+        $this->getCountriesForSelect();
+    }
+
+    private function getCountriesForSelect()
+    {
+        $this->listsForFields['countries'] = Country::where('firm_id', session('firm_id'))
+            ->where('is_inactive', 0)
+            ->pluck('name', 'id')
+            ->toArray();
     }
 
     #[\Livewire\Attributes\Computed]
     public function list()
     {
-        return Module::query()
+        return State::query()
+            ->where('firm_id', session('firm_id'))
             ->when($this->filters['search_name'], function($query) {
                 $query->where('name', 'like', '%' . $this->filters['search_name'] . '%');
             })
             ->when($this->filters['search_code'], function($query) {
                 $query->where('code', 'like', '%' . $this->filters['search_code'] . '%');
             })
+            ->when($this->filters['search_country'], function($query) {
+                $query->where('country_id', $this->filters['search_country']);
+            })
+            ->with('country')
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
             ->paginate(5);
     }
@@ -62,10 +74,7 @@ class Modules extends Component
         $validatedData = $this->validate([
             'formData.name' => 'required|string|max:255',
             'formData.code' => 'nullable|string|max:255',
-            'formData.wire' => 'nullable|string|max:255',
-            'formData.description' => 'nullable|string',
-            'formData.icon' => 'nullable|string',
-            'formData.order' => 'required|integer',
+            'formData.country_id' => 'required|exists:countries,id',
             'formData.is_inactive' => 'boolean',
         ]);
 
@@ -74,30 +83,28 @@ class Modules extends Component
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
+        // Add firm_id from session
+        $validatedData['formData']['firm_id'] = session('firm_id');
+
         if ($this->isEditing) {
-            $module = Module::findOrFail($this->formData['id']);
-            $module->update($validatedData['formData']);
-            $toastMsg = 'Module updated successfully';
+            $state = State::findOrFail($this->formData['id']);
+            $state->update($validatedData['formData']);
+            $toastMsg = 'State updated successfully';
         } else {
-            Module::create($validatedData['formData']);
-            $toastMsg = 'Module added successfully';
+            State::create($validatedData['formData']);
+            $toastMsg = 'State added successfully';
         }
 
-        // Reset the form and editing state after saving
         $this->resetForm();
         $this->refreshStatuses();
-        $this->modal('mdl-module')->close();
+        $this->modal('mdl-state')->close();
         Flux::toast(
             variant: 'success',
             heading: 'Changes saved.',
             text: $toastMsg,
         );
     }
-    public function showComponentSync($selectedModuleId)
-    {
-        $this->selectedModuleId = $selectedModuleId;
-        $this->modal('component-sync')->show();
-    }
+
     public function clearFilters()
     {
         $this->reset('filters');
@@ -106,49 +113,61 @@ class Modules extends Component
 
     public function edit($id)
     {
-        $this->formData = Module::findOrFail($id)->toArray();
+        $this->formData = State::findOrFail($id)->toArray();
         $this->isEditing = true;
-        $this->modal('mdl-module')->show();
-
+        $this->modal('mdl-state')->show();
     }
 
     public function delete($id)
     {
-        Module::findOrFail($id)->delete();
+        // Check if state has related records
+        $state = State::findOrFail($id);
+        if ($state->districts()->count() > 0 || 
+            $state->employee_addresses()->count() > 0 || 
+            $state->joblocations()->count() > 0) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Cannot Delete',
+                text: 'This state has related records and cannot be deleted.',
+            );
+            return;
+        }
+
+        $state->delete();
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
-            text: 'Record has been deleted successfully',
+            text: 'State has been deleted successfully',
         );
     }
 
     public function resetForm()
     {
         $this->reset(['formData']);
-        $this->formData['is_inactive'] = 0; // or false
+        $this->formData['is_inactive'] = 0;
         $this->isEditing = false;
     }
 
     public function refreshStatuses()
     {
-        $this->statuses = Module::pluck('is_inactive', 'id')
+        $this->statuses = State::where('firm_id', session('firm_id'))
+            ->pluck('is_inactive', 'id')
             ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
             ->toArray();
     }
-    public function toggleStatus($firmId)
-    {
-        $firm = Module::find($firmId);
-        $firm->is_inactive = !$firm->is_inactive;
-        $firm->save();
 
-        $this->statuses[$firmId] = $firm->is_inactive;
+    public function toggleStatus($stateId)
+    {
+        $state = State::find($stateId);
+        $state->is_inactive = !$state->is_inactive;
+        $state->save();
+
+        $this->statuses[$stateId] = $state->is_inactive;
         $this->refreshStatuses();
     }
 
-
     public function render()
     {
-        return view()->file(app_path('Livewire/Saas/blades/modules.blade.php'));
+        return view()->file(app_path('Livewire/Settings/LocationHierarchy/blades/states.blade.php'));
     }
-
-}
+} 

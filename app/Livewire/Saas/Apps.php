@@ -16,6 +16,15 @@ class Apps extends Component
     public $sortDirection = 'desc';
     public $statuses;
     public array $listsForFields = [];
+
+    // Add filter properties
+    public $filters = [
+        'search_name' => '',
+        'search_code' => '',
+        'search_route' => '',
+        'is_active' => '',
+    ];
+
     public $formData = [
         'id' => null,
         'name' => '',
@@ -60,6 +69,18 @@ class Apps extends Component
     public function list()
     {
         return App::query()
+            ->when($this->filters['search_name'], function($query) {
+                $query->where('name', 'like', '%' . $this->filters['search_name'] . '%');
+            })
+            ->when($this->filters['search_code'], function($query) {
+                $query->where('code', 'like', '%' . $this->filters['search_code'] . '%');
+            })
+            ->when($this->filters['search_route'], function($query) {
+                $query->where('route', 'like', '%' . $this->filters['search_route'] . '%');
+            })
+            ->when($this->filters['is_active'] !== '', function($query) {
+                $query->where('is_inactive', $this->filters['is_active'] === 'inactive');
+            })
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
             ->paginate(5);
     }
@@ -112,7 +133,11 @@ class Apps extends Component
         $this->formData['order'] = 0;
         $this->isEditing = false;
     }
-
+    public function clearFilters()
+    {
+        $this->reset('filters');
+        $this->resetPage();
+    }
     public function edit($id)
     {
         $app = App::with('panels')->findOrFail($id);

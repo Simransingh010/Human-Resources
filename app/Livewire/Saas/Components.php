@@ -55,6 +55,7 @@ class Components extends LivewireComponent
                 return [$module->id => $module->name . ' (' . $module->app->name . ')'];
             })
             ->toArray();
+//        dd($this->listsForFields['modules']);
     }
 
     #[\Livewire\Attributes\Computed]
@@ -80,13 +81,12 @@ class Components extends LivewireComponent
         $validatedData = $this->validate([
             'formData.name' => 'required|string|max:255',
             'formData.code' => 'nullable|string|max:255',
+            'formData.wire' => 'nullable|string|max:255',
             'formData.description' => 'nullable|string',
-            'formData.app_module_id' => 'required|exists:app_modules,id',
             'formData.icon' => 'nullable|string|max:255',
-            'formData.route' => 'nullable|string|max:255',
-            'formData.color' => 'nullable|string|max:255',
+            'formData.color' => 'nullable|string|max:50',
             'formData.tooltip' => 'nullable|string|max:255',
-            'formData.order' => 'required|integer',
+            'formData.order' => 'required|integer|min:0',
             'formData.badge' => 'nullable|string|max:255',
             'formData.custom_css' => 'nullable|string',
             'formData.is_inactive' => 'boolean',
@@ -157,6 +157,12 @@ class Components extends LivewireComponent
         $this->statuses = Component::pluck('is_inactive', 'id')
             ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
             ->toArray();
+    }
+
+    public function clearFilters()
+    {
+        $this->reset('filters');
+        $this->resetPage();
     }
 
     public function render()

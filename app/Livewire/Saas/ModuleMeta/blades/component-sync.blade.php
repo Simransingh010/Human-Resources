@@ -28,9 +28,7 @@
     </div>
 
     <div class="mt-4 flex justify-between items-center">
-        <div class="text-sm text-gray-500">
-            {{ count($selectedComponents) }} components selected
-        </div>
+
         <div class="space-x-2">
             <flux:button x-on:click="$flux.modal('component-sync').close()">
                 Cancel

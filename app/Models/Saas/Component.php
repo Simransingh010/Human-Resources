@@ -62,6 +62,7 @@ class Component extends Model
 		'is_inactive'
 	];
 
+
 	public function actions()
 	{
 		return $this->hasMany(Action::class);
@@ -81,7 +82,7 @@ class Component extends Model
 
 	public function panels()
 	{
-		return $this->belongsToMany(Panel::class)
+		return $this->belongsToMany(Panel::class,'component_panel')
 					->withPivot('id');
 	}
 }

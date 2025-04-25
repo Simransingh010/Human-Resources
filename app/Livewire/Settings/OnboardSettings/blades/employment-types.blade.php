@@ -2,7 +2,7 @@
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <flux:modal.trigger name="mdl-country" class="flex justify-end">
+        <flux:modal.trigger name="mdl-employment-type" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
               New
             </flux:button>
@@ -14,9 +14,9 @@
     <!-- Filters Start -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <flux:input
-            label="Search by Name"
-            wire:model.live="filters.search_name"
-            placeholder="Search by name..."
+            label="Search by Title"
+            wire:model.live="filters.search_title"
+            placeholder="Search by title..."
         />
         <flux:input
             label="Search by Code"
@@ -31,22 +31,23 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-country" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-employment-type" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing) Edit Country @else Add Country @endif
+                        @if($isEditing) Edit Employment Type @else Add Employment Type @endif
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif country details.
+                        @if($isEditing) Update @else Add new @endif employment type details.
                     </flux:subheading>
                 </div>
 
                 <!-- Grid layout for form fields -->
                 <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
-                    <flux:input label="Name" wire:model="formData.name" placeholder="Country Name"/>
-                    <flux:input label="Code" wire:model="formData.code" placeholder="Country Code"/>
+                    <flux:input label="Title" wire:model="formData.title" placeholder="Employment Type Title"/>
+                    <flux:input label="Code" wire:model="formData.code" placeholder="Code"/>
+                    <flux:input label="Description" wire:model="formData.description" placeholder="Description"/>
                     <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
                 </div>
 
@@ -64,8 +65,9 @@
     <!-- Table Start-->
     <flux:table :paginate="$this->list" class="">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            <flux:table.column>Name</flux:table.column>
+            <flux:table.column>Title</flux:table.column>
             <flux:table.column>Code</flux:table.column>
+            <flux:table.column>Description</flux:table.column>
             <flux:table.column>Status</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
@@ -73,8 +75,9 @@
         <flux:table.rows>
             @foreach ($this->list as $rec)
                 <flux:table.row :key="$rec->id" class="border-b">
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->name }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->title }}</flux:table.cell>
                     <flux:table.cell class="table-cell-wrap">{{ $rec->code }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->description }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:switch
                             wire:model="statuses.{{ $rec->id }}"
@@ -98,10 +101,9 @@
                         <flux:modal name="delete-{{ $rec->id }}" class="min-w-[22rem]">
                             <div class="space-y-6">
                                 <div>
-                                    <flux:heading size="lg">Delete Country?</flux:heading>
+                                    <flux:heading size="lg">Delete Employment Type?</flux:heading>
                                     <flux:text class="mt-2">
-                                        <p>You're about to delete this country. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Countries with related records cannot be deleted.</p>
+                                        <p>You're about to delete this employment type. This action cannot be undone.</p>
                                     </flux:text>
                                 </div>
                                 <div class="flex gap-2">
@@ -120,4 +122,4 @@
         </flux:table.rows>
     </flux:table>
     <!-- Table End-->
-</div>
+</div> 
