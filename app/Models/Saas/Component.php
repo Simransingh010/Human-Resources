@@ -62,7 +62,6 @@ class Component extends Model
 		'is_inactive'
 	];
 
-
 	public function actions()
 	{
 		return $this->hasMany(Action::class);

@@ -12,34 +12,25 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+    <div class="flex flex-wrap gap-4 mb-4">
         <flux:input
             label="Search by Name"
             wire:model.live="filters.search_name"
             placeholder="Search by name..."
+            class="w-48"
         />
         <flux:input
             label="Search by Code"
             wire:model.live="filters.search_code"
             placeholder="Search by code..."
+            class="w-48"
         />
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by Parent Location</label>
-            <select 
-                wire:model.live="filters.search_parent"
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-            >
-                <option value="">Select Parent Location</option>
-                @foreach($listsForFields['joblocations'] ?? [] as $id => $name)
-                    <option value="{{ $id }}">{{ $name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by Country</label>
+        
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by Country</label>
             <select 
                 wire:model.live="filters.search_country"
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
             >
                 <option value="">Select Country</option>
                 @foreach($listsForFields['countries'] ?? [] as $id => $name)
@@ -47,11 +38,11 @@
                 @endforeach
             </select>
         </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by State</label>
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1 py-0.5">Filter by State</label>
             <select
                 wire:model.live="filters.search_state" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                class="block w-full px-2 py-2 rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select State</option>
                 @foreach($listsForFields['states'] ?? [] as $id => $name)
@@ -59,11 +50,11 @@
                 @endforeach
             </select>
         </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by District</label>
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by District</label>
             <select
                 wire:model.live="filters.search_district" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select District</option>
                 @foreach($listsForFields['districts'] ?? [] as $id => $name)
@@ -71,121 +62,173 @@
                 @endforeach
             </select>
         </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by Subdivision</label>
-            <select
-                wire:model.live="filters.search_subdivision" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-            >
-                <option value="">Select Subdivision</option>
-                @foreach($listsForFields['subdivisions'] ?? [] as $id => $name)
-                    <option value="{{ $id }}">{{ $name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by City/Village</label>
-            <select
-                wire:model.live="filters.search_city" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-            >
-                <option value="">Select City/Village</option>
-                @foreach($listsForFields['cities'] ?? [] as $id => $name)
-                    <option value="{{ $id }}">{{ $name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by Post Office</label>
-            <select
-                wire:model.live="filters.search_postoffice" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-            >
-                <option value="">Select Post Office</option>
-                @foreach($listsForFields['postoffices'] ?? [] as $id => $name)
-                    <option value="{{ $id }}">{{ $name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div class="min-w-[100px] flex justify-end">
-            <flux:button variant="filled" class="px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
+        <div class="flex items-end">
+            <flux:button variant="filled" class="px-2" tooltip="Cancel Filter" icon="x-circle"
                          wire:click="clearFilters"></flux:button>
         </div>
     </div>
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-joblocation" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
-        <form wire:submit.prevent="store">
-            <div class="space-y-6">
-                <div>
-                    <flux:heading size="lg">
-                        @if($isEditing) Edit Job Location @else Add Job Location @endif
-                    </flux:heading>
-                    <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif job location details.
-                    </flux:subheading>
-                </div>
+    <div x-data="{ open: false }" x-show="open" @modal-mdl-joblocation.window="open = true" @close-mdl-joblocation.window="open = false" @cancel="resetForm" class="fixed inset-0 z-50 overflow-y-auto">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
 
-                <!-- Grid layout for form fields -->
-                <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
-                    <flux:input label="Name" wire:model="formData.name" placeholder="Job Location Name"/>
-                    <flux:input label="Code" wire:model="formData.code" placeholder="Job Location Code"/>
-                    <flux:input label="Description" wire:model="formData.description" placeholder="Description"/>
-                    <flux:select
-                        label="Parent Location"
-                        wire:model="formData.parent_joblocation_id"
-                        :options="$listsForFields['joblocations'] ?? []"
-                        placeholder="Select Parent Location"
-                    />
-                    <flux:select
-                        label="Country"
-                        wire:model="formData.country_id"
-                        :options="$listsForFields['countries'] ?? []"
-                        placeholder="Select Country"
-                    />
-                    <flux:select
-                        label="State"
-                        wire:model="formData.state_id"
-                        :options="$listsForFields['states'] ?? []"
-                        placeholder="Select State"
-                    />
-                    <flux:select
-                        label="District"
-                        wire:model="formData.district_id"
-                        :options="$listsForFields['districts'] ?? []"
-                        placeholder="Select District"
-                    />
-                    <flux:select
-                        label="Subdivision"
-                        wire:model="formData.subdivision_id"
-                        :options="$listsForFields['subdivisions'] ?? []"
-                        placeholder="Select Subdivision"
-                    />
-                    <flux:select
-                        label="City/Village"
-                        wire:model="formData.city_or_village_id"
-                        :options="$listsForFields['cities'] ?? []"
-                        placeholder="Select City/Village"
-                    />
-                    <flux:select
-                        label="Post Office"
-                        wire:model="formData.postoffice_id"
-                        :options="$listsForFields['postoffices'] ?? []"
-                        placeholder="Select Post Office"
-                    />
-                    <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
-                </div>
+        <!-- Modal Container -->
+        <div class="fixed inset-y-0 right-0 flex max-w-full">
+            <div class="relative w-96">
+                <!-- Modal Content -->
+                <div class="h-full transform bg-white dark:bg-gray-900 shadow-xl transition-all overflow-y-auto">
+                    <form wire:submit.prevent="store" class="p-6">
+                        <div class="space-y-6">
+                            <!-- Header -->
+                            <div>
+                                <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                    @if($isEditing) Edit Job Location @else Add Job Location @endif
+                                </h2>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                    @if($isEditing) Update @else Add new @endif job location details.
+                                </p>
+                            </div>
 
-                <!-- Submit Button -->
-                <div class="flex justify-end pt-4">
-                    <flux:button type="submit" variant="primary">
-                        Save
-                    </flux:button>
+                            <!-- Form Fields -->
+                            <div class="grid grid-cols-1 gap-4">
+                                <!-- Name -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Name</label>
+                                    <input type="text" wire:model="formData.name" placeholder="Job Location Name"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2 @error('formData.name') border-red-500 @enderror">
+                                    @error('formData.name')
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                                    @enderror
+                                </div>
+
+                                <!-- Code -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Code</label>
+                                    <input type="text" wire:model="formData.code" placeholder="Job Location Code"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2 @error('formData.code') border-red-500 @enderror">
+                                    @error('formData.code')
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                                    @enderror
+                                </div>
+
+                                <!-- Description -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Description</label>
+                                    <textarea wire:model="formData.description" placeholder="Description"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2 @error('formData.description') border-red-500 @enderror"></textarea>
+                                    @error('formData.description')
+                                        <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                                    @enderror
+                                </div>
+
+                                <!-- Parent Location -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Parent Location</label>
+                                    <select wire:model="formData.parent_joblocation_id"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select Parent Location</option>
+                                        @foreach($listsForFields['joblocations'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- Country -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Country</label>
+                                    <select wire:model="formData.country_id" wire:change="triggerUpdate('countrychanged')"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select Country</option>
+                                        @foreach($listsForFields['countries'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- State -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">State</label>
+                                    <select wire:model="formData.state_id" wire:change="triggerUpdate('statechanged')"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select State</option>
+                                        @foreach($listsForFields['states'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- District -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">District</label>
+                                    <select wire:model="formData.district_id" wire:change="triggerUpdate('districtchanged')"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select District</option>
+                                        @foreach($listsForFields['districts'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- Subdivision -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Subdivision</label>
+                                    <select wire:model="formData.subdivision_id" wire:change="triggerUpdate('subdivisionchanged')"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select Subdivision</option>
+                                        @foreach($listsForFields['subdivisions'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- City/Village -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">City/Village</label>
+                                    <select wire:model="formData.city_or_village_id" wire:change="triggerUpdate('citychanged')"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select City/Village</option>
+                                        @foreach($listsForFields['cities'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- Post Office -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Post Office</label>
+                                    <select wire:model="formData.postoffice_id"
+                                        class="w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-3 py-2">
+                                        <option value="">Select Post Office</option>
+                                        @foreach($listsForFields['postoffices'] ?? [] as $id => $name)
+                                            <option value="{{ $id }}">{{ $name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <!-- Is Inactive Switch -->
+                                <div class="flex items-center">
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" wire:model="formData.is_inactive" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                                        <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-200">Mark as Inactive</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <div class="flex justify-end pt-4">
+                                <button type="submit" class="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
-        </form>
-    </flux:modal>
+        </div>
+    </div>
     <!-- Modal End -->
 
     <!-- Table Start-->
@@ -263,4 +306,11 @@
         </flux:table.rows>
     </flux:table>
     <!-- Table End-->
-</div> 
+    <script>
+        window.addEventListener('open-joblocation-modal', () => {
+          // use Flux's JS helper to show the modal
+          Flux.modal('mdl-joblocation').show();
+        });
+      </script> 
+</div>
+

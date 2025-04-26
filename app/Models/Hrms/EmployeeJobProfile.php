@@ -7,6 +7,11 @@
 namespace App\Models\Hrms;
 
 use Carbon\Carbon;
+use App\Models\Settings\Department;
+use App\Models\Settings\Designation;
+use App\Models\Settings\EmploymentType;
+use App\Models\Saas\Firm;
+use App\Models\Settings\Joblocation;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -23,6 +28,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int|null $reporting_manager
  * @property int|null $employment_type
  * @property Carbon|null $doe
+ * @property string|null $uanno
+ * @property string|null $esicno
+ * @property int|null $joblocation_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
@@ -31,6 +39,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Designation $designation
  * @property Employee|null $employee
  * @property Firm $firm
+ * @property Joblocation|null $joblocation
  *
  * @package App\Models\Hrms
  */
@@ -47,7 +56,8 @@ class EmployeeJobProfile extends Model
 		'designation_id' => 'int',
 		'reporting_manager' => 'int',
 		'employment_type' => 'int',
-		'doe' => 'datetime'
+		'doe' => 'datetime',
+		'joblocation_id' => 'int'
 	];
 
 	protected $fillable = [
@@ -59,7 +69,10 @@ class EmployeeJobProfile extends Model
 		'designation_id',
 		'reporting_manager',
 		'employment_type',
-		'doe'
+		'doe',
+		'uanno',
+		'esicno',
+		'joblocation_id'
 	];
 
 	public function department()
@@ -85,5 +98,10 @@ class EmployeeJobProfile extends Model
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
+	}
+
+	public function joblocation()
+	{
+		return $this->belongsTo(Joblocation::class);
 	}
 }

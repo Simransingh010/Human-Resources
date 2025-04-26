@@ -89,4 +89,9 @@ class Panel extends Model
 					->withPivot('id', 'deleted_at')
 					->withTimestamps();
 	}
+    public function components()
+    {
+        return $this->belongsToMany(Component::class, 'component_panel')
+                     ->withPivot('id');
+    }
 }

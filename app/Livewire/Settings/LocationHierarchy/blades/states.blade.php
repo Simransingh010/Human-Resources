@@ -12,25 +12,33 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+    <div class="flex flex-wrap gap-4 mb-4">
         <flux:input
             label="Search by Name"
             wire:model.live="filters.search_name"
             placeholder="Search by name..."
+            class="w-48"
         />
         <flux:input
             label="Search by Code"
             wire:model.live="filters.search_code"
             placeholder="Search by code..."
+            class="w-48"
         />
-        <flux:select
-            label="Filter by Country"
-            wire:model.live="filters.search_country"
-            :options="$listsForFields['countries']"
-            placeholder="Select Country"
-        />
-        <div class="min-w-[100px] flex justify-end">
-            <flux:button variant="filled" class="px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by Country</label>
+            <select
+                wire:model.live="filters.search_country"
+                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
+            >
+                <option value="">Select Country</option>
+                @foreach($listsForFields['countries'] ?? [] as $id => $name)
+                    <option value="{{ $id }}">{{ $name }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="flex items-end">
+            <flux:button variant="filled" class="px-2" tooltip="Cancel Filter" icon="x-circle"
                          wire:click="clearFilters()"></flux:button>
         </div>
     </div>
@@ -51,13 +59,19 @@
 
                 <!-- Grid layout for form fields -->
                 <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
-                    <flux:select
-                        label="Country"
-                        wire:model="formData.country_id"
-                        :options="$listsForFields['countries']"
-                        placeholder="Select Country"
-                    />
-                    <flux:input label="Name" wire:model="formData.name" placeholder="State Name"/>
+                    <div class="relative">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Country</label>
+                        <select
+                            wire:model="formData.country_id"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
+                        >
+                            <option value="">Select Country</option>
+                            @foreach($listsForFields['countries'] ?? [] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                        <flux:input label="Name" wire:model="formData.name" placeholder="State Name"/>
                     <flux:input label="Code" wire:model="formData.code" placeholder="State Code"/>
                     <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
                 </div>

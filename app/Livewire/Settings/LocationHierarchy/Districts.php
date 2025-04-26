@@ -47,18 +47,8 @@ class Districts extends Component
     {
         $this->resetPage();
         $this->refreshStatuses();
-        $this->getCountriesForSelect();
+        $this->initListsForFields();
         $this->getStatesForSelect();
-    }
-
-    private function getCountriesForSelect()
-    {
-        $this->listsForFields['countries'] = Country::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0)
-            ->pluck('name', 'id')
-            ->map(fn($name, $id) => "$name")
-            ->toArray();
     }
 
     private function getStatesForSelect()
@@ -78,16 +68,37 @@ class Districts extends Component
             ->toArray();
     }
 
+    public function triggerUpdate($selectchanged = null)
+    {
+        if ($selectchanged == 'countrychanged') {
+            $this->updateStates();
+        }
+    }
+
+    private function updateStates()
+    {
+        $this->listsForFields['states'] = State::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', 0)
+            ->when($this->formData['country_id'], fn($q) => $q->where('country_id', $this->formData['country_id']))
+            ->pluck('name', 'id')
+            ->toArray();
+    }
+
     public function updatedFormDataCountryId()
     {
         $this->formData['state_id'] = '';
-        $this->getStatesForSelect();
+        $this->triggerUpdate('countrychanged');
     }
 
     public function updatedFiltersSearchCountry()
     {
         $this->filters['search_state'] = '';
-        $this->getStatesForSelect();
+        
+        if ($this->filters['search_country']) {
+            $this->formData['country_id'] = $this->filters['search_country'];
+            $this->triggerUpdate('countrychanged');
+        }
     }
 
     #[Computed]
@@ -101,9 +112,10 @@ class Districts extends Component
             ->when($this->filters['search_code'], function($query) {
                 $query->where('code', 'like', '%' . $this->filters['search_code'] . '%');
             })
-            ->when($this->filters['search_country'], function($query) {
-                $query->whereHas('state', function($q) {
-                    $q->where('country_id', $this->filters['search_country']);
+        
+            ->when($this->filters['search_country'], function($q) {
+                $q->whereHas('state', function($q2) {
+                    $q2->where('country_id', $this->filters['search_country']);
                 });
             })
             ->when($this->filters['search_state'], function($query) {
@@ -122,6 +134,7 @@ class Districts extends Component
             'formData.state_id' => 'required|exists:states,id',
             'formData.is_inactive' => 'boolean',
         ]);
+       
 
         // Convert empty strings to null
         $validatedData['formData'] = collect($validatedData['formData'])
@@ -135,7 +148,9 @@ class Districts extends Component
             $district = District::findOrFail($this->formData['id']);
             $district->update($validatedData['formData']);
             $toastMsg = 'District updated successfully';
+            
         } else {
+//            dd($validpatedData['formData']);
             District::create($validatedData['formData']);
             $toastMsg = 'District added successfully';
         }
@@ -218,6 +233,15 @@ class Districts extends Component
     public function render()
     {
         return view()->file(app_path('Livewire/Settings/LocationHierarchy/blades/districts.blade.php'));
+    }
+
+    protected function initListsForFields(): void
+    {
+        $this->listsForFields['countries'] = Country::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', 0)
+            ->pluck('name', 'id')
+            ->toArray();
     }
 }
  

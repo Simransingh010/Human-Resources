@@ -99,7 +99,7 @@
                     <flux:table.cell class="table-cell-wrap">{{ $docType->title }}</flux:table.cell>
                     <flux:table.cell>{{ $docType->code }}</flux:table.cell>
                     <flux:table.cell>{{ Str::limit($docType->description, 50) }}</flux:table.cell>
-                    <flux:table.cell>{{ $docType->firm?->name ?? '-' }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $docType->firm?->name ?? '-' }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:switch
                             wire:model="statuses.{{ $docType->id }}"

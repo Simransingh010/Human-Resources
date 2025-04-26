@@ -6,6 +6,7 @@
 
 namespace App\Models\Hrms;
 
+use App\Models\Settings\Joblocation;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -99,5 +100,9 @@ class EmpAttendance extends Model
     public function punches()
     {
         return $this->hasMany(EmpPunch::class, 'emp_attendance_id', 'id');
+    }
+    public function attend_location()
+    {
+        return $this->belongsTo(Joblocation::class, 'attend_location_id');
     }
 }

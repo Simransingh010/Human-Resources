@@ -90,7 +90,10 @@ class AppModule extends Model
             ->withPivot('id', 'deleted_at')
             ->withTimestamps();
     }
-
+    public function modules()
+    {
+        return $this->belongsToMany(Module::class, 'app_module', 'app_id', 'module_id');
+    }
     public function permissions()
     {
         return $this->hasMany(Permission::class);

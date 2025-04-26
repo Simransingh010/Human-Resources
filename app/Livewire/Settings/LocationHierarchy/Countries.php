@@ -66,6 +66,8 @@ class Countries extends Component
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
+            
+
         // Add firm_id from session
         $validatedData['formData']['firm_id'] = session('firm_id');
 

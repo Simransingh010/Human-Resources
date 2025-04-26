@@ -22,6 +22,7 @@ class Joblocations extends Component
     public array $listsForFields = [];
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
+    public $showModal = false;
     public $statuses;
     public $formData = [
         'id' => null,
@@ -58,122 +59,95 @@ class Joblocations extends Component
     {
         $this->resetPage();
         $this->refreshStatuses();
-        $this->getJoblocationsForSelect();
-        $this->getCountriesForSelect();
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        $this->initListsForFields();
     }
 
-    private function getJoblocationsForSelect()
+    protected function initListsForFields(): void
     {
+        // Get Job Locations
         $this->listsForFields['joblocations'] = Joblocation::query()
             ->where('firm_id', Session::get('firm_id'))
             ->where('is_inactive', 0)
             ->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
             ->toArray();
-    }
 
-    private function getCountriesForSelect()
-    {
+        // Get Countries
         $this->listsForFields['countries'] = Country::query()
             ->where('firm_id', Session::get('firm_id'))
             ->where('is_inactive', 0)
             ->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
+            ->toArray();
+
+        // Initialize empty arrays for dependent dropdowns
+        $this->listsForFields['states'] = [];
+        $this->listsForFields['districts'] = [];
+        $this->listsForFields['subdivisions'] = [];
+        $this->listsForFields['cities'] = [];
+        $this->listsForFields['postoffices'] = [];
+    }
+
+    public function triggerUpdate($selectchanged = null)
+    {
+        if ($selectchanged == 'countrychanged') {
+            $this->updateStates();
+        } elseif ($selectchanged == 'statechanged') {
+            $this->updateDistricts();
+        } elseif ($selectchanged == 'districtchanged') {
+            $this->updateSubdivisions();
+        } elseif ($selectchanged == 'subdivisionchanged') {
+            $this->updateCities();
+        } elseif ($selectchanged == 'citychanged') {
+            $this->updatePostoffices();
+        }
+    }
+
+    private function updateStates()
+    {
+        $this->listsForFields['states'] = State::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', 0)
+            ->when($this->formData['country_id'], fn($q) => $q->where('country_id', $this->formData['country_id']))
+            ->pluck('name', 'id')
             ->toArray();
     }
 
-    private function getStatesForSelect()
+    private function updateDistricts()
     {
-        $countryId = $this->formData['country_id'] ?? $this->filters['search_country'] ?? null;
-        
-        $query = State::query()
+        $this->listsForFields['districts'] = District::query()
             ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
-        if ($countryId) {
-            $query->where('country_id', $countryId);
-        }
-        
-        $this->listsForFields['states'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
+            ->where('is_inactive', 0)
+            ->when($this->formData['state_id'], fn($q) => $q->where('state_id', $this->formData['state_id']))
+            ->pluck('name', 'id')
             ->toArray();
     }
 
-    private function getDistrictsForSelect()
+    private function updateSubdivisions()
     {
-        $stateId = $this->formData['state_id'] ?? $this->filters['search_state'] ?? null;
-        
-        $query = District::query()
+        $this->listsForFields['subdivisions'] = Subdivision::query()
             ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
-        if ($stateId) {
-            $query->where('state_id', $stateId);
-        }
-        
-        $this->listsForFields['districts'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
+            ->where('is_inactive', 0)
+            ->when($this->formData['district_id'], fn($q) => $q->where('district_id', $this->formData['district_id']))
+            ->pluck('name', 'id')
             ->toArray();
     }
 
-    private function getSubdivisionsForSelect()
+    private function updateCities()
     {
-        $districtId = $this->formData['district_id'] ?? $this->filters['search_district'] ?? null;
-        
-        $query = Subdivision::query()
+        $this->listsForFields['cities'] = CitiesOrVillage::query()
             ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
-        if ($districtId) {
-            $query->where('district_id', $districtId);
-        }
-        
-        $this->listsForFields['subdivisions'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
+            ->where('is_inactive', 0)
+            ->when($this->formData['district_id'], fn($q) => $q->where('district_id', $this->formData['district_id']))
+            ->pluck('name', 'id')
             ->toArray();
     }
 
-    private function getCitiesForSelect()
+    private function updatePostoffices()
     {
-        $districtId = $this->formData['district_id'] ?? $this->filters['search_district'] ?? null;
-        $subdivisionId = $this->formData['subdivision_id'] ?? $this->filters['search_subdivision'] ?? null;
-        
-        $query = CitiesOrVillage::query()
+        $this->listsForFields['postoffices'] = Postoffice::query()
             ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
-        if ($districtId) {
-            $query->where('district_id', $districtId);
-        }
-        
-        if ($subdivisionId) {
-            $query->where('subdivision_id', $subdivisionId);
-        }
-        
-        $this->listsForFields['cities'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
-            ->toArray();
-    }
-
-    private function getPostofficesForSelect()
-    {
-        $cityId = $this->formData['city_or_village_id'] ?? $this->filters['search_city'] ?? null;
-        
-        $query = Postoffice::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
-        if ($cityId) {
-            $query->where('city_or_village_id', $cityId);
-        }
-        
-        $this->listsForFields['postoffices'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
+            ->where('is_inactive', 0)
+            ->when($this->formData['city_or_village_id'], fn($q) => $q->where('city_or_village_id', $this->formData['city_or_village_id']))
+            ->pluck('name', 'id')
             ->toArray();
     }
 
@@ -184,11 +158,7 @@ class Joblocations extends Component
         $this->formData['subdivision_id'] = '';
         $this->formData['city_or_village_id'] = '';
         $this->formData['postoffice_id'] = '';
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        $this->triggerUpdate('countrychanged');
     }
 
     public function updatedFormDataStateId()
@@ -197,10 +167,7 @@ class Joblocations extends Component
         $this->formData['subdivision_id'] = '';
         $this->formData['city_or_village_id'] = '';
         $this->formData['postoffice_id'] = '';
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        $this->triggerUpdate('statechanged');
     }
 
     public function updatedFormDataDistrictId()
@@ -208,23 +175,20 @@ class Joblocations extends Component
         $this->formData['subdivision_id'] = '';
         $this->formData['city_or_village_id'] = '';
         $this->formData['postoffice_id'] = '';
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        $this->triggerUpdate('districtchanged');
     }
 
     public function updatedFormDataSubdivisionId()
     {
         $this->formData['city_or_village_id'] = '';
         $this->formData['postoffice_id'] = '';
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        $this->triggerUpdate('subdivisionchanged');
     }
 
     public function updatedFormDataCityOrVillageId()
     {
         $this->formData['postoffice_id'] = '';
-        $this->getPostofficesForSelect();
+        $this->triggerUpdate('citychanged');
     }
 
     public function updatedFiltersSearchCountry()
@@ -234,11 +198,11 @@ class Joblocations extends Component
         $this->filters['search_subdivision'] = '';
         $this->filters['search_city'] = '';
         $this->filters['search_postoffice'] = '';
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        
+        if ($this->filters['search_country']) {
+            $this->formData['country_id'] = $this->filters['search_country'];
+            $this->triggerUpdate('countrychanged');
+        }
     }
 
     public function updatedFiltersSearchState()
@@ -247,10 +211,11 @@ class Joblocations extends Component
         $this->filters['search_subdivision'] = '';
         $this->filters['search_city'] = '';
         $this->filters['search_postoffice'] = '';
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        
+        if ($this->filters['search_state']) {
+            $this->formData['state_id'] = $this->filters['search_state'];
+            $this->triggerUpdate('statechanged');
+        }
     }
 
     public function updatedFiltersSearchDistrict()
@@ -258,23 +223,32 @@ class Joblocations extends Component
         $this->filters['search_subdivision'] = '';
         $this->filters['search_city'] = '';
         $this->filters['search_postoffice'] = '';
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        
+        if ($this->filters['search_district']) {
+            $this->formData['district_id'] = $this->filters['search_district'];
+            $this->triggerUpdate('districtchanged');
+        }
     }
 
     public function updatedFiltersSearchSubdivision()
     {
         $this->filters['search_city'] = '';
         $this->filters['search_postoffice'] = '';
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+        
+        if ($this->filters['search_subdivision']) {
+            $this->formData['subdivision_id'] = $this->filters['search_subdivision'];
+            $this->triggerUpdate('subdivisionchanged');
+        }
     }
 
     public function updatedFiltersSearchCity()
     {
         $this->filters['search_postoffice'] = '';
-        $this->getPostofficesForSelect();
+        
+        if ($this->filters['search_city']) {
+            $this->formData['city_or_village_id'] = $this->filters['search_city'];
+            $this->triggerUpdate('citychanged');
+        }
     }
 
     #[\Livewire\Attributes\Computed]
@@ -324,45 +298,75 @@ class Joblocations extends Component
 
     public function store()
     {
-        $validatedData = $this->validate([
-            'formData.name' => 'required|string|max:255',
-            'formData.code' => 'nullable|string|max:255',
-            'formData.description' => 'nullable|string',
-            'formData.parent_joblocation_id' => 'nullable|exists:joblocations,id',
-            'formData.country_id' => 'nullable|exists:countries,id',
-            'formData.state_id' => 'nullable|exists:states,id',
-            'formData.district_id' => 'nullable|exists:districts,id',
-            'formData.subdivision_id' => 'nullable|exists:subdivisions,id',
-            'formData.city_or_village_id' => 'nullable|exists:cities_or_villages,id',
-            'formData.postoffice_id' => 'nullable|exists:postoffices,id',
-            'formData.is_inactive' => 'boolean',
-        ]);
+        try {
+            $validatedData = $this->validate(
+                [
+                    'formData.name' => 'required|string|max:255',
+                    'formData.code' => 'nullable|string|max:255',
+                    'formData.description' => 'nullable|string',
+                    'formData.parent_joblocation_id' => 'nullable',
+                    'formData.country_id' => 'nullable|exists:countries,id',
+                    'formData.state_id' => 'nullable|exists:states,id',
+                    'formData.district_id' => 'nullable|exists:districts,id',
+                    'formData.subdivision_id' => 'nullable|exists:subdivisions,id',
+                    'formData.city_or_village_id' => 'nullable|exists:cities_or_villages,id',
+                    'formData.postoffice_id' => 'nullable|exists:postoffices,id',
+                    'formData.is_inactive' => 'boolean',
+                ],
+                [
+                    'formData.name.required' => 'The  Name field is required.',
+                    'formData.name.max' => 'The  Name may not be greater than :max characters.',
+                    'formData.code.max' => 'The Code may not be greater than :max characters.',
+                    'formData.country_id.exists' => 'The selected Country is invalid.',
+                    'formData.state_id.exists' => 'The selected State is invalid.',
+                    'formData.district_id.exists' => 'The selected District is invalid.',
+                    'formData.subdivision_id.exists' => 'The selected Subdivision is invalid.',
+                    'formData.city_or_village_id.exists' => 'The selected City/Village is invalid.',
+                    'formData.postoffice_id.exists' => 'The selected Post Office is invalid.',
+                ]
+            );
 
-        // Convert empty strings to null
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
+            // Convert empty strings to null and ensure proper type casting
+            $formData = collect($validatedData['formData'])
+                ->map(function ($val, $key) {
+                    if ($val === '') {
+                        return null;
+                    }
+                    // Cast IDs to integers if they're not null
+                    if (str_contains($key, '_id') && $val !== null) {
+                        return (int) $val;
+                    }
+                    return $val;
+                })
+                ->toArray();
 
-        // Add firm_id from session
-        $validatedData['formData']['firm_id'] = session('firm_id');
+            // Add firm_id from session
+            $formData['firm_id'] = session('firm_id');
 
-        if ($this->isEditing) {
-            $joblocation = Joblocation::findOrFail($this->formData['id']);
-            $joblocation->update($validatedData['formData']);
-            $toastMsg = 'Job Location updated successfully';
-        } else {
-            Joblocation::create($validatedData['formData']);
-            $toastMsg = 'Job Location added successfully';
+            if ($this->isEditing) {
+                $joblocation = Joblocation::findOrFail($this->formData['id']);
+                $joblocation->update($formData);
+                $toastMsg = 'Job Location updated successfully';
+            } else {
+                Joblocation::create($formData);
+                $toastMsg = 'Job Location added successfully';
+            }
+
+            $this->resetForm();
+            $this->refreshStatuses();
+            $this->modal('mdl-joblocation')->close();
+            Flux::toast(
+                variant: 'success',
+                heading: 'Changes saved.',
+                text: $toastMsg,
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage(),
+            );
         }
-
-        $this->resetForm();
-        $this->refreshStatuses();
-        $this->modal('mdl-joblocation')->close();
-        Flux::toast(
-            variant: 'success',
-            heading: 'Changes saved.',
-            text: $toastMsg,
-        );
     }
 
     public function clearFilters()
@@ -374,16 +378,49 @@ class Joblocations extends Component
     public function edit($id)
     {
         $joblocation = Joblocation::findOrFail($id);
-        $this->formData = $joblocation->toArray();
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-        $this->getSubdivisionsForSelect();
-        $this->getCitiesForSelect();
-        $this->getPostofficesForSelect();
+
+        $this->formData = [
+            'id' => $joblocation->id,
+            'name' => $joblocation->name,
+            'code' => $joblocation->code,
+            'description' => $joblocation->description,
+            'parent_joblocation_id' => $joblocation->parent_joblocation_id,
+            'country_id' => $joblocation->country_id,
+            'state_id' => $joblocation->state_id,
+            'district_id' => $joblocation->district_id,
+            'subdivision_id' => $joblocation->subdivision_id,
+            'city_or_village_id' => $joblocation->city_or_village_id,
+            'postoffice_id' => $joblocation->postoffice_id,
+            'is_inactive' => $joblocation->is_inactive,
+        ];
+        $this->triggerDependentUpdates(); 
+               
+
         $this->isEditing = true;
         $this->modal('mdl-joblocation')->show();
     }
 
+    protected function triggerDependentUpdates(){
+        if ($this->formData['country_id']) {
+            $this->triggerUpdate('countrychanged');
+        }
+        
+        if ($this->formData['state_id']) {
+            $this->triggerUpdate('statechanged');
+        }
+        
+        if ($this->formData['district_id']) {
+            $this->triggerUpdate('districtchanged');
+        }
+        
+        if ($this->formData['subdivision_id']) {
+            $this->triggerUpdate('subdivisionchanged');
+        }
+        
+        if ($this->formData['city_or_village_id']) {
+            $this->triggerUpdate('citychanged');
+        }
+    }
     public function delete($id)
     {
         // Check if job location has related records

@@ -92,4 +92,9 @@ class Employee extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    public function emp_job_profile()
+    {
+        return $this->hasOne(EmployeeJobProfile::class, 'employee_id');
+    }
 }

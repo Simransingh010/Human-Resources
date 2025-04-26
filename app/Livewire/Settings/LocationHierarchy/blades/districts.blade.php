@@ -12,7 +12,7 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+    <div class="flex flex-row gap-4 mb-4">
         <flux:input
             label="Search by Name"
             wire:model.live="filters.search_name"
@@ -23,11 +23,14 @@
             wire:model.live="filters.search_code"
             placeholder="Search by code..."
         />
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by Country</label>
-            <select 
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">
+                Filter by Country
+            </label>
+            <select
                 wire:model.live="filters.search_country"
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm
+                       focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select Country</option>
                 @foreach($listsForFields['countries'] ?? [] as $id => $name)
@@ -35,11 +38,14 @@
                 @endforeach
             </select>
         </div>
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Filter by State</label>
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">
+                Filter by State
+            </label>
             <select
-                wire:model.live="filters.search_state" 
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                wire:model.live="filters.search_state"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm
+                       focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select State</option>
                 @foreach($listsForFields['states'] ?? [] as $id => $name)
@@ -55,7 +61,7 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-district" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-district" @cancel="resetForm" position="right" class="max-w-none" variant="default">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -68,22 +74,76 @@
                 </div>
 
                 <!-- Grid layout for form fields -->
-                <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
-                    <flux:select
-                        label="Country"
-                        wire:model="formData.country_id"
-                        :options="$listsForFields['countries'] ?? []"
-                        placeholder="Select Country"
-                    />
-                    <flux:select
-                        label="State"
-                        wire:model="formData.state_id"
-                        :options="$listsForFields['states'] ?? []"
-                        placeholder="Select State"
-                    />
-                    <flux:input label="Name" wire:model="formData.name" placeholder="District Name"/>
-                    <flux:input label="Code" wire:model="formData.code" placeholder="District Code"/>
-                    <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="relative w-full">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Country</label>
+                        <select
+                            wire:model="formData.country_id"
+                            wire:change="triggerUpdate('countrychanged')"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2 @error('formData.country_id') border-red-500 @enderror"
+                        >
+                            <option value="">Select Country</option>
+                            @foreach($listsForFields['countries'] ?? [] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                        @error('formData.country_id')
+                            <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                        @enderror
+                    </div>
+
+                    <div class="relative w-full">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">State</label>
+                        <select
+                            wire:model="formData.state_id"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2 @error('formData.state_id') border-red-500 @enderror"
+                        >
+                            <option value="">Select State</option>
+                            @foreach($listsForFields['states'] ?? [] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                        @error('formData.state_id')
+                            <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                        @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Name</label>
+                        <input
+                            type="text"
+                            wire:model="formData.name"
+                            placeholder="District Name"
+                            class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm @error('formData.name') border-red-500 @enderror"
+                        >
+                        @error('formData.name')
+                            <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                        @enderror
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Code</label>
+                        <input
+                            type="text"
+                            wire:model="formData.code"
+                            placeholder="District Code"
+                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 px-2 py-2 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm @error('formData.code') border-red-500 @enderror"
+                        >
+                        @error('formData.code')
+                            <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                        @enderror
+                    </div>
+
+                    <div class="flex items-center col-span-2">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" wire:model.live="formData.is_inactive" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 dark:peer-focus:ring-primary-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary-600"></div>
+                            <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
+                        </label>
+                        @error('formData.is_inactive')
+                            <span class="text-red-500 text-xs mt-1">{{ $message }}</span>
+                        @enderror
+                    </div>
                 </div>
 
                 <!-- Submit Button -->
@@ -103,7 +163,7 @@
             <flux:table.column>Name</flux:table.column>
             <flux:table.column>Code</flux:table.column>
             <flux:table.column>State</flux:table.column>
-            <flux:table.column>Country</flux:table.column>
+{{--            <flux:table.column>Country</flux:table.column>--}}
             <flux:table.column>Status</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
@@ -114,7 +174,7 @@
                     <flux:table.cell class="table-cell-wrap">{{ $rec->name }}</flux:table.cell>
                     <flux:table.cell class="table-cell-wrap">{{ $rec->code }}</flux:table.cell>
                     <flux:table.cell class="table-cell-wrap">{{ $rec->state->name }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->state->country->name }}</flux:table.cell>
+{{--                    <flux:table.cell class="table-cell-wrap">{{ $rec->state->country->name }}</flux:table.cell>--}}
                     <flux:table.cell>
                         <flux:switch
                             wire:model="statuses.{{ $rec->id }}"

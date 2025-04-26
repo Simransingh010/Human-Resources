@@ -72,7 +72,13 @@ class Departments extends Component
             'formData.description' => 'nullable|string',
             'formData.parent_department_id' => 'nullable|integer|exists:departments,id',
             'formData.is_inactive' => 'boolean',
-        ]);
+        ],
+        [
+            'formData.title.required' => 'Required.',
+            'formData.title.max' => 'The Title may not be greater than :max characters.',
+            'formData.code.max' => 'The Code may not be greater than :max characters.',
+        ]
+    );
 
         // Convert empty strings to null
         $validatedData['formData'] = collect($validatedData['formData'])

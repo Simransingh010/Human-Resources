@@ -92,4 +92,11 @@ class App extends Model
 					->withPivot('id', 'deleted_at')
 					->withTimestamps();
 	}
+    public function getPanelsAttribute()
+    {
+        return $this->modules
+            ->flatMap(fn ($module) => $module->components)
+            ->flatMap(fn ($component) => $component->panels)
+            ->unique('id');
+    }
 }

@@ -58,10 +58,17 @@ class Designations extends Component
     {
         $validatedData = $this->validate([
             'formData.title' => 'required|string|max:255',
-            'formData.code' => 'nullable|string|max:255',
+            'formData.code' => 'required|string|max:255',
             'formData.description' => 'nullable|string',
             'formData.is_inactive' => 'boolean',
-        ]);
+        ],
+        [
+            'formData.title.required' => 'Required.',
+            'formData.title.max' => 'The Title may not be greater than :max characters.',
+            'formData.code.required' => 'Required.',
+            'formData.code.max' => 'The Code may not be greater than :max characters.',
+        ]
+    );
 
         // Convert empty strings to null
         $validatedData['formData'] = collect($validatedData['formData'])
