@@ -393,8 +393,7 @@ class Joblocations extends Component
             'postoffice_id' => $joblocation->postoffice_id,
             'is_inactive' => $joblocation->is_inactive,
         ];
-        $this->triggerDependentUpdates(); 
-               
+        $this->triggerDependentUpdates();        
 
         $this->isEditing = true;
         $this->modal('mdl-joblocation')->show();
