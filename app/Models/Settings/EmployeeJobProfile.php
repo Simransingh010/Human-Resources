@@ -82,9 +82,12 @@ class EmployeeJobProfile extends Model
 
 	public function employee()
 	{
-		return $this->belongsTo(Employee::class, 'reporting_manager');
+		return $this->belongsTo(Employee::class, 'employee_id');
 	}
-
+    public function manager()
+    {
+        return $this->belongsTo(Employee::class, 'reporting_manager');
+    }
 	public function employment_type()
 	{
 		return $this->belongsTo(EmploymentType::class, 'employment_type');

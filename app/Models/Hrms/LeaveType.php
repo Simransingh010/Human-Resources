@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class LeaveType
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property string $leave_title
@@ -26,7 +26,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Firm $firm
  * @property Collection|EmpLeaveAllocation[] $emp_leave_allocations
  * @property Collection|EmpLeaveRequest[] $emp_leave_requests
@@ -54,10 +54,11 @@ class LeaveType extends Model
 		'leave_nature',
 		'max_days',
 		'carry_forward',
-		'encashable'
+		'encashable',
+        'is_inactive'
 	];
 
-	
+
 	public const LEAVE_NATURE_SELECT = [
 		'paid' => 'Paid',
 		'unpaid' => 'Unpaid'

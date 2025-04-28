@@ -5,19 +5,17 @@
  */
 
 namespace App\Models\Hrms;
-
-use Carbon\Carbon;
 use App\Models\Settings\Department;
 use App\Models\Settings\Designation;
-use App\Models\Settings\EmploymentType;
-use App\Models\Saas\Firm;
 use App\Models\Settings\Joblocation;
+use App\Models\Settings\EmploymentType;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class EmployeeJobProfile
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $employee_id
@@ -34,7 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Department $department
  * @property Designation $designation
  * @property Employee|null $employee
@@ -55,7 +53,7 @@ class EmployeeJobProfile extends Model
 		'department_id' => 'int',
 		'designation_id' => 'int',
 		'reporting_manager' => 'int',
-		'employment_type' => 'int',
+		'employment_type_id' => 'int',
 		'doe' => 'datetime',
 		'joblocation_id' => 'int'
 	];
@@ -68,7 +66,7 @@ class EmployeeJobProfile extends Model
 		'department_id',
 		'designation_id',
 		'reporting_manager',
-		'employment_type',
+		'employment_type_id',
 		'doe',
 		'uanno',
 		'esicno',
@@ -87,12 +85,17 @@ class EmployeeJobProfile extends Model
 
 	public function employee()
 	{
-		return $this->belongsTo(Employee::class, 'reporting_manager');
+		return $this->belongsTo(Employee::class, 'employee_id');
 	}
+
+    public function manager()
+    {
+        return $this->belongsTo(Employee::class, 'reporting_manager');
+    }
 
 	public function employment_type()
 	{
-		return $this->belongsTo(EmploymentType::class, 'employment_type');
+		return $this->belongsTo(EmploymentType::class, 'employment_type_id');
 	}
 
 	public function firm()
@@ -102,6 +105,6 @@ class EmployeeJobProfile extends Model
 
 	public function joblocation()
 	{
-		return $this->belongsTo(Joblocation::class);
+		return $this->belongsTo(Joblocation::class, 'joblocation_id');
 	}
 }

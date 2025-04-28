@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class HolidayCalendar
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property string $title
@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Firm $firm
  * @property Collection|Holiday[] $holidays
  *
@@ -42,6 +42,8 @@ class HolidayCalendar extends Model
 		'firm_id',
 		'title',
 		'description',
+        'start_date',
+        'end_date',
 		'is_inactive'
 	];
 

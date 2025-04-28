@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class WorkShiftDay
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $work_shift_id
@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Firm $firm
  * @property WorkShift $work_shift
  * @property Collection|EmpAttendance[] $emp_attendances
@@ -51,7 +51,9 @@ class WorkShiftDay extends Model
 		'work_date',
 		'work_shift_day_status_id',
 		'start_time',
-		'end_time'
+		'end_time',
+        'day_status_main',
+        'paid_percent'
 	];
 
 	public function firm()
