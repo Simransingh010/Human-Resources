@@ -12,7 +12,7 @@ class MenuController extends Controller
     /**
      * Return the menu items based on the selected firm and panel,
      * filtering permissions according to the modules assigned to that panel,
-     * and grouping them hierarchically (App → Modules → Components).
+     * and grouping them hierarchically (App → Modules → Permissions).
      */
     public function index(Request $request)
     {
@@ -86,7 +86,7 @@ class MenuController extends Controller
             ->where('is_inactive', false)
             ->get();
 //        dd($permissions);
-        // Build hierarchical structure: App → Modules → Components.
+        // Build hierarchical structure: App → Modules → Permissions.
         $menuHierarchy = [];
 
         foreach ($actions as $action) {

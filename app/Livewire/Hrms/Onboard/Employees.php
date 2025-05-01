@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Hrms\Onboard;
 
+use App\Models\Saas\Role;
 use App\Models\User;
 use Livewire\Component;
 use App\Models\Hrms\Employee;
@@ -97,10 +98,19 @@ class Employees extends Component
     }
 
     // Save or update the employee record based on whether we're editing or adding new.
-    public function saveEmployee()
+    public function saveEmployee_old()
     {
 
-        $employee = Employee::findOrFail($this->employeeData['id']);
+        // If the ID is null, it's a new employee
+        if ($this->employeeData['id']) {
+            // If employee ID exists, find the employee
+            $employee = Employee::findOrFail($this->employeeData['id']);
+        } else {
+            // If no ID, create a new Employee instance
+            $employee = new Employee();
+        }
+
+//        dd($this->employeeData);
 
         $validatedData = $this->validate([
             'employeeData.fname' => 'required|string|max:255',
@@ -130,22 +140,47 @@ class Employees extends Component
 
 
         if ($this->isEditing) {
-
-
-
+            // Update existing employee and user
             $employee->update($validatedData['employeeData']);
-
             $user = User::findOrFail($employee->user_id);
             $user->update($validatedDataUsr['employeeData']);
 
-            $toast= 'Employee updated successfully.';
+            // Assign the employee role (or update it)
+            $role = Role::where('name', 'employee')->first();
+            if ($role) {
+                $user->roles()->sync([$role->id]); // Sync the 'employee' role
+            }
+
+            $toast = 'Employee updated successfully.';
         } else {
-
+            // Add new employee and user
             $validatedData['employeeData']['firm_id'] = session('firm_id');
-            Employee::create($validatedData['employeeData']);
-            $toast= 'Employee added successfully.';
-        }
+            $employee = Employee::create($validatedData['employeeData']);
 
+            // Create new user
+            $user = new User();
+            $user->name = $validatedData['employeeData']['fname']." ".$validatedData['employeeData']['lname'];
+            $user->password='iqwing@1947';
+            $user->passcode='1111';
+            $user->email = $validatedDataUsr['employeeData']['email'];
+            $user->phone = $validatedDataUsr['employeeData']['phone'];
+            // Add other user attributes as needed
+            $user->save();
+
+            // Assign the employee role to the newly created user
+            $role = Role::where('name', 'employee')->first();
+            if ($role) {
+                $user->roles()->sync([
+                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
+                ]);
+            }
+
+            // Link user to the employee
+            $employee->user_id = $user->id;
+            $employee->save();
+
+            $toast = 'Employee added successfully.';
+        }
 
         $this->resetForm();
         $this->modal('mdl-employee')->close();
@@ -154,6 +189,116 @@ class Employees extends Component
             text: $toast,
         );
     }
+
+    public function saveEmployee()
+    {
+        // If the ID is null, it's a new employee
+        if ($this->employeeData['id']) {
+            // If employee ID exists, find the employee
+            $employee = Employee::findOrFail($this->employeeData['id']);
+        } else {
+            // If no ID, create a new Employee instance
+            $employee = new Employee();
+        }
+
+        $validatedData = $this->validate([
+            'employeeData.fname' => 'required|string|max:255',
+            'employeeData.mname' => 'nullable|string|max:255',
+            'employeeData.lname' => 'nullable|string|max:255',
+            'employeeData.email' => [
+                'required', 'string', 'email', 'max:255',
+                Rule::unique('employees', 'email')->ignore($this->employeeData['id']),
+            ],
+            'employeeData.phone' => [
+                'required',
+                Rule::unique('employees', 'phone')->ignore($this->employeeData['id']),
+            ],
+            'employeeData.gender' => 'required|in:1,2,3',
+        ]);
+
+        $validatedDataUsr = $this->validate([
+            'employeeData.email' => [
+                'required', 'string', 'email', 'max:255',
+                Rule::unique('users', 'email')->ignore($employee->user_id),
+            ],
+            'employeeData.phone' => [
+                'required',
+                Rule::unique('users', 'phone')->ignore($employee->user_id),
+            ],
+        ]);
+
+        if ($this->isEditing) {
+            // Update existing employee and user
+            $employee->update($validatedData['employeeData']);
+            $user = User::findOrFail($employee->user_id);
+            $user->update($validatedDataUsr['employeeData']);
+
+            // Assign the employee role (or update it)
+            $role = Role::where('name', 'employee')->first();
+            if ($role) {
+                $user->roles()->sync([$role->id]); // Sync the 'employee' role
+            }
+
+            // Sync firm_user pivot table
+            $firm_user_data = [
+                'firm_id' => session('firm_id'),
+                'is_default' => true, // You can adjust this based on your requirements
+            ];
+            $user->firms()->syncWithoutDetaching([$firm_user_data]);
+
+            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
+            $panel_id = 1; // Employee panel for App
+            $user->panels()->syncWithoutDetaching([$panel_id]);
+
+            $toast = 'Employee updated successfully.';
+        } else {
+            // Add new employee and user
+            $validatedData['employeeData']['firm_id'] = session('firm_id');
+            $employee = Employee::create($validatedData['employeeData']);
+
+            // Create new user
+            $user = new User();
+            $user->name = $validatedData['employeeData']['fname']." ".$validatedData['employeeData']['lname'];
+            $user->password = 'iqwing@1947';
+            $user->passcode = '1111';
+            $user->email = $validatedDataUsr['employeeData']['email'];
+            $user->phone = $validatedDataUsr['employeeData']['phone'];
+            $user->save();
+
+            // Assign the employee role to the newly created user
+            $role = Role::where('name', 'employee')->first();
+            if ($role) {
+                $user->roles()->sync([
+                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
+                ]);
+            }
+
+            // Link user to the employee
+            $employee->user_id = $user->id;
+            $employee->save();
+
+            // Sync firm_user pivot table for the new user
+            $firm_user_data = [
+                'firm_id' => session('firm_id'),
+                'is_default' => true, // You can adjust this based on your requirements
+            ];
+            $user->firms()->syncWithoutDetaching([$firm_user_data]);
+
+            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
+            $panel_id = 1; // Employee panel for App
+            $user->panels()->syncWithoutDetaching([$panel_id]);
+
+            $toast = 'Employee added successfully.';
+        }
+
+        $this->resetForm();
+        $this->modal('mdl-employee')->close();
+        Flux::toast(
+            heading: 'Changes saved.',
+            text: $toast,
+        );
+    }
+
 
     protected function initListsForFields(): void
     {
@@ -275,5 +420,10 @@ class Employees extends Component
     {
         $this->selectedEmpId = $employeeId;
         $this->modal('add-leave-requests')->show();
+    }
+
+    public function render()
+    {
+        return view()->file(app_path('Livewire/Hrms/Onboard/blades/employees.blade.php'));
     }
 }

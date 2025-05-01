@@ -134,7 +134,7 @@
             <flux:table.column>Name</flux:table.column>
             <flux:table.column>Code</flux:table.column>
             <flux:table.column>Icon</flux:table.column>
-            <flux:table.column>Route</flux:table.column>
+            <flux:table.column>Panels</flux:table.column>
             <flux:table.column>Order</flux:table.column>
             <flux:table.column>Status</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
@@ -157,7 +157,13 @@
                             <flux:icon :name="$rec->icon" class="w-5 h-5"/>
                         @endif
                     </flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->route }}</flux:table.cell>
+
+
+                    <flux:table.cell class="table-cell-wrap">
+                        @foreach ($rec->panels as $panel)
+                            <flux:badge size="sm" color="purple">{{ $panel->name }}</flux:badge>
+                        @endforeach
+                    </flux:table.cell>
                     <flux:table.cell>{{ $rec->order }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:switch

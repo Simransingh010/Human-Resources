@@ -1,4 +1,4 @@
-<div>
+<div class="space-y-6">
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
@@ -12,68 +12,102 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <form wire:submit.prevent="applyFilters">
-        <flux:heading level="3" size="lg">Filter Records</flux:heading>
-        <flux:card size="sm" class="sm:p-2 !rounded-xl rounded-xl! mb-1 rounded-t-lg p-0 bg-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-700">
-            <div class="grid md:grid-cols-3 gap-2 items-end">
-                <div>
-                    <flux:select
-                        variant="listbox"
-                        searchable
-                        multiple
-                        placeholder="Employees"
-                        wire:model="filters.employees"
-                        wire:key="employees-filter"
-                    >
-                        @foreach($listsForFields['employees'] as $key => $value)
-                            <flux:select.option value="{{ $key }}">{{ $value }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                </div>
-                <div>
-                    <flux:select
-                        variant="listbox"
-                        searchable
-                        multiple
-                        placeholder="Leave Types"
-                        wire:model="filters.leave_types"
-                        wire:key="leave-types-filter"
-                    >
-                        @foreach($listsForFields['leave_types'] as $key => $value)
-                            <flux:select.option value="{{ $key }}">{{ $value }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                </div>
-                <div>
-                    <flux:select
-                        variant="listbox"
-                        placeholder="Status"
-                        wire:model="filters.status"
-                        wire:key="status-filter"
-                    >
-                        <option value="">All Statuses</option>
-                        @foreach($listsForFields['statuses'] as $key => $value)
-                            <option value="{{ $key }}">{{ $value }}</option>
-                        @endforeach
-                    </flux:select>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    <flux:input type="text" placeholder="Search" wire:model="filters.search" />
-                    <div class="min-w-[100px]">
-                        <flux:button type="submit" variant="primary" class="w-full">Go</flux:button>
-                    </div>
-                    <div class="min-w-[100px]">
-                        <flux:button variant="filled" class="w-full px-2" tooltip="Cancel Filter" icon="x-circle"
-                            wire:click="clearFilters()"></flux:button>
-                    </div>
-                </div>
-            </div>
-        </flux:card>
-    </form>
-    <!-- Filters End -->
+    <flux:card>
+        <flux:heading>Filters</flux:heading>
+        <div class="flex flex-wrap gap-4">
+            @foreach($filterFields as $field => $cfg)
+                @if(in_array($field, $visibleFilterFields))
+                    <div class="w-1/4">
+                        @switch($cfg['type'])
+                            @case('select')
+                                <flux:select
+                                    variant="listbox"
+                                    searchable
+                                    placeholder="All {{ $cfg['label'] }}"
+                                    wire:model="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                >
+                                    <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
+                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                @break
 
-    <!-- Modal Start -->
-    <flux:modal name="mdl-leave-request" @cancel="resetForm" class="max-w-none">
+                            @case('number')
+                                <flux:input
+                                    type="number"
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                                @break
+
+                            @default
+                                <flux:input
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                        @endswitch
+                    </div>
+                @endif
+            @endforeach
+
+            <flux:button.group>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
+                <flux:modal.trigger name="mdl-show-hide-filters">
+                    <flux:button variant="outline" tooltip="Set Filters" icon="funnel"></flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="mdl-show-hide-columns">
+                    <flux:button variant="outline" tooltip="Set Columns" icon="bars-3"></flux:button>
+                </flux:modal.trigger>
+            </flux:button.group>
+        </div>
+    </flux:card>
+
+    <!-- Filter Fields Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-filters" variant="flyout">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Filters</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($filterFields as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFilterFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleFilterColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Columns Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Columns</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Add/Edit Leave Request Modal -->
+    <flux:modal name="mdl-leave-request" @cancel="resetForm">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -81,37 +115,54 @@
                         @if($isEditing) Edit Leave Request @else Add Leave Request @endif
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif employee leave request details.
+                        @if($isEditing) Update @else Add new @endif leave request details.
                     </flux:subheading>
                 </div>
 
-                <!-- Grid layout for form fields -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <flux:select label="Employee" wire:model.live="formData.employee_id" required>
-                        <option value="">Select Employee</option>
-                        @foreach($listsForFields['employees'] as $id => $name)
-                            <option value="{{ $id }}">{{ $name }}</option>
-                        @endforeach
-                    </flux:select>
-                    <flux:select label="Leave Type" wire:model.live="formData.leave_type_id" required>
-                        <option value="">Select Leave Type</option>
-                        @foreach($listsForFields['leave_types'] as $id => $name)
-                            <option value="{{ $id }}">{{ $name }}</option>
-                        @endforeach
-                    </flux:select>
-                    <flux:input label="Apply From" type="date" wire:model.live="formData.apply_from" required/>
-                    <flux:input label="Apply To" type="date" wire:model.live="formData.apply_to" required/>
-                    <flux:input label="Apply Days" type="number" wire:model.live="formData.apply_days" placeholder="Enter days" required/>
-                    <flux:select label="Status" wire:model.live="formData.status" required>
-                        <option value="">Select Status</option>
-                        @foreach($listsForFields['statuses'] as $key => $value)
-                            <option value="{{ $key }}">{{ $value }}</option>
-                        @endforeach
-                    </flux:select>
-                    <flux:input label="Reason" type="text" wire:model.live="formData.reason" placeholder="Reason for leave"/>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
+                            @switch($cfg['type'])
+                                @case('select')
+                                    <flux:select
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                    >
+                                        <option value="">Select {{ $cfg['label'] }}</option>
+                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                            <option value="{{ $val }}">{{ $lab }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                    @break
+
+                                @case('date')
+                                    <flux:input
+                                        type="date"
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                    />
+                                    @break
+
+                                @case('number')
+                                    <flux:input
+                                        type="number"
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                        step="0.01"
+                                    />
+                                    @break
+
+                                @default
+                                    <flux:input
+                                        type="{{ $cfg['type'] }}"
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                    />
+                            @endswitch
+                        </div>
+                    @endforeach
                 </div>
 
-                <!-- Submit Button -->
                 <div class="flex justify-end pt-4">
                     <flux:button type="submit" variant="primary">
                         Save
@@ -120,60 +171,67 @@
             </div>
         </form>
     </flux:modal>
-    <!-- Modal End -->
 
-    <!-- Table Start-->
-    <flux:table :paginate="$this->list" class="">
-        <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            <flux:table.column>Employee</flux:table.column>
-            <flux:table.column>Leave Type</flux:table.column>
-            <flux:table.column>Apply From</flux:table.column>
-            <flux:table.column>Apply To</flux:table.column>
-            <flux:table.column>Apply Days</flux:table.column>
-            <flux:table.column>Status</flux:table.column>
-            <flux:table.column>Reason</flux:table.column>
+    <!-- Data Table -->
+    <flux:table :paginate="$this->list" class="w-full">
+        <flux:table.columns>
+            @foreach($fieldConfig as $field => $cfg)
+                @if(in_array($field, $visibleFields))
+                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
+                @endif
+            @endforeach
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach ($this->list as $rec)
-                <flux:table.row :key="$rec->id" class="border-b">
-                    <flux:table.cell>{{ $rec->employee->fname ?? '' }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->leave_type->leave_title ?? '' }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->apply_from?->format('Y-m-d') }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->apply_to?->format('Y-m-d') }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->apply_days }}</flux:table.cell>
-                    <flux:table.cell>{{ $listsForFields['statuses'][$rec->status] ?? $rec->status }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->reason }}</flux:table.cell>
+            @foreach($this->list as $item)
+                <flux:table.row :key="$item->id">
+                    @foreach($fieldConfig as $field => $cfg)
+                        @if(in_array($field, $visibleFields))
+                            <flux:table.cell class="table-cell-wrap">
+                                @switch($field)
+                                    @case('employee_id')
+                                        {{ $item->employee->fname ?? 'N/A' }}
+                                        @break
+                                    @case('leave_type_id')
+                                        {{ $item->leave_type->leave_title ?? 'N/A' }}
+                                        @break
+                                    @case('status')
+                                        {{ $listsForFields['statuses'][$item->status] ?? 'N/A' }}
+                                        @break
+                                    @case('created_at')
+                                        {{ $item->created_at ? $item->created_at->format('Y-m-d H:i:s') : 'N/A' }}
+                                        @break
+                                    @case('updated_at')
+                                        {{ $item->updated_at ? $item->updated_at->format('Y-m-d H:i:s') : 'N/A' }}
+                                        @break
+                                    @default
+                                        {{ $item->$field }}
+                                @endswitch
+                            </flux:table.cell>
+                        @endif
+                    @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:button
-                                    wire:click="showRequestLogs({{ $rec->id }})"
-                                    color="green"
-                                    size="sm"
-                                    tooltip="Add Request Logs"
-                            >
-                                Add Request Logs
-                            </flux:button>
                             <flux:button
                                 variant="primary"
                                 size="sm"
                                 icon="pencil"
-                                wire:click="edit({{ $rec->id }})"
+                                wire:click="edit({{ $item->id }})"
                             />
-                            <flux:modal.trigger name="delete-{{ $rec->id }}">
+                            <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>
                         </div>
 
-                        <!-- Delete Modal -->
-                        <flux:modal name="delete-{{ $rec->id }}" class="min-w-[22rem]">
+                        <!-- Delete Confirmation Modal -->
+                        <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
                             <div class="space-y-6">
                                 <div>
                                     <flux:heading size="lg">Delete Leave Request?</flux:heading>
                                     <flux:text class="mt-2">
                                         <p>You're about to delete this leave request. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Requests with related records cannot be deleted.</p>
+                                        <p class="mt-2 text-red-500">Note: Leave requests with related records cannot be deleted.</p>
                                     </flux:text>
                                 </div>
                                 <div class="flex gap-2">
@@ -181,8 +239,7 @@
                                     <flux:modal.close>
                                         <flux:button variant="ghost">Cancel</flux:button>
                                     </flux:modal.close>
-                                    <flux:button type="submit" variant="danger" icon="trash"
-                                        wire:click="delete({{ $rec->id }})"/>
+                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
                                 </div>
                             </div>
                         </flux:modal>
@@ -191,12 +248,4 @@
             @endforeach
         </flux:table.rows>
     </flux:table>
-    <!-- Table End-->
-
-    <flux:modal name="add-emp-leave-request-logs" title="Add Leave Request Log" class="max-w-5xl">
-        @if($selectedId)
-            <livewire:hrms.leave.leave-meta.emp-leave-request-logs :leave-request-id="$selectedId"
-                                                        :wire:key="'add-emp-leave-request-logs-'.$selectedId"/>
-        @endif
-    </flux:modal>
 </div> 

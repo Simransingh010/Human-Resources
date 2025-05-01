@@ -1,10 +1,10 @@
 <div>
     <!-- Heading Start -->
-    <div class="flex justify-between">
+    <div class="flex justify-between mt-5">
         <flux:heading level="3" size="lg">Leave Request Logs</flux:heading>
         <flux:modal.trigger name="mdl-leave-request-log" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
-                Add Log
+                New
             </flux:button>
         </flux:modal.trigger>
     </div>

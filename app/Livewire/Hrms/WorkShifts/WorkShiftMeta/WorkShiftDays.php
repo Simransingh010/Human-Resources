@@ -17,7 +17,6 @@ class WorkShiftDays extends Component
     public $selectedDayId = null;
     public $sortBy = 'work_date';
     public $sortDirection = 'desc';
-    public $statuses;
     public $formData = [
         'id' => null,
         'work_shift_id' => '',
@@ -44,7 +43,6 @@ class WorkShiftDays extends Component
     public function mount()
     {
         $this->resetPage();
-        $this->refreshStatuses();
         $this->getWorkShiftsForSelect();
         $this->getDayStatusesForSelect();
     }
@@ -125,7 +123,6 @@ class WorkShiftDays extends Component
         }
 
         $this->resetForm();
-        $this->refreshStatuses();
         $this->modal('mdl-day')->close();
         Flux::toast(
             variant: 'success',

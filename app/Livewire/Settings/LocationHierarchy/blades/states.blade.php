@@ -1,4 +1,4 @@
-<div>
+<div xmlns:flux="http://www.w3.org/1999/html">
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
@@ -45,7 +45,7 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-state" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-state" @cancel="resetForm" class="max-w-none w-[448px]">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -61,15 +61,14 @@
                 <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
                     <div class="relative">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Country</label>
-                        <select
+                        <flux:select label="Select Country"
                             wire:model="formData.country_id"
-                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
                         >
                             <option value="">Select Country</option>
                             @foreach($listsForFields['countries'] ?? [] as $id => $name)
                                 <option value="{{ $id }}">{{ $name }}</option>
                             @endforeach
-                        </select>
+                        </flux:select>
                     </div>
                         <flux:input label="Name" wire:model="formData.name" placeholder="State Name"/>
                     <flux:input label="Code" wire:model="formData.code" placeholder="State Code"/>

@@ -214,7 +214,6 @@ class AttendanceController extends Controller
                     'longitude' => $request->longitude,
                 ]),
                 'source_ip_address' => $request->ip(),
-                'punch_details' => json_encode(['user_agent' => $request->userAgent()]),
                 'punch_type' => $request->punch_type,
                 'is_final' => $isFinal,
             ]);

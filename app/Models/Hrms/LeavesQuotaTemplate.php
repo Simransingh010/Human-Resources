@@ -24,7 +24,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $deleted_at
  * 
  * @property Firm $firm
- * @property Collection|EmpLeaveAllocation[] $emp_leave_allocations
  * @property Collection|LeavesQuotaTemplateSetup[] $leaves_quota_template_setups
  *
  * @package App\Models\Hrms
@@ -49,11 +48,6 @@ class LeavesQuotaTemplate extends Model
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
-	}
-
-	public function emp_leave_allocations()
-	{
-		return $this->hasMany(EmpLeaveAllocation::class);
 	}
 
 	public function leaves_quota_template_setups()

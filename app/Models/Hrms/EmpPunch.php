@@ -63,7 +63,8 @@ class EmpPunch extends Model implements HasMedia
         'punch_geo_location',
 		'punch_type',
 		'device_id',
-		'is_final'
+		'is_final',
+        'punch_details'
 	];
 
     protected function serializeDate(\DateTimeInterface $date)

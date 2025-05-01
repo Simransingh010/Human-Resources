@@ -156,7 +156,11 @@ class Actions extends LivewireComponent
             );
         }
     }
-
+    public function clearFilters()
+    {
+        $this->reset('filters');
+        $this->resetPage();
+    }
     public function delete($id)
     {
         try {

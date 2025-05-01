@@ -5,6 +5,7 @@ namespace App\Livewire\Saas\AppsMeta;
 use Livewire\Component;
 use App\Models\Saas\App;
 use App\Models\Saas\AppModule;
+use App\Models\Saas\Module;
 use Livewire\WithPagination;
 use Flux;
 
@@ -17,14 +18,13 @@ class AppsModuleSync extends Component
     public function mount($appId)
     {
         $this->app = App::findOrFail($appId);
-        $this->selectedModules = $this->app->app_modules()->select('app_modules.id')->pluck('id')->toArray();
+        $this->selectedModules = $this->app->modules()->pluck('modules.id')->toArray();
         $this->initListsForFields();
     }
 
     public function save()
     {
-        // Update existing modules to unset their app_id if they're not selected
-        $this->app->app_modules()->sync($this->selectedModules);;
+        $this->app->modules()->sync($this->selectedModules);
 
         Flux::modal('module-sync')->close();
 
@@ -38,7 +38,7 @@ class AppsModuleSync extends Component
     protected function initListsForFields(): void
     {
         // Get all modules that either belong to this app or don't belong to any app
-        $this->listsForFields['modulelist'] = AppModule::where('is_inactive', false)
+        $this->listsForFields['modulelist'] = Module::where('is_inactive', false)
             ->get()
             ->mapWithKeys(function ($module) {
                 return [
@@ -50,6 +50,6 @@ class AppsModuleSync extends Component
 
     public function render()
     {
-        return view('livewire.saas.apps-meta.apps-module-sync');
+        return view()->file(app_path('Livewire/Saas/AppsMeta/blades/apps-module-sync.blade.php'));
     }
 } 

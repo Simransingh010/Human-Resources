@@ -155,6 +155,18 @@ class WorkShifts extends Component
         $this->refreshStatuses();
     }
 
+    public function showWorkShiftDays($id)
+    {
+        $this->selectedShiftId = $id;
+        $this->modal('work-shift-days-modal')->show();
+    }
+
+    public function showEmpWorkShifts($id)
+    {
+        $this->selectedShiftId = $id;
+        $this->modal('emp-work-shifts-modal')->show();
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/WorkShifts/blades/work-shifts.blade.php'));

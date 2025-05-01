@@ -12,7 +12,7 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="flex flex-row gap-4 mb-4 items-end">
+    <div class="flex flex-row gap-4 mb-4">
         <flux:input
             label="Search by Name"
             wire:model.live="filters.search_name"
@@ -28,28 +28,53 @@
             wire:model.live="filters.search_type"
             placeholder="Search by type..."
         />
-    
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by Country</label>
+            <select
+                wire:model.live="filters.search_country"
+                wire:change="triggerFilterUpdate('countrychanged')"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+            >
+                <option value="">Select Country</option>
+                @foreach($filterLists['countrieslist'] ?? [] as $id => $name)
+                    <option value="{{ $id }}">{{ $name }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="relative w-48">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by State</label>
+            <select
+                wire:model.live="filters.search_state"
+                wire:change="triggerFilterUpdate('statechanged')"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+            >
+                <option value="">Select State</option>
+                @foreach($filterLists['states'] ?? [] as $id => $name)
+                    <option value="{{ $id }}">{{ $name }}</option>
+                @endforeach
+            </select>
+        </div>
         <div class="relative w-48">
             <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by District</label>
             <select
-                wire:model.live="filters.search_district" 
-                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 p-2 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                wire:model.live="filters.search_district"
+                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select District</option>
-                @foreach($listsForFields['districts'] ?? [] as $id => $name)
+                @foreach($filterLists['districts'] ?? [] as $id => $name)
                     <option value="{{ $id }}">{{ $name }}</option>
                 @endforeach
             </select>
         </div>
         <div class="min-w-[100px] flex justify-end">
-            <flux:button variant="filled" class="px-2" tooltip="Cancel Filter" icon="x-circle"
+            <flux:button variant="filled" class="px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
                          wire:click="clearFilters"></flux:button>
         </div>
     </div>
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-subdivision" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-subdivision" @cancel="resetForm" class="max-w-none">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -62,22 +87,35 @@
                 </div>
 
                 <!-- Grid layout for form fields -->
-               
-                    <div class="relative">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">District</label>
-                        <select
-                            wire:model="formData.district_id"
-                            class="block w-full rounded-md border-gray-300 p-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-                        >
-                            <option value="">Select District</option>
-                            @foreach($listsForFields['districts'] ?? [] as $id => $name)
-                                <option value="{{ $id }}">{{ $name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <flux:input label="Name" wire:model="formData.name" placeholder="Subdivision Name"/>
-                    <flux:input label="Code" wire:model="formData.code" placeholder="Subdivision Code"/>
-                    <flux:input label="Type" wire:model="formData.type" placeholder="Subdivision Type"/>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <flux:select label="Select Country"
+                                 wire:model.live.debounce.0ms="formData.country_id"
+                                 wire:change="triggerUpdate('countrychanged')">
+                        <option value="">Select Country</option>
+                        @foreach(($isEditing ? $editFormLists['countrieslist'] : $createFormLists['countrieslist']) ?? [] as $id => $name)
+                            <option value="{{ $id }}">{{ $name }}</option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select label="Select State"
+                                 wire:model.live.debounce.0ms="formData.state_id"
+                                 wire:change="triggerUpdate('statechanged')"
+                                 searchable>
+                        <option value="">Select State</option>
+                        @foreach(($isEditing ? $editFormLists['states'] : $createFormLists['states']) ?? [] as $id => $name)
+                            <option value="{{ $id }}">{{ $name }}</option>
+                        @endforeach
+                    </flux:select>
+                    <flux:select label="Select District"
+                                 wire:model.live.debounce.0ms="formData.district_id"
+                                 searchable>
+                        <option value="">Select District</option>
+                        @foreach(($isEditing ? $editFormLists['districts'] : $createFormLists['districts']) ?? [] as $id => $name)
+                            <option value="{{ $id }}">{{ $name }}</option>
+                        @endforeach
+                    </flux:select>
+                    <flux:input label="Name" wire:model.live="formData.name" placeholder="Subdivision Name"/>
+                    <flux:input label="Code" wire:model.live="formData.code" placeholder="Subdivision Code"/>
+                    <flux:input label="Type" wire:model.live="formData.type" placeholder="Subdivision Type"/>
                     <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
                 </div>
 
@@ -87,6 +125,7 @@
                         Save
                     </flux:button>
                 </div>
+            </div>
         </form>
     </flux:modal>
     <!-- Modal End -->

@@ -182,7 +182,7 @@
     <!-- Modal End -->
 
     <!-- Table Start-->
-    <flux:table :="$this->list" class="w-full">
+    <flux:table :paginate="$this->list" class="w-full">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
             <flux:table.column>Name</flux:table.column>
             <flux:table.column>Code</flux:table.column>

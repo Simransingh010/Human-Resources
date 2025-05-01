@@ -10,7 +10,9 @@ class MenuService
 {
     public static function getApps()
     {
-        return App::where('is_inactive','0')->get(['id', 'name', 'wire','icon'])
+        return App::where('is_inactive','0')
+            ->orderBy('order') // Add ordering by the 'order' column
+            ->get(['id', 'name', 'wire','icon'])
             ->map(function ($app) {
                 return [
                     'id' => $app->id,
@@ -27,6 +29,7 @@ class MenuService
         return Module::whereHas('apps', function ($query) use ($appId) {
             $query->where('app_id', $appId);
         })
+            ->orderBy('order') // Add ordering by the 'order' column
             ->get(['id', 'name', 'wire','icon'])
             ->map(function ($module) {
                 return [
@@ -44,6 +47,7 @@ class MenuService
         return Component::whereHas('modules', function ($query) use ($moduleId) {
             $query->where('module_id', $moduleId);
         })
+            ->orderBy('order') // Add ordering by the 'order' column
             ->get(['name', 'wire','icon'])
             ->map(function ($component) {
                 return [

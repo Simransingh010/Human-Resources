@@ -207,4 +207,8 @@ class EmpAttendances extends Component
         $this->selectedId = $id;
         $this->modal('view-punches')->show();
     }
+    public function render()
+    {
+        return view()->file(app_path('Livewire/Hrms/blades/emp-attendances.blade.php'));
+    }
 }

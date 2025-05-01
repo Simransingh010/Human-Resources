@@ -36,7 +36,7 @@
                 class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select Country</option>
-                @foreach($listsForFields['countrieslist'] ?? [] as $id => $name)
+                @foreach($filterLists['countrieslist'] ?? [] as $id => $name)
                     <option value="{{ $id }}">{{ $name }}</option>
                 @endforeach
             </select>
@@ -49,7 +49,7 @@
                 class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select State</option>
-                @foreach($listsForFields['states'] ?? [] as $id => $name)
+                @foreach($filterLists['states'] ?? [] as $id => $name)
                     <option value="{{ $id }}">{{ $name }}</option>
                 @endforeach
             </select>
@@ -62,7 +62,7 @@
                 class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select District</option>
-                @foreach($listsForFields['districts'] ?? [] as $id => $name)
+                @foreach($filterLists['districts'] ?? [] as $id => $name)
                     <option value="{{ $id }}">{{ $name }}</option>
                 @endforeach
             </select>
@@ -74,7 +74,7 @@
                 class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
             >
                 <option value="">Select Subdivision</option>
-                @foreach($listsForFields['subdivisions'] ?? [] as $id => $name)
+                @foreach($filterLists['subdivisions'] ?? [] as $id => $name)
                     <option value="{{ $id }}">{{ $name }}</option>
                 @endforeach
             </select>
@@ -102,43 +102,43 @@
                 <!-- Grid layout for form fields -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <flux:select label="Select Country"
-                            wire:model.live="formData.country_id"
-                            wire:change="triggerUpdate('countrychanged')">
+                                 wire:model.live.debounce.0ms="formData.country_id"
+                                 wire:change="triggerUpdate('countrychanged')">
                         <option value="">Select Country</option>
-                        @foreach($listsForFields['countrieslist'] as $id => $name)
+                        @foreach(($isEditing ? $editFormLists['countrieslist'] : $createFormLists['countrieslist']) ?? [] as $id => $name)
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </flux:select>
                     <flux:select label="Select State"
-                            wire:model.live="formData.state_id"
-                            wire:change="triggerUpdate('statechanged')"
-                            searchable>
+                                 wire:model.live.debounce.0ms="formData.state_id"
+                                 wire:change="triggerUpdate('statechanged')"
+                                 searchable>
                         <option value="">Select State</option>
-                        @foreach($listsForFields['states'] ?? [] as $id => $name)
+                        @foreach(($isEditing ? $editFormLists['states'] : $createFormLists['states']) ?? [] as $id => $name)
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </flux:select>
                     <flux:select label="Select District"
-                            wire:model.live="formData.district_id"
-                            wire:change="triggerUpdate('districtchanged')"
-                            searchable>
+                                 wire:model.live.debounce.0ms="formData.district_id"
+                                 wire:change="triggerUpdate('districtchanged')"
+                                 searchable>
                         <option value="">Select District</option>
-                        @foreach($listsForFields['districts'] ?? [] as $id => $name)
+                        @foreach(($isEditing ? $editFormLists['districts'] : $createFormLists['districts']) ?? [] as $id => $name)
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </flux:select>
                     <flux:select label="Select Subdivision"
-                            wire:model.live="formData.subdivision_id"
-                            searchable>
+                                 wire:model.live.debounce.0ms="formData.subdivision_id"
+                                 searchable>
                         <option value="">Select Subdivision</option>
-                        @foreach($listsForFields['subdivisions'] ?? [] as $id => $name)
+                        @foreach(($isEditing ? $editFormLists['subdivisions'] : $createFormLists['subdivisions']) ?? [] as $id => $name)
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </flux:select>
-                    <flux:input label="Name" wire:model="formData.name" placeholder="City/Village Name"/>
-                    <flux:input label="Code" wire:model="formData.code" placeholder="City/Village Code"/>
-                    <flux:input label="Type" wire:model="formData.type" placeholder="City/Village Type"/>
-                    <flux:switch wire:model.live="formData.is_inactive" class="mt-auto" label="Mark as Inactive"/>
+                    <flux:input label="Name" wire:model.live="formData.name" placeholder="City/Village Name"/>
+                    <flux:input label="Code" wire:model.live="formData.code" placeholder="City/Village Code"/>
+                    <flux:input label="Type" wire:model.live="formData.type" placeholder="City/Village Type"/>
+                    <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
                 </div>
 
                 <!-- Submit Button -->
@@ -178,17 +178,17 @@
                     <flux:table.cell class="table-cell-wrap">{{ $rec->district->state->country->name }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:switch
-                                wire:model="statuses.{{ $rec->id }}"
-                                wire:click="toggleStatus({{ $rec->id }})"
+                            wire:model="statuses.{{ $rec->id }}"
+                            wire:click="toggleStatus({{ $rec->id }})"
                         />
                     </flux:table.cell>
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
-                                    variant="primary"
-                                    size="sm"
-                                    icon="pencil"
-                                    wire:click="edit({{ $rec->id }})"
+                                variant="primary"
+                                size="sm"
+                                icon="pencil"
+                                wire:click="edit({{ $rec->id }})"
                             />
                             <flux:modal.trigger name="delete-{{ $rec->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
@@ -211,7 +211,7 @@
                                         <flux:button variant="ghost">Cancel</flux:button>
                                     </flux:modal.close>
                                     <flux:button type="submit" variant="danger" icon="trash"
-                                                 wire:click="delete({{ $rec->id }})"/>
+                                        wire:click="delete({{ $rec->id }})"/>
                                 </div>
                             </div>
                         </flux:modal>

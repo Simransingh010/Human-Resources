@@ -6,6 +6,8 @@
 
 namespace App\Models\Settings;
 
+use App\Models\Hrms\Employee;
+use App\Models\Hrms\EmployeeJobProfile;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -30,6 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Collection|Department[] $departments
  * @property Collection|Designation[] $designations
  * @property Collection|EmployeeJobProfile[] $employee_job_profiles
+ * @property Collection|Employee[] $employees
  *
  * @package App\Models\Settings
  */
@@ -78,5 +81,17 @@ class Department extends Model
 	public function employee_job_profiles()
 	{
 		return $this->hasMany(EmployeeJobProfile::class);
+	}
+
+	public function employees()
+	{
+		return $this->hasManyThrough(
+			Employee::class,
+			EmployeeJobProfile::class,
+			'department_id',
+			'id',
+			'id',
+			'employee_id'
+		);
 	}
 }

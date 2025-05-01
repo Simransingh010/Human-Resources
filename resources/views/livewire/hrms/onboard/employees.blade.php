@@ -145,18 +145,18 @@
 {{--                    <flux:table.cell>{{ $employee->created_at }}</flux:table.cell>--}}
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:dropdown>
-                                <flux:button icon="calendar-days" size="sm"></flux:button>
+{{--                            <flux:dropdown>--}}
+{{--                                <flux:button icon="calendar-days" size="sm"></flux:button>--}}
 
-                                <flux:menu>
-                                    <flux:modal.trigger wire:click="showmodal_leave_allocations({{ $employee->id }})">
-    <flux:menu.item icon="calendar-days" class="mt-0.5">Leave Allocations</flux:menu.item>
-</flux:modal.trigger>
-<flux:modal.trigger wire:click="showmodal_leave_requests({{ $employee->id }})">
-    <flux:menu.item icon="clock" class="mt-0.5">Leave Requests</flux:menu.item>
-</flux:modal.trigger>
-                                </flux:menu>
-                            </flux:dropdown>
+{{--                                <flux:menu>--}}
+{{--                                    <flux:modal.trigger wire:click="showmodal_leave_allocations({{ $employee->id }})">--}}
+{{--    <flux:menu.item icon="calendar-days" class="mt-0.5">Leave Allocations</flux:menu.item>--}}
+{{--</flux:modal.trigger>--}}
+{{--<flux:modal.trigger wire:click="showmodal_leave_requests({{ $employee->id }})">--}}
+{{--    <flux:menu.item icon="clock" class="mt-0.5">Leave Requests</flux:menu.item>--}}
+{{--</flux:modal.trigger>--}}
+{{--                                </flux:menu>--}}
+{{--                            </flux:dropdown>--}}
                             <flux:dropdown>
                                 <flux:button icon="ellipsis-vertical" size="sm"></flux:button>
 
@@ -279,17 +279,17 @@
         @endif
         
     </flux:modal>
-    <flux:modal name="add-leave-allocations" title="Leave Allocations" class="p-10 max-w-none">
-    @if ($selectedEmpId)
-        <livewire:hrms.attendance.emp-leave-allocations :employeeId="$selectedEmpId"
-                                                       :wire:key="'add-leave-allocations-'.$selectedEmpId"/>
-    @endif
-</flux:modal>
+{{--    <flux:modal name="add-leave-allocations" title="Leave Allocations" class="p-10 max-w-none">--}}
+{{--    @if ($selectedEmpId)--}}
+{{--        <livewire:hrms.attendance.emp-leave-allocations :employeeId="$selectedEmpId"--}}
+{{--                                                       :wire:key="'add-leave-allocations-'.$selectedEmpId"/>--}}
+{{--    @endif--}}
+{{--</flux:modal>--}}
 
-<flux:modal name="add-leave-requests" title="Leave Requests" class="p-10 max-w-none">
-    @if ($selectedEmpId)
-        <livewire:hrms.attendance.emp-leave-requests :employeeId="$selectedEmpId"
-                                                    :wire:key="'add-leave-requests-'.$selectedEmpId"/>
-    @endif
-</flux:modal>
+{{--<flux:modal name="add-leave-requests" title="Leave Requests" class="p-10 max-w-none">--}}
+{{--    @if ($selectedEmpId)--}}
+{{--        <livewire:hrms.attendance.emp-leave-requests :employeeId="$selectedEmpId"--}}
+{{--                                                    :wire:key="'add-leave-requests-'.$selectedEmpId"/>--}}
+{{--    @endif--}}
+{{--</flux:modal>--}}
 </div>

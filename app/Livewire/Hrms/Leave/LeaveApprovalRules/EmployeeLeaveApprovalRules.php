@@ -3,7 +3,7 @@
 namespace App\Livewire\Hrms\Leave\LeaveApprovalRules;
 
 use App\Models\Hrms\EmployeeLeaveApprovalRule;
-use App\Models\Hrms\LeaveApprovalRule as LeaveApprovalRuleModels;
+use App\Models\Hrms\LeaveApprovalRule;
 use App\Models\Hrms\Employee;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -11,7 +11,7 @@ use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Flux;
 
-class EmployeeLeaveApprovalRule extends Component
+class EmployeeLeaveApprovalRules extends Component
 {
     use WithPagination;
 
@@ -75,7 +75,8 @@ class EmployeeLeaveApprovalRule extends Component
             ->pluck('id', 'id');
 
         $this->listsForFields['employees_list'] = Employee::where('firm_id', session('firm_id'))
-            ->pluck('name', 'id');
+            ->selectRaw("CONCAT(COALESCE(fname, ''), ' ', COALESCE(mname, ''), ' ', COALESCE(lname, '')) as full_name, id")
+            ->pluck('full_name', 'id');
 
         $this->listsForFields['status_list'] = [
             '0' => 'Active',
@@ -93,7 +94,7 @@ class EmployeeLeaveApprovalRule extends Component
 
     public function toggleStatus($id)
     {
-        $rule = EmployeeLeaveApprovalRule::find($id);
+        $rule = EmployeeLeaveApprovalRules::find($id);
         $rule->is_inactive = !$rule->is_inactive;
         $rule->save();
 
@@ -163,11 +164,11 @@ class EmployeeLeaveApprovalRule extends Component
         $validatedData['formData']['firm_id'] = session('firm_id');
 
         if ($this->isEditing) {
-            $rule = EmployeeLeaveApprovalRule::findOrFail($this->formData['id']);
+            $rule = EmployeeLeaveApprovalRules::findOrFail($this->formData['id']);
             $rule->update($validatedData['formData']);
             $toastMsg = 'Employee rule updated successfully';
         } else {
-            EmployeeLeaveApprovalRule::create($validatedData['formData']);
+            EmployeeLeaveApprovalRules::create($validatedData['formData']);
             $toastMsg = 'Employee rule added successfully';
         }
 
@@ -191,7 +192,7 @@ class EmployeeLeaveApprovalRule extends Component
     public function edit($id)
     {
         $this->isEditing = true;
-        $rule = EmployeeLeaveApprovalRule::findOrFail($id);
+        $rule = EmployeeLeaveApprovalRules::findOrFail($id);
         $this->formData = $rule->toArray();
         $this->modal('mdl-employee-rule')->show();
     }
@@ -199,7 +200,7 @@ class EmployeeLeaveApprovalRule extends Component
     public function delete($id)
     {
         try {
-            $rule = EmployeeLeaveApprovalRule::findOrFail($id);
+            $rule = EmployeeLeaveApprovalRules::findOrFail($id);
             $rule->delete();
 
             Flux::toast(
@@ -218,6 +219,6 @@ class EmployeeLeaveApprovalRule extends Component
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Leave/LeaveApprovalRules/blade/employee-leave-approval-rule.blade.php'));
+        return view()->file(app_path('Livewire/Hrms/Leave/LeaveApprovalRules/blade/employee-leave-approval-rules.blade.php'));
     }
 }

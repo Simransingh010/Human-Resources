@@ -235,7 +235,7 @@ class Sidebar extends Component
         $modules[1]->setRelation('app', $apps[1]);
         $modules[2]->setRelation('app', $apps[2]);
 
-        // Components
+        // Permissions
         $permissions = collect([
             new Permission([
                 'id' => 1,

@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class LeaveType
- *
+ * 
  * @property int $id
  * @property int $firm_id
  * @property string $leave_title
@@ -26,10 +26,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- *
+ * @property bool $is_inactive
+ * 
  * @property Firm $firm
- * @property Collection|EmpLeaveAllocation[] $emp_leave_allocations
+ * @property Collection|EmpLeaveBalance[] $emp_leave_balances
  * @property Collection|EmpLeaveRequest[] $emp_leave_requests
+ * @property Collection|LeaveApprovalRule[] $leave_approval_rules
  * @property Collection|LeavesQuotaTemplateSetup[] $leaves_quota_template_setups
  *
  * @package App\Models\Hrms
@@ -43,7 +45,8 @@ class LeaveType extends Model
 		'firm_id' => 'int',
 		'max_days' => 'int',
 		'carry_forward' => 'bool',
-		'encashable' => 'bool'
+		'encashable' => 'bool',
+		'is_inactive' => 'bool'
 	];
 
 	protected $fillable = [
@@ -55,33 +58,27 @@ class LeaveType extends Model
 		'max_days',
 		'carry_forward',
 		'encashable',
-        'is_inactive'
+		'is_inactive'
 	];
-
-
-	public const LEAVE_NATURE_SELECT = [
-		'paid' => 'Paid',
-		'unpaid' => 'Unpaid'
-	];
-
-	public function getLeavenatureLabelAttribute()
-	{
-		return static::LEAVE_NATURE_SELECT[$this->leave_nature] ?? null;
-	}
 
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
 	}
 
-	public function emp_leave_allocations()
+	public function emp_leave_balances()
 	{
-		return $this->hasMany(EmpLeaveAllocation::class);
+		return $this->hasMany(EmpLeaveBalance::class);
 	}
 
 	public function emp_leave_requests()
 	{
 		return $this->hasMany(EmpLeaveRequest::class);
+	}
+
+	public function leave_approval_rules()
+	{
+		return $this->hasMany(LeaveApprovalRule::class);
 	}
 
 	public function leaves_quota_template_setups()

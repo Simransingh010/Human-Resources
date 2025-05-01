@@ -93,6 +93,22 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
+                                wire:click="showWorkShiftDays({{ $rec->id }})"
+                                color="green"
+                                size="sm"
+                                tooltip="Manage Work Shift Days"
+                            >
+                                Work Shift Days
+                            </flux:button>
+                            <flux:button
+                                wire:click="showEmpWorkShifts({{ $rec->id }})"
+                                color="blue"
+                                size="sm"
+                                tooltip="Manage Employee Work Shifts"
+                            >
+                                Employee Shifts
+                            </flux:button>
+                            <flux:button
                                 variant="primary"
                                 size="sm"
                                 icon="pencil"
@@ -129,4 +145,22 @@
         </flux:table.rows>
     </flux:table>
     <!-- Table End-->
+
+    <!-- Work Shift Days Modal -->
+    <flux:modal name="work-shift-days-modal" title="Work Shift Days" class="max-w-5xl">
+        @if($selectedShiftId)
+            <livewire:hrms.work-shifts.work-shift-meta.work-shift-days 
+                :work-shift-id="$selectedShiftId"
+                :wire:key="'work-shift-days-'.$selectedShiftId"/>
+        @endif
+    </flux:modal>
+
+    <!-- Employee Work Shifts Modal -->
+    <flux:modal name="emp-work-shifts-modal" title="Employee Work Shifts" class="max-w-5xl">
+        @if($selectedShiftId)
+            <livewire:hrms.work-shifts.work-shift-meta.emp-work-shifts 
+                :work-shift-id="$selectedShiftId"
+                :wire:key="'emp-work-shifts-'.$selectedShiftId"/>
+        @endif
+    </flux:modal>
 </div> 

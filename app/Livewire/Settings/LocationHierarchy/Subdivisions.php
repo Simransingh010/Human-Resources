@@ -18,9 +18,11 @@ use Flux;
 class Subdivisions extends Component
 {
     use WithPagination;
-    
+
     public $selectedSubdivisionId = null;
-    public array $listsForFields = [];
+    public array $filterLists = [];
+    public array $createFormLists = [];
+    public array $editFormLists = [];
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
@@ -52,81 +54,141 @@ class Subdivisions extends Component
     {
         $this->resetPage();
         $this->refreshStatuses();
-        $this->getCountriesForSelect();
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-    }
-
-    private function getCountriesForSelect()
-    {
-        $this->listsForFields['countries'] = Country::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0)
-            ->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
-            ->toArray();
-    }
-
-    private function getStatesForSelect()
-    {
-        $countryId = $this->formData['country_id'] ?? $this->filters['search_country'] ?? null;
         
-        $query = State::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
+        // Initialize all list arrays with empty collections
+        $this->filterLists = [
+            'countrieslist' => collect(),
+            'states' => collect(),
+            'districts' => collect()
+        ];
+        
+        $this->createFormLists = [
+            'countrieslist' => collect(),
+            'states' => collect(),
+            'districts' => collect()
+        ];
+        
+        $this->editFormLists = [
+            'countrieslist' => collect(),
+            'states' => collect(),
+            'districts' => collect()
+        ];
+        
+        $this->initListsForFields();
+    }
+
+    public function triggerUpdate($selectchanged = null)
+    {
+        if ($selectchanged == 'countrychanged') {
+            $this->formData['state_id'] = '';
+            $this->formData['district_id'] = '';
+            $this->getStatesForForm();
+            if ($this->isEditing) {
+                $this->editFormLists['districts'] = collect();
+            } else {
+                $this->createFormLists['districts'] = collect();
+            }
+        } elseif ($selectchanged == 'statechanged') {
+            $this->formData['district_id'] = '';
+            $this->getDistrictsForForm();
+        }
+    }
+
+    public function triggerFilterUpdate($selectchanged = null)
+    {
+        if ($selectchanged == 'countrychanged') {
+            $this->filters['search_state'] = '';
+            $this->filters['search_district'] = '';
+            $this->getStatesForFilter();
+            $this->filterLists['districts'] = collect();
+        } elseif ($selectchanged == 'statechanged') {
+            $this->filters['search_district'] = '';
+            $this->getDistrictsForFilter();
+        }
+    }
+
+    protected function initListsForFields(): void
+    {
+        $countries = Country::where('firm_id', session('firm_id'))
+            ->pluck('name', 'id');
+
+        $this->filterLists['countrieslist'] = $countries;
+        $this->createFormLists['countrieslist'] = $countries;
+        $this->editFormLists['countrieslist'] = $countries;
+
+        // Initialize states and districts for filters if they are set
+        if ($this->filters['search_country']) {
+            $this->getStatesForFilter();
+        }
+        if ($this->filters['search_state']) {
+            $this->getDistrictsForFilter();
+        }
+
+        // Initialize states and districts for form if they are set
+        if ($this->formData['country_id']) {
+            $this->getStatesForForm();
+        }
+        if ($this->formData['state_id']) {
+            $this->getDistrictsForForm();
+        }
+    }
+
+    // Functions for Form Dropdowns
+    private function getStatesForForm()
+    {
+        $countryId = $this->formData['country_id'] ?? null;
+
         if ($countryId) {
-            $query->where('country_id', $countryId);
+            $states = State::where('firm_id', session('firm_id'))
+                ->where('country_id', $countryId)
+                ->pluck('name', 'id');
+
+            if ($this->isEditing) {
+                $this->editFormLists['states'] = $states;
+            } else {
+                $this->createFormLists['states'] = $states;
+            }
         }
-        
-        $this->listsForFields['states'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
-            ->toArray();
     }
 
-    private function getDistrictsForSelect()
+    private function getDistrictsForForm()
     {
-        $stateId = $this->formData['state_id'] ?? $this->filters['search_state'] ?? null;
-        
-        $query = District::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', 0);
-            
+        $stateId = $this->formData['state_id'] ?? null;
+
         if ($stateId) {
-            $query->where('state_id', $stateId);
+            $districts = District::where('firm_id', session('firm_id'))
+                ->where('state_id', $stateId)
+                ->pluck('name', 'id');
+
+            if ($this->isEditing) {
+                $this->editFormLists['districts'] = $districts;
+            } else {
+                $this->createFormLists['districts'] = $districts;
+            }
         }
-        
-        $this->listsForFields['districts'] = $query->pluck('name', 'id')
-            ->map(fn($name, $id) => (string)$name)
-            ->toArray();
     }
 
-    public function updatedFormDataCountryId()
+    // Functions for Filter Dropdowns
+    private function getStatesForFilter()
     {
-        $this->formData['state_id'] = '';
-        $this->formData['district_id'] = '';
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
+        $countryId = $this->filters['search_country'] ?? null;
+
+        $this->filterLists['states'] = $countryId
+            ? State::where('firm_id', session('firm_id'))
+                ->where('country_id', $countryId)
+                ->pluck('name', 'id')
+            : collect();
     }
 
-    public function updatedFormDataStateId()
+    private function getDistrictsForFilter()
     {
-        $this->formData['district_id'] = '';
-        $this->getDistrictsForSelect();
-    }
+        $stateId = $this->filters['search_state'] ?? null;
 
-    public function updatedFiltersSearchCountry()
-    {
-        $this->filters['search_state'] = '';
-        $this->filters['search_district'] = '';
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-    }
-
-    public function updatedFiltersSearchState()
-    {
-        $this->filters['search_district'] = '';
-        $this->getDistrictsForSelect();
+        $this->filterLists['districts'] = $stateId
+            ? District::where('firm_id', session('firm_id'))
+                ->where('state_id', $stateId)
+                ->pluck('name', 'id')
+            : collect();
     }
 
     #[Computed]
@@ -202,17 +264,40 @@ class Subdivisions extends Component
     {
         $this->reset('filters');
         $this->resetPage();
+        $this->filterLists['states'] = collect();
+        $this->filterLists['districts'] = collect();
     }
 
     public function edit($id)
     {
-        $subdivision = Subdivision::findOrFail($id);
-        $this->formData = $subdivision->toArray();
-        $this->formData['state_id'] = $subdivision->district->state_id;
-        $this->formData['country_id'] = $subdivision->district->state->country_id;
-        $this->getStatesForSelect();
-        $this->getDistrictsForSelect();
-        $this->isEditing = true;
+        $this->isEditing = true;  // Set editing mode first
+        
+        $subdivision = Subdivision::with(['district.state.country'])->findOrFail($id);
+
+        // Set form data
+        $this->formData = [
+            'id' => $subdivision->id,
+            'name' => $subdivision->name,
+            'code' => $subdivision->code,
+            'type' => $subdivision->type,
+            'district_id' => $subdivision->district_id,
+            'state_id' => $subdivision->district->state_id,
+            'country_id' => $subdivision->district->state->country_id,
+            'is_inactive' => $subdivision->is_inactive
+        ];
+
+
+        $this->editFormLists['countrieslist'] = Country::where('firm_id', session('firm_id'))
+            ->pluck('name', 'id');
+
+        $this->editFormLists['states'] = State::where('firm_id', session('firm_id'))
+            ->where('country_id', $this->formData['country_id'])
+            ->pluck('name', 'id');
+
+        $this->editFormLists['districts'] = District::where('firm_id', session('firm_id'))
+            ->where('state_id', $this->formData['state_id'])
+            ->pluck('name', 'id');
+
         $this->modal('mdl-subdivision')->show();
     }
 
@@ -220,8 +305,8 @@ class Subdivisions extends Component
     {
         // Check if subdivision has related records
         $subdivision = Subdivision::findOrFail($id);
-        if ($subdivision->cities_or_villages()->count() > 0 || 
-            $subdivision->employee_addresses()->count() > 0 || 
+        if ($subdivision->cities_or_villages()->count() > 0 ||
+            $subdivision->employee_addresses()->count() > 0 ||
             $subdivision->joblocations()->count() > 0) {
             Flux::toast(
                 variant: 'error',
@@ -244,6 +329,8 @@ class Subdivisions extends Component
         $this->reset(['formData']);
         $this->formData['is_inactive'] = 0;
         $this->isEditing = false;
+        $this->createFormLists['states'] = collect();
+        $this->createFormLists['districts'] = collect();
     }
 
     public function refreshStatuses()

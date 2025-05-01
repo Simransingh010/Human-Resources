@@ -13,6 +13,7 @@ use App\Models\Saas\Panel;
 use App\Models\Hrms\Employee;
 use App\Models\Saas\PermissionGroup;
 use App\Models\Saas\Permission;
+use App\Models\Saas\Role;
 
 
 class User extends Authenticatable
@@ -79,6 +80,7 @@ class User extends Authenticatable
         return $this->belongsToMany(Firm::class, 'firm_user')->withPivot('is_default');
     }
 
+
     public function employee()
     {
         return $this->hasOne(Employee::class, 'user_id');
@@ -96,5 +98,10 @@ class User extends Authenticatable
         return $this->belongsToMany(Permission::class, 'user_permission')
             ->withPivot('firm_id')
             ->withTimestamps();
+    }
+
+    public function roles()
+    {
+        return $this->belongsToMany(Role::class, 'role_user');
     }
 }

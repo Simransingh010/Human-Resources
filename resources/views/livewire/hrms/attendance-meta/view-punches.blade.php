@@ -88,15 +88,6 @@
                                                     </div>
                                                 </div>
                                             </div>
-                                            @if(isset($punch['punch_geo_location']['latitude']) && isset($punch['punch_geo_location']['longitude']))
-                                                <a variant="solid" color="zinc"
-                                                    href="https://www.openstreetmap.org/?mlat={{ $punch['punch_geo_location']['latitude'] }}&mlon={{ $punch['punch_geo_location']['longitude'] }}&zoom=15"
-                                                    target="_blank"
-                                                    class="inline-flex items-center"
-                                                >
-                                                    <flux:icon name="arrows-pointing-out" class=""/>
-                                                </a>
-                                            @endif
                                         </div>
 
                                         @if(isset($punch['punch_geo_location']['latitude']) && isset($punch['punch_geo_location']['longitude']))
@@ -110,18 +101,6 @@
                                                         allowfullscreen
                                                 ></iframe>
                                             </div>
-{{--                                            <div class="relative w-full h-48 rounded-lg overflow-hidden border border-gray-200">--}}
-{{--                                                <iframe--}}
-{{--                                                    width="100%"--}}
-{{--                                                    height="100%"--}}
-{{--                                                    frameborder="0"--}}
-{{--                                                    scrolling="no"--}}
-{{--                                                    marginheight="0"--}}
-{{--                                                    marginwidth="0"--}}
-{{--                                                    src="https://www.openstreetmap.org/export/embed.html?bbox={{ $punch['punch_geo_location']['longitude']-0.002 }},{{ $punch['punch_geo_location']['latitude']-0.002 }},{{ $punch['punch_geo_location']['longitude']+0.002 }},{{ $punch['punch_geo_location']['latitude']+0.002 }}&layer=mapnik&marker={{ $punch['punch_geo_location']['latitude'] }},{{ $punch['punch_geo_location']['longitude'] }}"--}}
-{{--                                                    style="border: 1px solid #ddd"--}}
-{{--                                                ></iframe>--}}
-{{--                                            </div>--}}
                                         @endif
                                     </div>
                                 @endif

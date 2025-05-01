@@ -43,7 +43,7 @@ class PermissionSync extends Component
         Flux::toast(
             variant: 'success',
             heading: 'Changes saved.',
-            text: 'Components updated successfully!',
+            text: 'Permissions updated successfully!',
         );
     }
     protected function initListsForFields(): void

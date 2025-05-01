@@ -38,7 +38,8 @@ class MenuCoordinator
             [ 'name' => 'Panels', 'wire' => 'saas.panels', 'icon'=> 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png' ],
             [ 'name' => 'Apps', 'wire' => 'saas.apps', 'icon'=> '' ],
             [ 'name' => 'Modules', 'wire' => 'saas.modules', 'icon'=> '' ],
-            [ 'name' => 'Components', 'wire' => 'saas.permissions', 'icon'=> '' ],
+            [ 'name' => 'Components', 'wire' => 'saas.components', 'icon'=> '' ],
+            [ 'name' => 'Actions', 'wire' => 'saas.actions', 'icon'=> '' ],
         ],
     ];
 

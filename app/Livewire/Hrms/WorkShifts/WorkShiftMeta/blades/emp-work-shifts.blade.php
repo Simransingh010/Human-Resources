@@ -52,7 +52,7 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-emp-shift" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-emp-shift" @cancel="resetForm"  class="max-w-none" >
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>

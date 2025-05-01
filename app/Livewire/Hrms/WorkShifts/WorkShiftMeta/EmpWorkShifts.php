@@ -9,6 +9,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Carbon\Carbon;
 use Flux;
+use Illuminate\Support\Str;
 
 class EmpWorkShifts extends Component
 {
@@ -56,7 +57,11 @@ class EmpWorkShifts extends Component
     {
         $this->listsForFields['employees'] = Employee::where('firm_id', session('firm_id'))
             ->where('is_inactive', 0)
-            ->pluck('full_name', 'id')
+            ->get()
+            ->mapWithKeys(function ($employee) {
+                $name = trim(implode(' ', array_filter([$employee->fname, $employee->mname, $employee->lname])));
+                return [$employee->id => $name];
+            })
             ->toArray();
     }
 
@@ -72,7 +77,12 @@ class EmpWorkShifts extends Component
             })
             ->when($this->filters['search_employee'], function($query) {
                 $query->whereHas('employee', function($q) {
-                    $q->where('full_name', 'like', '%' . $this->filters['search_employee'] . '%');
+                    $search = $this->filters['search_employee'];
+                    $q->where(function($q) use ($search) {
+                        $q->where('fname', 'like', '%' . $search . '%')
+                          ->orWhere('mname', 'like', '%' . $search . '%')
+                          ->orWhere('lname', 'like', '%' . $search . '%');
+                    });
                 });
             })
             ->when($this->filters['search_date'], function($query) {

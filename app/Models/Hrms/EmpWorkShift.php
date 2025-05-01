@@ -36,7 +36,7 @@ class EmpWorkShift extends Model
 
 	protected $casts = [
 		'firm_id' => 'int',
-		'work_shift_id' => 'in  t',
+		'work_shift_id' => 'int',
 		'employee_id' => 'int',
 		'start_date' => 'datetime',
 		'end_date' => 'datetime'

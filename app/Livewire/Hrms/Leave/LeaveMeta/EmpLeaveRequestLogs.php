@@ -21,6 +21,7 @@ class EmpLeaveRequestLogs extends Component
     public $sortDirection = 'desc';
     public $isEditing = false;
     public $leaveRequestId;
+    public $actionByNames = [];
 
     public $formData = [
         'id' => null,
@@ -54,6 +55,7 @@ class EmpLeaveRequestLogs extends Component
     {
         $this->leaveRequestId = $leaveRequestId;
         $this->initListsForFields();
+        $this->loadActionByNames();
         $this->resetPage();
     }
 
@@ -64,6 +66,29 @@ class EmpLeaveRequestLogs extends Component
         $this->listsForFields['leave_types'] = LeaveType::where('firm_id', session('firm_id'))
             ->pluck('leave_title', 'id');
         $this->listsForFields['statuses'] = EmpLeaveRequest::STATUS_SELECT;
+    }
+
+    protected function loadActionByNames(): void
+    {
+        // Get all unique action_by IDs from logs
+        $actionByIds = EmpLeaveRequestLog::where('emp_leave_request_id', $this->leaveRequestId)
+            ->whereNotNull('action_by')
+            ->pluck('action_by')
+            ->unique()
+            ->values()
+            ->toArray();
+
+        if (!empty($actionByIds)) {
+            // Get employee names for these IDs
+            $employees = Employee::whereIn('id', $actionByIds)
+                ->select('id', 'fname', 'lname')
+                ->get();
+
+            // Create array with ID as key and full name as value
+            foreach ($employees as $employee) {
+                $this->actionByNames[$employee->id] = $employee->fname . ' ' . $employee->lname;
+            }
+        }
     }
 
     public function resetForm()
@@ -93,6 +118,7 @@ class EmpLeaveRequestLogs extends Component
 
         $this->resetForm();
         $this->modal('mdl-leave-request-log')->close();
+        $this->loadActionByNames();
         Flux::toast(
             heading: 'Changes saved.',
             text: 'Leave request logs have been updated.',
@@ -143,7 +169,6 @@ class EmpLeaveRequestLogs extends Component
     public function list()
     {
         return EmpLeaveRequestLog::query()
-            ->with(['action_by_user'])
             ->where('emp_leave_request_id', $this->leaveRequestId)
             ->where('firm_id', Session::get('firm_id'))
             ->orderBy($this->sortBy, $this->sortDirection)

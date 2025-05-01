@@ -30,7 +30,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Employee $employee
  * @property Firm $firm
  * @property LeaveType $leave_type
- * @property Collection|EmpLeaveRequestLog[] $emp_leave_request_logs
+ * @property Collection|EmpLeaveRequestApproval[] $emp_leave_request_approvals
+ * @property Collection|LeaveRequestEvent[] $leave_request_events
  *
  * @package App\Models\Hrms
  */
@@ -48,6 +49,24 @@ class EmpLeaveRequest extends Model
 		'apply_days' => 'int'
 	];
 
+    public const STATUS_SELECT = [
+        'applied' => 'Applied',
+        'reviewed' => 'Reviewed',
+        'approved' => 'Approved',
+        'approved_further' => 'Approved & Sent for Further Approval',
+        'partially_approved' => 'Partially Approved',
+        'rejected' => 'Rejected',
+        'cancelled_employee' => 'Cancelled by Employee',
+        'cancelled_hr' => 'Cancelled by HR/Admin',
+        'modified' => 'Modified',
+        'escalated' => 'Escalated',
+        'delegated' => 'Delegated',
+        'hold' => 'Hold',
+        'expired' => 'Expired',
+        'withdrawn' => 'Withdrawn',
+        'auto_approved' => 'Auto-Approved'
+    ];
+
 	protected $fillable = [
 		'firm_id',
 		'employee_id',
@@ -58,29 +77,6 @@ class EmpLeaveRequest extends Model
 		'reason',
 		'status'
 	];
-
-	public const STATUS_SELECT = [
-		'applied' => 'Applied',
-		'reviewed' => 'Reviewed',
-		'approved' => 'Approved',
-		'approved_further' => 'Approved & Sent for Further Approval',
-		'partially_approved' => 'Partially Approved',
-		'rejected' => 'Rejected',
-		'cancelled_employee' => 'Cancelled by Employee',
-		'cancelled_hr' => 'Cancelled by HR/Admin',
-		'modified' => 'Modified',
-		'escalated' => 'Escalated',
-		'delegated' => 'Delegated',
-		'hold' => 'Hold',
-		'expired' => 'Expired',
-		'withdrawn' => 'Withdrawn',
-		'auto_approved' => 'Auto-Approved'
-	];
-
-	public function getStatusLabelAttribute()
-	{
-		return static::STATUS_SELECT[$this->status] ?? null;
-	}
 
 	public function employee()
 	{
@@ -97,8 +93,13 @@ class EmpLeaveRequest extends Model
 		return $this->belongsTo(LeaveType::class);
 	}
 
-	public function emp_leave_request_logs()
+	public function emp_leave_request_approvals()
 	{
-		return $this->hasMany(EmpLeaveRequestLog::class);
+		return $this->hasMany(EmpLeaveRequestApproval::class);
+	}
+
+	public function leave_request_events()
+	{
+		return $this->hasMany(LeaveRequestEvent::class);
 	}
 }

@@ -8,24 +8,35 @@
             </flux:button>
         </flux:modal.trigger>
     </div>
-    <flux:separator class="mt-2 mb-2" />
+    <flux:separator class="mt-2 mb-2"/>
     <!-- Heading End -->
 
     <!-- Filters Start -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <flux:input
-            label="Search by Name"
-            wire:model.live="filters.search_name"
-            placeholder="Search by name..."
+                label="Search by Name"
+                wire:model.live="filters.search_name"
+                placeholder="Search by name..."
         />
         <flux:input
-            label="Search by Code"
-            wire:model.live="filters.search_code"
-            placeholder="Search by code..."
+                label="Search by Code"
+                wire:model.live="filters.search_code"
+                placeholder="Search by code..."
         />
-        <div class="min-w-[100px] flex justify-end">
-            <flux:button variant="filled" class=" px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
-                         wire:click="clearFilters()"></flux:button>
+        <div class="flex justify-between">
+            <flux:select searchable
+                    label="Filter by Component"
+                    wire:model.live="filters.search_component_id"
+            >
+                <option value="">All Components</option>
+                @foreach($this->listsForFields['components'] as $id => $name)
+                    <option value="{{ $id }}">{{ $name }}</option>
+                @endforeach
+            </flux:select>
+            <div class="min-w-[100px] flex justify-end">
+                <flux:button variant="filled" class=" px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
+                             wire:click="clearFilters()"></flux:button>
+            </div>
         </div>
     </div>
     <!-- Filters End -->

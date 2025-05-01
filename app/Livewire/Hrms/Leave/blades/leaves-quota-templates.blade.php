@@ -1,4 +1,4 @@
-<div>
+<div class="space-y-6">
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
@@ -12,37 +12,93 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="grid lg:grid-cols-4 gap-4 mb-4">
-        <flux:input
-            label="Search by Name"
-            wire:model.live="filters.search_name"
-            placeholder="Search by name..."
-        />
-        <flux:input
-            label="Search by Description"
-            wire:model.live="filters.search_desc"
-            placeholder="Search by description..."
-        />
-        <div class="relative w-48">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 py-0.5 mb-1">Filter by Status</label>
-            <select
-                wire:model.live="filters.search_status"
-                class="block w-full rounded-md border-gray-300 px-2 py-2 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
-            >
-                <option value="">All Status</option>
-                <option value="0">Active</option>
-                <option value="1">Inactive</option>
-            </select>
-        </div>
-        <div class="min-w-[100px] flex justify-end">
-            <flux:button variant="filled" class="px-2 mt-6" tooltip="Cancel Filter" icon="x-circle"
-                         wire:click="clearFilters"></flux:button>
-        </div>
-    </div>
-    <!-- Filters End -->
+    <flux:card>
+        <flux:heading>Filters</flux:heading>
+        <div class="flex flex-wrap gap-4">
+            @foreach($filterFields as $field => $cfg)
+                @if(in_array($field, $visibleFilterFields))
+                    <div class="w-1/4">
+                        @switch($cfg['type'])
+                            @case('select')
+                                <flux:select
+                                    variant="listbox"
+                                    searchable
+                                    placeholder="All {{ $cfg['label'] }}"
+                                    wire:model="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                >
+                                    <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
+                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                @break
 
-    <!-- Modal Start -->
-    <flux:modal name="mdl-quota-template" @cancel="resetForm" class="max-w-none">
+                            @default
+                                <flux:input
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                        @endswitch
+                    </div>
+                @endif
+            @endforeach
+
+            <flux:button.group>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
+                <flux:modal.trigger name="mdl-show-hide-filters">
+                    <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="mdl-show-hide-columns">
+                    <flux:button variant="outline" tooltip="Set Columns" icon="table-cells"></flux:button>
+                </flux:modal.trigger>
+            </flux:button.group>
+        </div>
+    </flux:card>
+
+    <!-- Filter Fields Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-filters" variant="flyout">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Filters</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($filterFields as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFilterFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleFilterColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Columns Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Columns</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Add/Edit Template Modal -->
+    <flux:modal name="mdl-quota-template" @cancel="resetForm">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -54,24 +110,37 @@
                     </flux:subheading>
                 </div>
 
-                <!-- Grid layout for form fields -->
                 <div class="grid grid-cols-1 gap-4">
-                    <flux:input label="Name" wire:model.live="formData.name" placeholder="Template Name"/>
-                    <div class="col-span-1">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                            Description
-                        </label>
-                        <textarea
-                            wire:model.live="formData.desc"
-                            rows="3"
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                            placeholder="Enter template description"
-                        ></textarea>
-                    </div>
-                    <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
+                    @foreach($fieldConfig as $field => $cfg)
+                        @if($field !== 'quota_setups_count')
+                            <div class="@if($cfg['type'] === 'textarea') col-span-1 @endif">
+                                @switch($cfg['type'])
+                                    @case('textarea')
+                                        <flux:textarea
+                                            label="{{ $cfg['label'] }}"
+                                            wire:model.live="formData.{{ $field }}"
+                                            rows="3"
+                                        />
+                                        @break
+
+                                    @case('switch')
+                                        <flux:switch
+                                            label="{{ $cfg['label'] }}"
+                                            wire:model.live="formData.{{ $field }}"
+                                        />
+                                        @break
+
+                                    @default
+                                        <flux:input
+                                            label="{{ $cfg['label'] }}"
+                                            wire:model.live="formData.{{ $field }}"
+                                        />
+                                @endswitch
+                            </div>
+                        @endif
+                    @endforeach
                 </div>
 
-                <!-- Submit Button -->
                 <div class="flex justify-end pt-4">
                     <flux:button type="submit" variant="primary">
                         Save
@@ -80,55 +149,65 @@
             </div>
         </form>
     </flux:modal>
-    <!-- Modal End -->
 
-    <!-- Table Start-->
-    <flux:table :paginate="$this->list" class="">
-        <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            <flux:table.column>Name</flux:table.column>
-            <flux:table.column>Description</flux:table.column>
-            <flux:table.column>Allocations</flux:table.column>
-            <flux:table.column>Status</flux:table.column>
+    <!-- Data Table -->
+    <flux:table :paginate="$this->list" class="w-full">
+        <flux:table.columns>
+            @foreach($fieldConfig as $field => $cfg)
+                @if(in_array($field, $visibleFields))
+                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
+                @endif
+            @endforeach
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach ($this->list as $rec)
-                <flux:table.row :key="$rec->id" class="border-b">
-                    <flux:table.cell>{{ $rec->name }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->desc ?? '-' }}</flux:table.cell>
-                    <flux:table.cell>
-                        <flux:badge size="sm" color="blue" inset="top bottom">
-                            {{ $rec->emp_leave_allocations_count ?? 0 }} Allocations
-                        </flux:badge>
-                    </flux:table.cell>
-                    <flux:table.cell>
-                        <flux:switch
-                            wire:model="statuses.{{ $rec->id }}"
-                            wire:click="toggleStatus({{ $rec->id }})"
-                        />
-                    </flux:table.cell>
+            @foreach($this->list as $item)
+                <flux:table.row :key="$item->id">
+                    @foreach($fieldConfig as $field => $cfg)
+                        @if(in_array($field, $visibleFields))
+                            <flux:table.cell>
+                                @switch($cfg['type'])
+                                    @case('switch')
+                                        <flux:switch
+                                            wire:model="statuses.{{ $item->id }}"
+                                            wire:click="toggleStatus({{ $item->id }})"
+                                        />
+                                        @break
+
+                                    @case('badge')
+                                        <flux:badge color="blue" inset="top bottom">
+                                            {{ $item->$field ?? 0 }} Quota Setups
+                                        </flux:badge>
+                                        @break
+
+                                    @default
+                                        {{ $item->$field }}
+                                @endswitch
+                            </flux:table.cell>
+                        @endif
+                    @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
                                 variant="primary"
                                 size="sm"
                                 icon="pencil"
-                                wire:click="edit({{ $rec->id }})"
+                                wire:click="edit({{ $item->id }})"
                             />
-                            <flux:modal.trigger name="delete-{{ $rec->id }}">
+                            <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>
                         </div>
 
-                        <!-- Delete Modal -->
-                        <flux:modal name="delete-{{ $rec->id }}" class="min-w-[22rem]">
+                        <!-- Delete Confirmation Modal -->
+                        <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
                             <div class="space-y-6">
                                 <div>
                                     <flux:heading size="lg">Delete Template?</flux:heading>
                                     <flux:text class="mt-2">
                                         <p>You're about to delete this leave quota template. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Templates with related allocations cannot be deleted.</p>
+                                        <p class="mt-2 text-red-500">Note: Templates with related quota setups cannot be deleted.</p>
                                     </flux:text>
                                 </div>
                                 <div class="flex gap-2">
@@ -136,8 +215,7 @@
                                     <flux:modal.close>
                                         <flux:button variant="ghost">Cancel</flux:button>
                                     </flux:modal.close>
-                                    <flux:button type="submit" variant="danger" icon="trash"
-                                        wire:click="delete({{ $rec->id }})"/>
+                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
                                 </div>
                             </div>
                         </flux:modal>
@@ -146,5 +224,4 @@
             @endforeach
         </flux:table.rows>
     </flux:table>
-    <!-- Table End-->
 </div> 

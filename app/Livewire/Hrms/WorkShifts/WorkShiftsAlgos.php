@@ -55,7 +55,6 @@ class WorkShiftsAlgos extends Component
         $this->getWorkShiftsForSelect();
         $this->getHolidayCalendarsForSelect();
         $this->getWorkBreaksForSelect();
-        $this->formData['work_breaks'] = []; // Initialize as empty array
     }
 
     private function getWorkShiftsForSelect()
@@ -78,7 +77,6 @@ class WorkShiftsAlgos extends Component
     {
         $this->listsForFields['work_breaks'] = WorkBreak::where('firm_id', session('firm_id'))
             ->where('is_inactive', 0)
-            ->orderBy('break_title')
             ->get()
             ->map(function($break) {
                 return [
@@ -176,8 +174,6 @@ class WorkShiftsAlgos extends Component
         $algo = WorkShiftsAlgo::findOrFail($id);
         $this->formData = array_merge($algo->toArray(), [
             'work_breaks' => json_decode($algo->work_breaks ?? '[]', true) ?? [],
-            'start_time' => $algo->start_time ? Carbon::parse($algo->start_time)->format('H:i') : null,
-            'end_time' => $algo->end_time ? Carbon::parse($algo->end_time)->format('H:i') : null,
         ]);
         $this->isEditing = true;
         $this->modal('mdl-algo')->show();
@@ -200,7 +196,6 @@ class WorkShiftsAlgos extends Component
         $this->reset(['formData']);
         $this->formData['allow_wfh'] = false;
         $this->formData['is_inactive'] = false;
-        $this->formData['work_breaks'] = []; // Initialize as empty array
         $this->isEditing = false;
     }
 

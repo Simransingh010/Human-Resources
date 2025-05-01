@@ -210,7 +210,7 @@
         </flux:table.rows>
     </flux:table>
 
-    <flux:modal name="view-punches" title="Punch Records" class="max-w-5xl">
+    <flux:modal name="view-punches" title="Punch Records" class="max-w-6xl">
         @if($selectedId)
             <livewire:hrms.attendance-meta.view-punches :attendance-id="$selectedId"
                                                         :wire:key="'view-punches-'.$selectedId"/>

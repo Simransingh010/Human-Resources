@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Hrms\EmployeesMeta;
 
+use App\Models\Settings\Joblocation;
 use Livewire\Component;
 use App\Models\Hrms\EmployeeJobProfile;
 use App\Models\Hrms\Employee;
@@ -24,6 +25,7 @@ class EmployeeJobProfiles extends Component
         'designation_id' => '',
         'reporting_manager' => '',
         'employment_type' => '',
+        'joblocation_id' => '',
         'doe' => '', // date of exit
     ];
 
@@ -52,7 +54,7 @@ class EmployeeJobProfiles extends Component
     public function jobProfilesList()
     {
         return EmployeeJobProfile::query()
-            ->with(['department', 'designation', 'employment_type'])
+            ->with(['department', 'designation', 'employment_type', 'employee', 'manager', 'joblocation'])
             ->where('employee_id', $this->employee->id)
             ->where('firm_id', session('firm_id'))
             ->get();
@@ -78,6 +80,13 @@ class EmployeeJobProfiles extends Component
     public function employmentTypesList()
     {
         return EmploymentType::where('firm_id', session('firm_id'))
+            ->where('is_inactive', false)
+            ->get();
+    }
+    #[\Livewire\Attributes\Computed]
+    public function jobLocationsList()
+    {
+        return Joblocation::where('firm_id', session('firm_id'))
             ->where('is_inactive', false)
             ->get();
     }
@@ -113,12 +122,13 @@ class EmployeeJobProfiles extends Component
             'profileData.department_id' => 'nullable|exists:departments,id',
             'profileData.designation_id' => 'nullable|exists:designations,id',
             'profileData.reporting_manager' => 'nullable|exists:employees,id',
-            'profileData.employment_type' => 'nullable|exists:employment_types,id',
+            'profileData.employment_type_id' => 'nullable|exists:employment_types,id',
+            'profileData.joblocation_id' => 'nullable|exists:joblocations,id',
             'profileData.doe' => 'nullable|date|after:profileData.doh',
         ]);
 
         $validatedData['profileData']['employee_id'] = $this->employee->id;
-
+//        dd($validatedData['profileData']);
         if ($this->isEditing) {
             $profile = EmployeeJobProfile::findOrFail($this->profileData['id']);
             $profile->update($validatedData['profileData']);
@@ -162,20 +172,11 @@ class EmployeeJobProfiles extends Component
             'department_id' => '',
             'designation_id' => '',
             'reporting_manager' => '',
-            'employment_type' => '',
+            'employment_type_id' => '',
+            'joblocation_id' => '',
             'doe' => '',
         ];
         $this->isEditing = false;
     }
 
-//    public function render()
-//    {
-//        return view('livewire.hrms.employees-meta.employee-job-profiles', [
-//            'employees' => $this->employeesList,
-//            'departments' => $this->departmentsList,
-//            'designations' => $this->designationsList,
-//            'employment_types' => $this->employmentTypesList,
-//            'managers' => $this->managersList,
-//        ]);
-//    }
 }

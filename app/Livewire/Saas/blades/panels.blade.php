@@ -131,7 +131,8 @@
         @endif
     </flux:modal>
 
-    <flux:modal name="component-sync" title="Manage Components" class="p-10">
+{{--    <flux:modal name="component-sync" variant="flyout" title="Manage Components" class="p-10" class="min-h-[60vh] max-h-[90vh] overflow-y-auto">--}}
+    <flux:modal name="component-sync"  variant="flyout" class="max-w-5xl min-h-[70vh] max-h-[85vh] overflow-y-auto">
         @if($selectedPanelId)
             <livewire:saas.panel-meta.component-sync :panelId="$selectedPanelId"
                                                   :wire:key="'component-sync-'.$selectedPanelId"/>

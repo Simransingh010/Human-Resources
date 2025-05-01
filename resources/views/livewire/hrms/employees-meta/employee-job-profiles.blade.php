@@ -65,7 +65,7 @@
                         @endforeach
                     </flux:select>
 
-                    <flux:select label="Employment Type" wire:model="profileData.employment_type"
+                    <flux:select label="Employment Type" wire:model="profileData.employment_type_id"
                         placeholder="Select employment type">
                         <option value="">Select type</option>
                         @foreach($this->employmentTypesList as $type)
@@ -84,6 +84,16 @@
                         @foreach($this->managersList as $manager)
                             <option value="{{ $manager['id'] }}">
                                 {{ $manager['name'] }}
+                            </option>
+                        @endforeach
+                    </flux:select>
+
+                    <flux:select label="Job Location" wire:model="profileData.joblocation_id"
+                        placeholder="Select job location">
+                        <option value="">Select location</option>
+                        @foreach($this->jobLocationsList as $location)
+                            <option value="{{ $location->id }}">
+                                {{ $location->name }}
                             </option>
                         @endforeach
                     </flux:select>
@@ -110,6 +120,7 @@
             <flux:table.column>Designation</flux:table.column>
             <flux:table.column>Employment Type</flux:table.column>
             <flux:table.column>Manager</flux:table.column>
+            <flux:table.column>Job Location</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
@@ -134,6 +145,9 @@
                         @else
                             N/A
                         @endif
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        {{ $profile->joblocation->name ?? 'N/A' }}
                     </flux:table.cell>
                     <flux:table.cell>
                         <div class="flex justify-center space-x-2">

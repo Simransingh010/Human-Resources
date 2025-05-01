@@ -19,7 +19,35 @@ class EmpLeaveRequests extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $isEditing = false;
-    public $selectedId = null;
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees'],
+        'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types'],
+        'apply_from' => ['label' => 'Apply From', 'type' => 'date'],
+        'apply_to' => ['label' => 'Apply To', 'type' => 'date'],
+        'apply_days' => ['label' => 'Apply Days', 'type' => 'number'],
+        'reason' => ['label' => 'Reason', 'type' => 'text'],
+        'status' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'statuses'],
+
+    ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees'],
+        'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types'],
+        'apply_from' => ['label' => 'Apply From', 'type' => 'date'],
+        'apply_to' => ['label' => 'Apply To', 'type' => 'date'],
+        'status' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'statuses'],
+        'created_at' => ['label' => 'Created At', 'type' => 'date'],
+        'updated_at' => ['label' => 'Updated At', 'type' => 'date'],
+    ];
+
+    public array $listsForFields = [];
+    public array $filters = [];
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
+
     public $formData = [
         'id' => null,
         'firm_id' => null,
@@ -32,23 +60,14 @@ class EmpLeaveRequests extends Component
         'status' => '',
     ];
 
-    public $filters = [
-        'search' => '',
-        'employees' => [],
-        'leave_types' => [],
-        'status' => ''
-    ];
-
-    public $listsForFields = [];
-
     protected function rules()
     {
         return [
-            'formData.employee_id' => 'required|integer',
-            'formData.leave_type_id' => 'required|integer',
+            'formData.employee_id' => 'required|integer|exists:employees,id',
+            'formData.leave_type_id' => 'required|integer|exists:leave_types,id',
             'formData.apply_from' => 'required|date',
             'formData.apply_to' => 'required|date|after:formData.apply_from',
-            'formData.apply_days' => 'required|integer|min:1',
+            'formData.apply_days' => 'required|numeric|min:1',
             'formData.reason' => 'nullable|string',
             'formData.status' => 'required|string',
         ];
@@ -57,7 +76,13 @@ class EmpLeaveRequests extends Component
     public function mount()
     {
         $this->initListsForFields();
-        $this->resetPage();
+        
+        // Set default visible fields - excluding created_at and updated_at
+        $this->visibleFields = ['employee_id', 'leave_type_id', 'apply_from', 'apply_to', 'apply_days', 'status', 'reason'];
+        $this->visibleFilterFields = ['employee_id', 'leave_type_id', 'apply_from', 'apply_to', 'status'];
+        
+        // Initialize filters
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
     protected function initListsForFields(): void
@@ -69,83 +94,39 @@ class EmpLeaveRequests extends Component
         $this->listsForFields['statuses'] = EmpLeaveRequest::STATUS_SELECT;
     }
 
-    public function resetForm()
+    public function applyFilters()
     {
-        $this->reset(['formData']);
-        $this->formData['apply_days'] = 0;
-        $this->formData['employee_id'] = null;
-        $this->formData['leave_type_id'] = null;
-        $this->formData['apply_from'] = '';
-        $this->formData['apply_to'] = '';
-        $this->formData['reason'] = '';
-        $this->formData['status'] = '';
-        $this->isEditing = false;
-    }
-
-    public function store()
-    {
-        $validatedData = $this->validate($this->rules());
-
-        if ($this->isEditing) {
-            $request = EmpLeaveRequest::findOrFail($this->formData['id']);
-            $request->update($validatedData['formData']);
-            session()->flash('message', 'Leave request updated successfully.');
-        } else {
-            $validatedData['formData']['firm_id'] = session('firm_id');
-            EmpLeaveRequest::create($validatedData['formData']);
-            session()->flash('message', 'Leave request added successfully.');
-        }
-
-        $this->resetForm();
-        $this->modal('mdl-leave-request')->close();
-        Flux::toast(
-            heading: 'Changes saved.',
-            text: 'Leave requests have been updated.',
-        );
-    }
-
-    public function edit($id)
-    {
-        $this->isEditing = true;
-        $request = EmpLeaveRequest::findOrFail($id);
-        $this->formData = $request->toArray();
-        $this->formData['employee_id'] = $request->employee_id;
-        $this->formData['leave_type_id'] = $request->leave_type_id;
-        $this->formData['apply_from'] = $request->apply_from ? $request->apply_from->format('Y-m-d') : '';
-        $this->formData['apply_to'] = $request->apply_to ? $request->apply_to->format('Y-m-d') : '';
-        $this->formData['status'] = $request->status;
-        $this->modal('mdl-leave-request')->show();
-    }
-
-    public function delete($id)
-    {
-        try {
-            $request = EmpLeaveRequest::findOrFail($id);
-            $request->delete();
-
-            Flux::toast(
-                variant: 'success',
-                heading: 'Record Deleted.',
-                text: 'Leave request has been deleted successfully',
-            );
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to delete leave request: ' . $e->getMessage(),
-            );
-        }
+        $this->resetPage();
     }
 
     public function clearFilters()
     {
-        $this->reset('filters');
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
         $this->resetPage();
     }
 
-    public function applyFilters()
+    public function toggleColumn(string $field)
     {
-        $this->resetPage();
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
     }
 
     #[Computed]
@@ -153,36 +134,88 @@ class EmpLeaveRequests extends Component
     {
         return EmpLeaveRequest::query()
             ->with(['employee', 'leave_type'])
-            ->when($this->filters['search'], function($query) {
-                $query->where(function($q) {
-                    $search = '%' . $this->filters['search'] . '%';
-                    $q->whereHas('employee', function($q) use ($search) {
-                        $q->where('fname', 'like', $search)
-                            ->orWhere('lname', 'like', $search);
-                    })
-                    ->orWhereHas('leave_type', function($q) use ($search) {
-                        $q->where('leave_title', 'like', $search);
-                    });
-                });
-            })
-            ->when(!empty($this->filters['employees']), function($query) {
-                $query->whereIn('employee_id', $this->filters['employees']);
-            })
-            ->when(!empty($this->filters['leave_types']), function($query) {
-                $query->whereIn('leave_type_id', $this->filters['leave_types']);
-            })
-            ->when($this->filters['status'], function($query) {
-                $query->where('status', $this->filters['status']);
-            })
             ->where('firm_id', Session::get('firm_id'))
+            ->when($this->filters['employee_id'], fn($query, $value) => 
+                $query->where('employee_id', $value))
+            ->when($this->filters['leave_type_id'], fn($query, $value) => 
+                $query->where('leave_type_id', $value))
+            ->when($this->filters['apply_from'], fn($query, $value) => 
+                $query->where('apply_from', '>=', $value))
+            ->when($this->filters['apply_to'], fn($query, $value) => 
+                $query->where('apply_to', '<=', $value))
+            ->when($this->filters['status'], fn($query, $value) => 
+                $query->where('status', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
     }
-    public function showRequestLogs($id)
+
+    public function store()
     {
-        $this->selectedId = $id;
-        $this->modal('add-emp-leave-request-logs')->show();
+        $validatedData = $this->validate($this->rules());
+
+        $validatedData['formData'] = collect($validatedData['formData'])
+            ->map(fn($val) => $val === '' ? null : $val)
+            ->toArray();
+
+        $validatedData['formData']['firm_id'] = session('firm_id');
+
+        if ($this->isEditing) {
+            $leaveRequest = EmpLeaveRequest::findOrFail($this->formData['id']);
+            $leaveRequest->update($validatedData['formData']);
+            $toastMsg = 'Leave request updated successfully';
+        } else {
+            EmpLeaveRequest::create($validatedData['formData']);
+            $toastMsg = 'Leave request added successfully';
+        }
+
+        $this->resetForm();
+        $this->modal('mdl-leave-request')->close();
+        Flux::toast(
+            variant: 'success',
+            heading: 'Changes saved.',
+            text: $toastMsg,
+        );
     }
+
+    public function resetForm()
+    {
+        $this->reset(['formData']);
+        $this->formData['apply_days'] = 0;
+        $this->isEditing = false;
+    }
+
+    public function edit($id)
+    {
+        $this->isEditing = true;
+        $leaveRequest = EmpLeaveRequest::findOrFail($id);
+        $this->formData = $leaveRequest->toArray();
+        $this->formData['apply_from'] = $leaveRequest->apply_from ? $leaveRequest->apply_from->format('Y-m-d') : '';
+        $this->formData['apply_to'] = $leaveRequest->apply_to ? $leaveRequest->apply_to->format('Y-m-d') : '';
+        $this->modal('mdl-leave-request')->show();
+    }
+
+    public function delete($id)
+    {
+        // Check if leave request has related records
+        $leaveRequest = EmpLeaveRequest::findOrFail($id);
+        if ($leaveRequest->emp_leave_request_approvals()->count() > 0 || 
+            $leaveRequest->leave_request_events()->count() > 0) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Cannot Delete',
+                text: 'This leave request has related records and cannot be deleted.',
+            );
+            return;
+        }
+
+        $leaveRequest->delete();
+        Flux::toast(
+            variant: 'success',
+            heading: 'Record Deleted.',
+            text: 'Leave request has been deleted successfully',
+        );
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Leave/blades/emp-leave-requests.blade.php'));

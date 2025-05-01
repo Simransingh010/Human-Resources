@@ -19,7 +19,31 @@ class LeavesQuotaTemplatesSetups extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $isEditing = false;
-    public $templateId;
+    public $statuses = [];
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'leaves_quota_template_id' => ['label' => 'Template', 'type' => 'select', 'listKey' => 'templates_list'],
+        'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
+        'days_assigned' => ['label' => 'Days Assigned', 'type' => 'number'],
+        'alloc_period_unit' => ['label' => 'Allocation Period Unit', 'type' => 'select', 'listKey' => 'period_units_list'],
+        'alloc_period_value' => ['label' => 'Allocation Period Value', 'type' => 'number'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
+    ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'leaves_quota_template_id' => ['label' => 'Template', 'type' => 'select', 'listKey' => 'templates_list'],
+        'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
+        'days_assigned' => ['label' => 'Days Assigned', 'type' => 'number'],
+        'alloc_period_unit' => ['label' => 'Allocation Period Unit', 'type' => 'select', 'listKey' => 'period_units_list'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status_list'],
+    ];
+
+    public array $listsForFields = [];
+    public array $filters = [];
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
 
     public $formData = [
         'id' => null,
@@ -29,28 +53,128 @@ class LeavesQuotaTemplatesSetups extends Component
         'days_assigned' => 0,
         'alloc_period_unit' => '',
         'alloc_period_value' => null,
-    ];
-
-    public $filters = [
-        'search_template' => '',
-        'search_leave_type' => '',
+        'is_inactive' => false,
     ];
 
     protected $rules = [
         'formData.leaves_quota_template_id' => 'required|exists:leaves_quota_templates,id',
         'formData.leave_type_id' => 'required|exists:leave_types,id',
         'formData.days_assigned' => 'required|integer|min:0',
-        'formData.alloc_period_unit' => 'required|integer|min:1',
+        'formData.alloc_period_unit' => 'required|string',
         'formData.alloc_period_value' => 'required|integer|min:1',
+        'formData.is_inactive' => 'boolean',
     ];
 
-    public function mount($templateId = null)
+    public function mount()
+    {
+        $this->initListsForFields();
+        
+        // Set default visible fields
+        $this->visibleFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned', 'alloc_period_unit', 'alloc_period_value', 'is_inactive'];
+        $this->visibleFilterFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned', 'is_inactive'];
+        
+        // Initialize filters
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+
+        // Initialize statuses
+        $this->refreshStatuses();
+    }
+
+    protected function initListsForFields(): void
+    {
+        $this->listsForFields['templates_list'] = LeavesQuotaTemplate::where('firm_id', session('firm_id'))
+            ->pluck('name', 'id');
+
+        $this->listsForFields['leave_types_list'] = LeaveType::where('firm_id', session('firm_id'))
+            ->pluck('leave_title', 'id');
+
+        $this->listsForFields['period_units_list'] = LeavesQuotaTemplateSetup::ALLOC_PERIOD_UNITS;
+
+        $this->listsForFields['status_list'] = [
+            '0' => 'Active',
+            '1' => 'Inactive'
+        ];
+    }
+
+    public function applyFilters()
     {
         $this->resetPage();
-        $this->templateId = $templateId;
-        if ($templateId) {
-            $this->formData['leaves_quota_template_id'] = $templateId;
+    }
+
+    public function clearFilters()
+    {
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        $this->resetPage();
+    }
+
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
         }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
+    #[Computed]
+    public function list()
+    {
+        return LeavesQuotaTemplateSetup::query()
+            ->with(['leaves_quota_template', 'leave_type'])
+            ->where('firm_id', Session::get('firm_id'))
+            ->when($this->filters['leaves_quota_template_id'], fn($query, $value) => 
+                $query->where('leaves_quota_template_id', $value))
+            ->when($this->filters['leave_type_id'], fn($query, $value) => 
+                $query->where('leave_type_id', $value))
+            ->when($this->filters['days_assigned'], fn($query, $value) => 
+                $query->where('days_assigned', $value))
+            ->when($this->filters['is_inactive'] !== '', fn($query, $value) => 
+                $query->where('is_inactive', $value))
+            ->orderBy($this->sortBy, $this->sortDirection)
+            ->paginate($this->perPage);
+    }
+
+    public function store()
+    {
+        $validatedData = $this->validate();
+
+        $validatedData['formData'] = collect($validatedData['formData'])
+            ->map(fn($val) => $val === '' ? null : $val)
+            ->toArray();
+
+        $validatedData['formData']['firm_id'] = session('firm_id');
+
+        if ($this->isEditing) {
+            $setup = LeavesQuotaTemplateSetup::findOrFail($this->formData['id']);
+            $setup->update($validatedData['formData']);
+            $toastMsg = 'Setup updated successfully';
+        } else {
+            LeavesQuotaTemplateSetup::create($validatedData['formData']);
+            $toastMsg = 'Setup added successfully';
+        }
+
+        $this->resetForm();
+        $this->modal('mdl-quota-setup')->close();
+        Flux::toast(
+            variant: 'success',
+            heading: 'Changes saved.',
+            text: $toastMsg,
+        );
     }
 
     public function resetForm()
@@ -58,48 +182,8 @@ class LeavesQuotaTemplatesSetups extends Component
         $this->reset(['formData']);
         $this->formData['days_assigned'] = 0;
         $this->formData['alloc_period_value'] = null;
-        if ($this->templateId) {
-            $this->formData['leaves_quota_template_id'] = $this->templateId;
-        }
+        $this->formData['is_inactive'] = false;
         $this->isEditing = false;
-    }
-
-    public function store()
-    {
-        $validatedData = $this->validate();
-
-        // Convert empty strings to null
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
-
-        // Add firm_id from session
-        $validatedData['formData']['firm_id'] = session('firm_id');
-
-        try {
-            if ($this->isEditing) {
-                $setup = LeavesQuotaTemplateSetup::findOrFail($this->formData['id']);
-                $setup->update($validatedData['formData']);
-                $toastMsg = 'Setup updated successfully';
-            } else {
-                LeavesQuotaTemplateSetup::create($validatedData['formData']);
-                $toastMsg = 'Setup added successfully';
-            }
-
-            $this->resetForm();
-            $this->modal('mdl-quota-setup')->close();
-            Flux::toast(
-                variant: 'success',
-                heading: 'Changes saved.',
-                text: $toastMsg,
-            );
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to save setup: ' . $e->getMessage(),
-            );
-        }
     }
 
     public function edit($id)
@@ -130,43 +214,22 @@ class LeavesQuotaTemplatesSetups extends Component
         }
     }
 
-    public function clearFilters()
+    public function refreshStatuses()
     {
-        $this->reset('filters');
-        $this->resetPage();
+        $this->statuses = LeavesQuotaTemplateSetup::where('firm_id', session('firm_id'))
+            ->pluck('is_inactive', 'id')
+            ->mapWithKeys(fn($val, $key) => [$key => !(bool)$val])
+            ->toArray();
     }
 
-    #[Computed]
-    public function list()
+    public function toggleStatus($id)
     {
-        return LeavesQuotaTemplateSetup::query()
-            ->with(['leaves_quota_template', 'leave_type'])
-            ->when($this->filters['search_template'], function($query) {
-                $query->where('leaves_quota_template_id', $this->filters['search_template']);
-            })
-            ->when($this->filters['search_leave_type'], function($query) {
-                $query->where('leave_type_id', $this->filters['search_leave_type']);
-            })
-            ->when($this->templateId, function($query) {
-                $query->where('leaves_quota_template_id', $this->templateId);
-            })
-            ->where('firm_id', Session::get('firm_id'))
-            ->orderBy($this->sortBy, $this->sortDirection)
-            ->paginate($this->perPage);
-    }
+        $setup = LeavesQuotaTemplateSetup::find($id);
+        $setup->is_inactive = !$setup->is_inactive;
+        $setup->save();
 
-    #[Computed]
-    public function templatesList()
-    {
-        return LeavesQuotaTemplate::where('firm_id', session('firm_id'))
-            ->pluck('name', 'id');
-    }
-
-    #[Computed]
-    public function leaveTypesList()
-    {
-        return LeaveType::where('firm_id', session('firm_id'))
-            ->pluck('leave_title', 'id');
+        $this->statuses[$id] = !$setup->is_inactive;
+        $this->refreshStatuses();
     }
 
     public function render()

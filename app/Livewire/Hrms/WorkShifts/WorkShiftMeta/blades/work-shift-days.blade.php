@@ -52,7 +52,7 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-day" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-day" @cancel="resetForm" class="max-w-none">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -73,7 +73,7 @@
                 </div>
 
                 <!-- Grid layout for form fields -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="relative">
                         <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Work Shift</label>
                         <select

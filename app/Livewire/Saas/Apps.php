@@ -22,6 +22,7 @@ class Apps extends Component
         'search_name' => '',
         'search_code' => '',
         'search_route' => '',
+        'panel_id' => '',
         'is_active' => '',
     ];
 
@@ -81,8 +82,15 @@ class Apps extends Component
             ->when($this->filters['is_active'] !== '', function($query) {
                 $query->where('is_inactive', $this->filters['is_active'] === 'inactive');
             })
+            ->when($this->filters['panel_id'], function ($query) {
+                $query->whereHas('app_modules.modules.components.panels', function ($q) {
+                    $q->where('panels.id', $this->filters['panel_id']);
+                });
+            })
+            ->with('app_modules.modules.components.panels') // Optional: eager load
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
             ->paginate(5);
+
     }
 
     public function store()

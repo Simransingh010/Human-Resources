@@ -46,6 +46,7 @@ class EmployeeAttendancePolicy extends Component
         $this->initListsForFields();
     }
 
+
     public function sort($column)
     {
         if ($this->sortBy === $column) {
@@ -159,4 +160,4 @@ class EmployeeAttendancePolicy extends Component
     {
         return view('livewire.hrms.employees-meta.employee-attendance-policy');
     }
-} 
+}

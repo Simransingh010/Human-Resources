@@ -31,7 +31,7 @@
     <!-- Filters End -->
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-country" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
+    <flux:modal name="mdl-country" @cancel="resetForm" position="right" class="max-w-none w-[448px]">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
