@@ -213,14 +213,23 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
-                                variant="primary"
-                                size="sm"
-                                icon="pencil"
-                                wire:click="edit({{ $item->id }})"
-                            />
-                            <flux:modal.trigger name="delete-{{ $item->id }}">
-                                <flux:button variant="danger" size="sm" icon="trash"/>
-                            </flux:modal.trigger>
+                                    wire:click="showLeaveRequestEvents({{ $item->id }})"
+                                    color="blue"
+                                    size="sm"
+                                    tooltip="View Leave Request Events"
+                            >
+                                Leave Request Events
+                            </flux:button>
+{{--                            <flux:button--}}
+{{--                                variant="primary"--}}
+{{--                                size="sm"--}}
+{{--                                icon="pencil"--}}
+{{--                                wire:click="edit({{ $item->id }})"--}}
+{{--                            />--}}
+
+{{--                            <flux:modal.trigger name="delete-{{ $item->id }}">--}}
+{{--                                <flux:button variant="danger" size="sm" icon="trash"/>--}}
+{{--                            </flux:modal.trigger>--}}
                         </div>
 
                         <!-- Delete Confirmation Modal -->
@@ -247,4 +256,13 @@
             @endforeach
         </flux:table.rows>
     </flux:table>
+
+    <!-- Leave Request Events Modal -->
+    <flux:modal name="leave-request-events-modal" title="Leave Request Events" class="max-w-6xl">
+        @if($selectedId)
+            <livewire:hrms.leave.emp-leave-requests.leave-request-events 
+                :emp-leave-request-id="$selectedId"
+                :wire:key="'leave-request-events-'.$selectedId"/>
+        @endif
+    </flux:modal>
 </div> 

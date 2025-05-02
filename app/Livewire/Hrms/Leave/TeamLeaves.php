@@ -25,6 +25,10 @@ class TeamLeaves extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $isEditing = false;
+    public $selectedId = null;
+    public $showActionModal = false;
+    public $selectedLeaveRequestId = null;
+    public $showEventsModal = false;
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -62,7 +66,13 @@ class TeamLeaves extends Component
         'firm_id' => null,
     ];
 
- 
+    protected $rules = [
+        'formData.remarks' => 'nullable|string|min:3',
+    ];
+
+    protected $messages = [
+        'formData.remarks.min' => 'If provided, remarks must be at least 3 characters long.',
+    ];
 
     public function mount()
     {
@@ -85,11 +95,11 @@ class TeamLeaves extends Component
         $userIds = FirmUser::where('firm_id', session('firm_id'))->pluck('user_id');
         $this->listsForFields['approvers'] = User::whereIn('id', $userIds)->pluck('name', 'id');
         $this->listsForFields['statuses'] = EmpLeaveRequest::STATUS_SELECT;
-        
+
         // Add new lists for employees and leave types
         $this->listsForFields['employees'] = Employee::where('firm_id', session('firm_id'))
             ->pluck('fname', 'id');
-            
+
         $this->listsForFields['leave_types'] = LeaveType::where('firm_id', session('firm_id'))
             ->pluck('leave_title', 'id');
     }
@@ -186,18 +196,28 @@ class TeamLeaves extends Component
 
     public function resetForm()
     {
-        $this->reset(['formData']);
-        $this->formData['approval_level'] = 1;
+        $this->formData = [
+            'id' => null,
+            'emp_leave_request_id' => null,
+            'approval_level' => 1,
+            'approver_id' => null,
+            'status' => '',
+            'remarks' => '',
+            'acted_at' => '',
+            'firm_id' => null,
+        ];
         $this->isEditing = false;
     }
 
     public function edit($id)
     {
         $this->isEditing = true;
-        $approval = EmpLeaveRequestApproval::findOrFail($id);
-        $this->formData = $approval->toArray();
-        $this->formData['acted_at'] = $approval->acted_at ? $approval->acted_at->format('Y-m-d\TH:i') : '';
-        $this->modal('mdl-leave-request')->show();
+        $this->selectedId = $id;
+
+        $leave = EmpLeaveRequest::findOrFail($id);
+        $this->formData = $leave->toArray();
+        $this->formData['acted_at'] = now()->format('Y-m-d');
+        $this->modal('mdl-leave-action')->show();
     }
 
     public function delete($id)
@@ -300,195 +320,177 @@ class TeamLeaves extends Component
         return false;
     }
 
-    public function approveLeave($leaveRequestId)
+    public function showActionModal($id)
     {
-        $leaveRequest = EmpLeaveRequest::findOrFail($leaveRequestId);
-        
-        if (!$this->canApproveLeave($leaveRequest)) {
+        try {
+            $this->resetErrorBag();
+            $this->resetValidation();
+            
+            $leaveRequest = EmpLeaveRequest::where('id', $id)
+                ->where('firm_id', session('firm_id'))
+                ->first();
+
+            if (!$leaveRequest) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Error',
+                    text: 'Leave request not found.',
+                );
+                return;
+            }
+
+            $this->selectedId = $leaveRequest->id;
+            
+            // Reset formData with proper initialization
+            $this->formData = [
+                'id' => $leaveRequest->id,
+                'emp_leave_request_id' => $leaveRequest->id,
+                'approval_level' => $this->getApprovalLevel($leaveRequest),
+                'approver_id' => Auth::id(),
+                'status' => '',
+                'remarks' => '',
+                'acted_at' => now()->format('Y-m-d\TH:i'),
+                'firm_id' => session('firm_id'),
+            ];
+            
+            $this->showActionModal = true;
+        } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
-                heading: 'Unauthorized',
-                text: 'You are not authorized to approve this leave request.',
+                heading: 'Error',
+                text: $e->getMessage(),
             );
-            return;
+            \Log::error('Show action modal error: ' . $e->getMessage());
         }
-
-        $approvalLevel = $this->getApprovalLevel($leaveRequest);
-        $oldStatus = $leaveRequest->status;
-        
-        // Determine if this is the final approval or needs further approval
-        $maxApprovalLevel = LeaveApprovalRule::where('firm_id', session('firm_id'))
-            ->where(function($query) use ($leaveRequest) {
-                $query->where('leave_type_id', $leaveRequest->leave_type_id)
-                    ->orWhereNull('leave_type_id');
-            })
-            ->where('is_inactive', false)
-            ->max('approval_level') ?? 1;
-        
-        // Count current approvals
-        $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequestId)
-            ->where('status', 'approved')
-            ->count();
-            
-        // Add the current approval
-        $approvalCount++;
-            
-        // Set new status based on approval count vs max level
-        $newStatus = $approvalCount >= $maxApprovalLevel ? 'approved' : 'approved_further';
-        
-        $leaveRequest->update(['status' => $newStatus]);
-
-        // Create approval record
-        EmpLeaveRequestApproval::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'approval_level' => $approvalLevel,
-            'approver_id' => Auth::id(),
-            'status' => 'approved',
-            'acted_at' => now(),
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Log the event
-        LeaveRequestEvent::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'user_id' => Auth::id(),
-            'event_type' => 'status_change',
-            'from_status' => $oldStatus,
-            'to_status' => $newStatus,
-            'remarks' => $newStatus === 'approved' ? 'Leave request approved' : 'Leave request approved and sent for further approval',
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Close the confirmation modal
-        $this->modal("confirm-approve-{$leaveRequestId}")->close();
-
-        // Reset pagination to first page and refresh the component
-        $this->resetPage();
-        $this->dispatch('leave-status-updated');
-
-        $successMessage = $newStatus === 'approved' 
-            ? 'Leave request has been fully approved' 
-            : "Leave request approved ({$approvalCount}/{$maxApprovalLevel} approvals)";
-            
-        Flux::toast(
-            variant: 'success',
-            heading: 'Leave Approved',
-            text: $successMessage,
-        );
     }
 
-    public function rejectLeave($leaveRequestId)
+    public function closeModal()
     {
-        $leaveRequest = EmpLeaveRequest::findOrFail($leaveRequestId);
-        
-        if (!$this->canApproveLeave($leaveRequest)) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Unauthorized',
-                text: 'You are not authorized to reject this leave request.',
-            );
-            return;
-        }
-
-        $approvalLevel = $this->getApprovalLevel($leaveRequest);
-        $oldStatus = $leaveRequest->status;
-        $leaveRequest->update(['status' => 'rejected']);
-
-        // Create approval record
-        EmpLeaveRequestApproval::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'approval_level' => $approvalLevel,
-            'approver_id' => Auth::id(),
-            'status' => 'rejected',
-            'acted_at' => now(),
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Log the event
-        LeaveRequestEvent::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'user_id' => Auth::id(),
-            'event_type' => 'status_change',
-            'from_status' => $oldStatus,
-            'to_status' => 'rejected',
-            'remarks' => 'Leave request rejected',
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Close the confirmation modal
-        $this->modal("confirm-reject-{$leaveRequestId}")->close();
-
-        // Reset pagination to first page and refresh the component
-        $this->resetPage();
-        $this->dispatch('leave-status-updated');
-
-        Flux::toast(
-            variant: 'success',
-            heading: 'Leave Rejected',
-            text: 'Leave request has been rejected',
-        );
+        $this->showActionModal = false;
+        $this->resetForm();
+        $this->resetErrorBag();
+        $this->resetValidation();
     }
 
-    public function askClarification($leaveRequestId)
+    public function handleAction($action)
     {
-        $leaveRequest = EmpLeaveRequest::findOrFail($leaveRequestId);
-        
-        if (!$this->canApproveLeave($leaveRequest)) {
+        try {
+            // Validate remarks
+            $this->validate();
+
+            if (!$this->selectedId) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Error',
+                    text: 'No leave request selected.',
+                );
+                return;
+            }
+
+            $leaveRequest = EmpLeaveRequest::where('id', $this->selectedId)
+                ->where('firm_id', session('firm_id'))
+                ->first();
+
+            if (!$leaveRequest) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Error',
+                    text: 'Leave request not found.',
+                );
+                return;
+            }
+            
+            if (!$this->canApproveLeave($leaveRequest)) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Unauthorized',
+                    text: 'You are not authorized to perform this action.',
+                );
+                return;
+            }
+
+            $approvalLevel = $this->getApprovalLevel($leaveRequest);
+            $oldStatus = $leaveRequest->status;
+            
+            // Determine if this is the final approval or needs further approval
+            $maxApprovalLevel = LeaveApprovalRule::where('firm_id', session('firm_id'))
+                ->where(function($query) use ($leaveRequest) {
+                    $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                        ->orWhereNull('leave_type_id');
+                })
+                ->where('is_inactive', false)
+                ->max('approval_level') ?? 1;
+            
+            // Count current approvals
+            $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $this->selectedId)
+                ->where('status', 'approved')
+                ->count();
+                
+            // Add the current approval if approving
+            if ($action === 'approve') {
+                $approvalCount++;
+                // Set new status based on approval count vs max level
+                $newStatus = $approvalCount >= $maxApprovalLevel ? 'approved' : 'approved_further';
+            } else {
+                $newStatus = 'rejected';
+            }
+            
+            $leaveRequest->update(['status' => $newStatus]);
+
+            // Create approval record
+            EmpLeaveRequestApproval::create([
+                'emp_leave_request_id' => $this->selectedId,
+                'approval_level' => $approvalLevel,
+                'approver_id' => Auth::id(),
+                'status' => $action === 'approve' ? 'approved' : 'rejected',
+                'remarks' => $this->formData['remarks'],
+                'acted_at' => now(),
+                'firm_id' => session('firm_id')
+            ]);
+
+            // Log the event
+            LeaveRequestEvent::create([
+                'emp_leave_request_id' => $this->selectedId,
+                'user_id' => Auth::id(),
+                'event_type' => 'status_change',
+                'from_status' => $oldStatus,
+                'to_status' => $newStatus,
+                'remarks' => $this->formData['remarks'],
+                'firm_id' => session('firm_id')
+            ]);
+
+            // Close modal at the end
+            $this->closeModal();
+            
+            // Reset pagination to first page and refresh the component
+            $this->resetPage();
+            $this->dispatch('leave-status-updated');
+
+            $successMessage = $action === 'approve' 
+                ? ($newStatus === 'approved' 
+                    ? 'Leave request has been fully approved' 
+                    : "Leave request approved ({$approvalCount}/{$maxApprovalLevel} approvals)")
+                : 'Leave request has been rejected';
+                
+            Flux::toast(
+                variant: 'success',
+                heading: $action === 'approve' ? 'Leave Approved' : 'Leave Rejected',
+                text: $successMessage,
+            );
+            
+        } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
-                heading: 'Unauthorized',
-                text: 'You are not authorized to request clarification.',
+                heading: 'Error',
+                text: $e->getMessage(),
             );
-            return;
+            \Log::error('Leave action error: ' . $e->getMessage());
         }
-
-        $approvalLevel = $this->getApprovalLevel($leaveRequest);
-        $oldStatus = $leaveRequest->status;
-        
-        // Always set status to clarification_required
-        $leaveRequest->update([
-            'status' => 'clarification_required'
-        ]);
-
-        // Create approval record
-        EmpLeaveRequestApproval::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'approval_level' => $approvalLevel,
-            'approver_id' => Auth::id(),
-            'status' => 'clarification_required',
-            'remarks' => 'Clarification requested by ' . Auth::user()->name,
-            'acted_at' => now(),
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Log the event
-        LeaveRequestEvent::create([
-            'emp_leave_request_id' => $leaveRequestId,
-            'user_id' => Auth::id(),
-            'event_type' => 'status_change',
-            'from_status' => $oldStatus,
-            'to_status' => 'clarification_required',
-            'remarks' => 'Clarification requested by ' . Auth::user()->name,
-            'firm_id' => session('firm_id')
-        ]);
-
-        // Close the clarification modal
-        $this->modal("confirm-clarification-{$leaveRequestId}")->close();
-        
-        // Reset pagination to first page and refresh the component
-        $this->resetPage();
-        $this->dispatch('leave-status-updated');
-
-        Flux::toast(
-            variant: 'success',
-            heading: 'Clarification Requested',
-            text: 'Clarification has been requested from the employee',
-        );
     }
 
     /**
      * Get the approval level for the current user from the matching rule
-     * 
+     *
      * @param EmpLeaveRequest $leaveRequest
      * @return int
      */
@@ -502,8 +504,29 @@ class TeamLeaves extends Component
             })
             ->where('is_inactive', false)
             ->first();
-            
+
         return $approvalRule ? $approvalRule->approval_level : 1; // Default to 1 if no rule found
+    }
+
+    public function showLeaveRequestEvents($id)
+    {
+        try {
+            $this->selectedId = $id;
+            $this->showEventsModal = true;
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage(),
+            );
+            \Log::error('Show events modal error: ' . $e->getMessage());
+        }
+    }
+
+    public function closeEventsModal()
+    {
+        $this->showEventsModal = false;
+        $this->selectedId = null;
     }
 
     public function render()

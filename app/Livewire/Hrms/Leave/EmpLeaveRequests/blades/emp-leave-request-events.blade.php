@@ -1,13 +1,13 @@
 <div class="space-y-6">
     <!-- Heading Start -->
-    <div class="flex justify-between">
+    <!-- <div class="flex justify-between">
         @livewire('panel.component-heading')
         <flux:modal.trigger name="mdl-leave-request-event" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
                 New
             </flux:button>
         </flux:modal.trigger>
-    </div>
+    </div> -->
     <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->
 
@@ -16,7 +16,7 @@
         <flux:heading>Filters</flux:heading>
         <div class="flex flex-wrap gap-4">
             @foreach($filterFields as $field => $cfg)
-                @if(in_array($field, $visibleFilterFields))
+                @if(in_array($field, $visibleFilterFields) && $field !== 'emp_leave_request_id')
                     <div class="w-1/4">
                         @switch($cfg['type'])
                             @case('select')
@@ -98,7 +98,7 @@
     </flux:modal>
 
     <!-- Add/Edit Leave Request Event Modal -->
-    <flux:modal name="mdl-leave-request-event" @cancel="resetForm">
+    <flux:modal name="mdl-leave-request-event" @cancel="resetForm"  class="max-w-6xl">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -162,7 +162,7 @@
                     <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
                 @endif
             @endforeach
-            <flux:table.column>Actions</flux:table.column>
+            <!-- <flux:table.column>Actions</flux:table.column> -->
         </flux:table.columns>
 
         <flux:table.rows>
@@ -179,10 +179,24 @@
                                         {{ $item->user->name ?? 'N/A' }}
                                         @break
                                     @case('created_at')
-                                        {{ $item->created_at ? $item->created_at->format('Y-m-d H:i:s') : 'N/A' }}
+                                        @php
+                                            $date = $item->created_at;
+                                            if ($date instanceof \Carbon\Carbon) {
+                                                echo $date->format('Y-m-d H:i:s');
+                                            } else {
+                                                echo $date ? date('Y-m-d H:i:s', strtotime($date)) : 'N/A';
+                                            }
+                                        @endphp
                                         @break
                                     @case('deleted_at')
-                                        {{ $item->deleted_at ? \Carbon\Carbon::parse($item->deleted_at)->format('Y-m-d H:i:s') : 'N/A' }}
+                                        @php
+                                            $date = $item->deleted_at;
+                                            if ($date instanceof \Carbon\Carbon) {
+                                                echo $date->format('Y-m-d H:i:s');
+                                            } else {
+                                                echo $date ? date('Y-m-d H:i:s', strtotime($date)) : 'N/A';
+                                            }
+                                        @endphp
                                         @break
                                     @default
                                         {{ $item->$field }}
@@ -191,7 +205,7 @@
                         @endif
                     @endforeach
                     <flux:table.cell>
-                        <div class="flex space-x-2">
+                        <!-- <div class="flex space-x-2">
                             <flux:button
                                 variant="primary"
                                 size="sm"
@@ -201,7 +215,7 @@
                             <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>
-                        </div>
+                        </div> -->
 
                         <!-- Delete Confirmation Modal -->
                         <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">

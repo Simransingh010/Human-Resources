@@ -19,6 +19,7 @@ class LeaveRequestEvents extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $isEditing = false;
+    public $emp_leave_request_id = null;
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -71,11 +72,12 @@ class LeaveRequestEvents extends Component
         ];
     }
 
-    public function mount()
+    public function mount($empLeaveRequestId = null)
     {
+        $this->emp_leave_request_id = $empLeaveRequestId;
         $this->initListsForFields();
         $this->visibleFields = ['emp_leave_request_id', 'user_id', 'event_type', 'from_status', 'to_status', 'remarks', 'created_at'];
-        $this->visibleFilterFields = ['emp_leave_request_id', 'user_id', 'event_type', 'from_status', 'to_status'];
+        $this->visibleFilterFields = ['user_id', 'event_type', 'from_status', 'to_status'];
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
@@ -132,8 +134,8 @@ class LeaveRequestEvents extends Component
         return LeaveRequestEvent::query()
             ->with(['emp_leave_request.employee', 'user'])
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->filters['emp_leave_request_id'], fn($query, $value) => 
-                $query->where('emp_leave_request_id', $value))
+            ->when($this->emp_leave_request_id, fn($query) => 
+                $query->where('emp_leave_request_id', $this->emp_leave_request_id))
             ->when($this->filters['user_id'], fn($query, $value) => 
                 $query->where('user_id', $value))
             ->when($this->filters['event_type'], fn($query, $value) => 

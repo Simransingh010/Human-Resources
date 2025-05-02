@@ -20,6 +20,7 @@ class MyLeaves extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $isEditing = false;
+    public $selectedId = null;
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -278,6 +279,13 @@ class MyLeaves extends Component
             heading: 'Record Deleted.',
             text: 'Leave request has been deleted successfully',
         );
+    }
+
+    public function showLeaveRequestEvents($selectedId)
+    {
+
+        $this->selectedId = $selectedId;
+        $this->modal('leave-request-events-modal')->show();
     }
 
     public function render()

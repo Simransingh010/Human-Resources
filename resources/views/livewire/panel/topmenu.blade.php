@@ -1,3 +1,4 @@
+<div class="overflow-x-scroll">
 <flux:button.group>
     @foreach ($moduleWires as $wireItem)
         <flux:button
@@ -7,3 +8,4 @@
         </flux:button>
     @endforeach
 </flux:button.group>
+</div>
