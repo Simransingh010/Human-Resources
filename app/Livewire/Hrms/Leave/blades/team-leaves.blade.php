@@ -5,6 +5,11 @@
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
+        {{--        <flux:modal.trigger name="mdl-leave-request" class="flex justify-end">--}}
+        {{--            <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">--}}
+        {{--                New--}}
+        {{--            </flux:button>--}}
+        {{--        </flux:modal.trigger>--}}
     </div>
     <flux:separator class="mt-2 mb-2"/>
     <!-- Heading End -->

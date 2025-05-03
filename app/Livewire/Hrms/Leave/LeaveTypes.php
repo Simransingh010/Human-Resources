@@ -109,11 +109,15 @@ class LeaveTypes extends Component
         }
     }
 
+    
+
     #[Computed]
     public function list()
     {
         return LeaveType::query()
             ->where('firm_id', Session::get('firm_id'))
+
+
             ->when($this->filters['leave_title'], fn($query, $value) => 
                 $query->where('leave_title', 'like', "%{$value}%"))
             ->when($this->filters['leave_code'], fn($query, $value) => 
@@ -124,11 +128,28 @@ class LeaveTypes extends Component
                 $query->where('max_days', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
+
+
+    }
+
+    protected function rules()
+    {
+        return [
+            'formData.leave_title' => 'required|string|max:255',
+            'formData.leave_desc' => 'nullable|string',
+            'formData.leave_code' => 'nullable|string',
+            'formData.leave_nature' => 'nullable|string',
+            'formData.max_days' => 'nullable|integer',
+            'formData.carry_forward' => 'boolean',
+            'formData.encashable' => 'boolean',
+            'formData.is_inactive' => 'boolean'
+        ];
     }
 
     public function store()
     {
         $validatedData = $this->validate();
+
 
         $validatedData['formData'] = collect($validatedData['formData'])
             ->map(fn($val) => $val === '' ? null : $val)

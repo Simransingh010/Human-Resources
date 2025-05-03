@@ -150,6 +150,15 @@
         </form>
     </flux:modal>
 
+    <!-- Template Quota Setups Modal -->
+    <flux:modal name="template-quota-setups-modal" wire:model="showSetupsModal" title="Template Quota Setups" class="max-w-6xl">
+        @if($selectedTemplateId)
+            <livewire:hrms.leave.leaves-quota-templates-setups 
+                :template-id="$selectedTemplateId"
+                :wire:key="'quota-template-setups-'.$selectedTemplateId"/>
+        @endif
+    </flux:modal>
+
     <!-- Data Table -->
     <flux:table :paginate="$this->list" class="w-full">
         <flux:table.columns>
@@ -188,13 +197,23 @@
                         @endif
                     @endforeach
                     <flux:table.cell>
+
                         <div class="flex space-x-2">
+                            <flux:button
+                                    wire:click="showTemplateSetups({{ $item->id }})"
+                                    color="blue"
+                                    size="sm"
+                                    tooltip="View Template Setups"
+                            >
+                                Setups
+                            </flux:button>
                             <flux:button
                                 variant="primary"
                                 size="sm"
                                 icon="pencil"
                                 wire:click="edit({{ $item->id }})"
                             />
+
                             <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>

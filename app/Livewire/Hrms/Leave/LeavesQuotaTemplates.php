@@ -8,6 +8,7 @@ use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Flux;
+use Livewire\Attributes\On;
 
 class LeavesQuotaTemplates extends Component
 {
@@ -18,6 +19,8 @@ class LeavesQuotaTemplates extends Component
     public $sortDirection = 'asc';
     public $isEditing = false;
     public $statuses = [];
+    public $showSetupsModal = false;
+    public $selectedTemplateId = null;
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -176,6 +179,33 @@ class LeavesQuotaTemplates extends Component
         $template = LeavesQuotaTemplate::findOrFail($id);
         $this->formData = $template->toArray();
         $this->modal('mdl-quota-template')->show();
+    }
+
+    #[On('quota-setup-changed')]
+    public function handleQuotaSetupChanged()
+    {
+        $this->dispatch('$refresh');
+    }
+
+    public function showTemplateSetups($id)
+    {
+        try {
+            $template = LeavesQuotaTemplate::findOrFail($id);
+            $this->selectedTemplateId = $template->id;
+            $this->showSetupsModal = true;
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load template setups: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    public function closeSetupsModal()
+    {
+        $this->showSetupsModal = false;
+        $this->selectedTemplateId = null;
     }
 
     public function delete($id)
