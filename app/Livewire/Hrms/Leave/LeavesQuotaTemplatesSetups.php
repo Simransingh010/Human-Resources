@@ -29,9 +29,7 @@ class LeavesQuotaTemplatesSetups extends Component
         'leaves_quota_template_id' => ['label' => 'Template', 'type' => 'select', 'listKey' => 'templates_list'],
         'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
         'days_assigned' => ['label' => 'Days Assigned', 'type' => 'number'],
-        'alloc_period_unit' => ['label' => 'Allocation Period Unit', 'type' => 'select', 'listKey' => 'period_units_list'],
-        'alloc_period_value' => ['label' => 'Allocation Period Value', 'type' => 'number'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
+        'is_inactive' => ['label' => 'Disabled', 'type' => 'switch'],
     ];
 
     // Filter fields configuration
@@ -39,8 +37,7 @@ class LeavesQuotaTemplatesSetups extends Component
         'leaves_quota_template_id' => ['label' => 'Template', 'type' => 'select', 'listKey' => 'templates_list'],
         'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
         'days_assigned' => ['label' => 'Days Assigned', 'type' => 'number'],
-        'alloc_period_unit' => ['label' => 'Allocation Period Unit', 'type' => 'select', 'listKey' => 'period_units_list'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status_list'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'disabled_list'],
     ];
 
     public array $listsForFields = [];
@@ -54,8 +51,6 @@ class LeavesQuotaTemplatesSetups extends Component
         'leaves_quota_template_id' => '',
         'leave_type_id' => '',
         'days_assigned' => 0,
-        'alloc_period_unit' => '',
-        'alloc_period_value' => null,
         'is_inactive' => false,
     ];
 
@@ -63,24 +58,22 @@ class LeavesQuotaTemplatesSetups extends Component
         'formData.leaves_quota_template_id' => 'required|exists:leaves_quota_templates,id',
         'formData.leave_type_id' => 'required|exists:leave_types,id',
         'formData.days_assigned' => 'required|integer|min:0',
-        'formData.alloc_period_unit' => 'required|string',
-        'formData.alloc_period_value' => 'required|integer|min:1',
         'formData.is_inactive' => 'boolean',
     ];
 
     public function mount($templateId = null)
     {
         $this->templateId = $templateId;
-        
+
         $this->initListsForFields();
-        
+
         // Set default visible fields
-        $this->visibleFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned', 'alloc_period_unit', 'alloc_period_value', 'is_inactive'];
-        $this->visibleFilterFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned', 'is_inactive'];
-        
+        $this->visibleFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned', 'is_inactive'];
+        $this->visibleFilterFields = ['leaves_quota_template_id', 'leave_type_id', 'days_assigned'];
+
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-        
+
         // If templateId is provided, set it in filters and form data
         if ($this->templateId) {
             $this->filters['leaves_quota_template_id'] = $this->templateId;
@@ -100,11 +93,9 @@ class LeavesQuotaTemplatesSetups extends Component
         $this->listsForFields['leave_types_list'] = LeaveType::where('firm_id', session('firm_id'))
             ->pluck('leave_title', 'id');
 
-        $this->listsForFields['period_units_list'] = LeavesQuotaTemplateSetup::ALLOC_PERIOD_UNITS;
-
-        $this->listsForFields['status_list'] = [
-            '0' => 'Active',
-            '1' => 'Inactive'
+        $this->listsForFields['disabled_list'] = [
+            '0' => 'Enabled',
+            '1' => 'Disabled'
         ];
 
         if ($this->templateId) {
@@ -122,7 +113,7 @@ class LeavesQuotaTemplatesSetups extends Component
         // Get used leave types for the current template
         $this->usedLeaveTypes = LeavesQuotaTemplateSetup::where('leaves_quota_template_id', $this->templateId)
             ->where('firm_id', session('firm_id'))
-            ->when($this->isEditing && $this->formData['id'], function($query) {
+            ->when($this->isEditing && $this->formData['id'], function ($query) {
                 // If editing, exclude the current setup's leave type from used types
                 return $query->where('id', '!=', $this->formData['id']);
             })
@@ -131,7 +122,7 @@ class LeavesQuotaTemplatesSetups extends Component
 
         // Filter out used leave types
         $this->availableLeaveTypes = collect($allLeaveTypes)
-            ->reject(function($title, $id) {
+            ->reject(function ($title, $id) {
                 return in_array($id, $this->usedLeaveTypes);
             })
             ->toArray();
@@ -161,12 +152,12 @@ class LeavesQuotaTemplatesSetups extends Component
     public function clearFilters()
     {
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-        
+
         // If templateId is provided, make sure it stays in the filter
         if ($this->templateId) {
             $this->filters['leaves_quota_template_id'] = $this->templateId;
         }
-        
+
         $this->resetPage();
     }
 
@@ -200,15 +191,15 @@ class LeavesQuotaTemplatesSetups extends Component
         return LeavesQuotaTemplateSetup::query()
             ->with(['leaves_quota_template', 'leave_type'])
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->templateId, fn($query) => 
+            ->when($this->templateId, fn($query) =>
                 $query->where('leaves_quota_template_id', $this->templateId))
-            ->when($this->filters['leaves_quota_template_id'] && !$this->templateId, fn($query, $value) => 
+            ->when($this->filters['leaves_quota_template_id'] && !$this->templateId, fn($query, $value) =>
                 $query->where('leaves_quota_template_id', $value))
-            ->when($this->filters['leave_type_id'], fn($query, $value) => 
+            ->when($this->filters['leave_type_id'], fn($query, $value) =>
                 $query->where('leave_type_id', $value))
-            ->when($this->filters['days_assigned'], fn($query, $value) => 
+            ->when($this->filters['days_assigned'], fn($query, $value) =>
                 $query->where('days_assigned', $value))
-            ->when($this->filters['is_inactive'] !== '', fn($query, $value) => 
+            ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
@@ -223,14 +214,12 @@ class LeavesQuotaTemplatesSetups extends Component
             ->toArray();
 
         $validatedData['formData']['firm_id'] = session('firm_id');
-        
-        // If templateId is provided, make sure it's used
-        if ($this->templateId) {
-            $validatedData['formData']['leaves_quota_template_id'] = $this->templateId;
-        }
+        $validatedData['formData']['is_inactive'] = false; // Always set as active when creating/updating
 
         if ($this->isEditing) {
             $setup = LeavesQuotaTemplateSetup::findOrFail($this->formData['id']);
+            // Don't update is_inactive when editing
+            unset($validatedData['formData']['is_inactive']);
             $setup->update($validatedData['formData']);
             $toastMsg = 'Setup updated successfully';
         } else {
@@ -239,12 +228,9 @@ class LeavesQuotaTemplatesSetups extends Component
         }
 
         $this->resetForm();
+        $this->refreshStatuses();
         $this->modal('mdl-quota-setup')->close();
-        $this->updateAvailableLeaveTypes();
-        
-        // Dispatch event to update parent component with browser event
-        $this->dispatch('quota-setup-changed')->to('hrms.leave.leaves-quota-templates');
-        
+        $this->dispatch('quota-setup-changed');
         Flux::toast(
             variant: 'success',
             heading: 'Changes saved.',
@@ -256,16 +242,15 @@ class LeavesQuotaTemplatesSetups extends Component
     {
         $this->reset(['formData']);
         $this->formData['days_assigned'] = 0;
-        $this->formData['alloc_period_value'] = null;
         $this->formData['is_inactive'] = false;
-        
+
         // If templateId is provided, set it in the form data
         if ($this->templateId) {
             $this->formData['leaves_quota_template_id'] = $this->templateId;
         }
-        
+
         $this->isEditing = false;
-        
+
         // Update available leave types after resetting the form
         $this->updateAvailableLeaveTypes();
     }
@@ -275,10 +260,10 @@ class LeavesQuotaTemplatesSetups extends Component
         $this->isEditing = true;
         $setup = LeavesQuotaTemplateSetup::findOrFail($id);
         $this->formData = $setup->toArray();
-        
+
         // Update available leave types before showing the modal
         $this->updateAvailableLeaveTypes();
-        
+
         $this->modal('mdl-quota-setup')->show();
     }
 
@@ -289,10 +274,10 @@ class LeavesQuotaTemplatesSetups extends Component
             $setup->delete();
 
             $this->updateAvailableLeaveTypes();
-            
+
             // Dispatch event to update parent component with browser event
             $this->dispatch('quota-setup-changed')->to('hrms.leave.leaves-quota-templates');
-            
+
             Flux::toast(
                 variant: 'success',
                 heading: 'Record Deleted.',
@@ -309,9 +294,13 @@ class LeavesQuotaTemplatesSetups extends Component
 
     public function refreshStatuses()
     {
-        $this->statuses = LeavesQuotaTemplateSetup::where('firm_id', session('firm_id'))
-            ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => !(bool)$val])
+        $query = LeavesQuotaTemplateSetup::where('firm_id', session('firm_id'));
+        if ($this->templateId) {
+            $query->where('leaves_quota_template_id', $this->templateId);
+        }
+
+        $this->statuses = $query->pluck('is_inactive', 'id')
+            ->mapWithKeys(fn($val, $key) => [$key => (bool) $val])
             ->toArray();
     }
 
@@ -321,12 +310,13 @@ class LeavesQuotaTemplatesSetups extends Component
         $setup->is_inactive = !$setup->is_inactive;
         $setup->save();
 
-        $this->statuses[$id] = !$setup->is_inactive;
+        $this->statuses[$id] = $setup->is_inactive;
         $this->refreshStatuses();
+        $this->dispatch('quota-setup-changed');
     }
 
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Leave/blades/leaves-quota-templates-setups.blade.php'));
     }
-} 
+}

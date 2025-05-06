@@ -25,8 +25,9 @@ class LeavesQuotaTemplates extends Component
     // Field configuration for form and table
     public array $fieldConfig = [
         'name' => ['label' => 'Template Name', 'type' => 'text'],
+        'alloc_period_value' => ['label' => 'Allocation Value', 'type' => 'number'],
+        'alloc_period_unit' => ['label' => 'Allocation Period', 'type' => 'select', 'listKey' => 'period_units'],
         'desc' => ['label' => 'Description', 'type' => 'textarea'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
         'quota_setups_count' => ['label' => 'Quota Setups', 'type' => 'badge'],
     ];
 
@@ -34,7 +35,8 @@ class LeavesQuotaTemplates extends Component
     public array $filterFields = [
         'name' => ['label' => 'Template Name', 'type' => 'text'],
         'desc' => ['label' => 'Description', 'type' => 'text'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status_list'],
+        'alloc_period_unit' => ['label' => 'Allocation Period', 'type' => 'select', 'listKey' => 'period_units'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'disabled_list'],
     ];
 
     public array $listsForFields = [];
@@ -47,42 +49,47 @@ class LeavesQuotaTemplates extends Component
         'firm_id' => null,
         'name' => '',
         'desc' => '',
+        'alloc_period_unit' => '',
+        'alloc_period_value' => null,
         'is_inactive' => false,
     ];
 
     protected $rules = [
         'formData.name' => 'required|string|max:255',
         'formData.desc' => 'nullable|string',
-        'formData.is_inactive' => 'boolean',
+        'formData.alloc_period_unit' => 'required|string',
+        'formData.alloc_period_value' => 'required|numeric|min:1',
     ];
 
     public function mount()
     {
         $this->initListsForFields();
-        
+
         // Set default visible fields
-        $this->visibleFields = ['name', 'desc', 'is_inactive', 'quota_setups_count'];
-        $this->visibleFilterFields = ['name', 'desc', 'is_inactive'];
-        
+        $this->visibleFields = ['name', 'desc', 'alloc_period_unit', 'is_inactive', 'quota_setups_count'];
+        $this->visibleFilterFields = ['name', 'desc', 'alloc_period_unit', 'is_inactive'];
+
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-        
+
         $this->refreshStatuses();
     }
 
     protected function initListsForFields(): void
     {
-        $this->listsForFields['status_list'] = [
-            '0' => 'Active',
-            '1' => 'Inactive'
+        $this->listsForFields['disabled_list'] = [
+            '0' => 'Enabled',
+            '1' => 'Disabled'
         ];
+
+        $this->listsForFields['period_units'] = LeavesQuotaTemplate::PERIOD_UNITS;
     }
 
     public function refreshStatuses()
     {
         $this->statuses = LeavesQuotaTemplate::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => !(bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => (bool) $val])
             ->toArray();
     }
 
@@ -126,15 +133,18 @@ class LeavesQuotaTemplates extends Component
     {
         return LeavesQuotaTemplate::query()
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->filters['name'], fn($query, $value) => 
+            ->when($this->filters['name'], fn($query, $value) =>
                 $query->where('name', 'like', "%{$value}%"))
-            ->when($this->filters['desc'], fn($query, $value) => 
+            ->when($this->filters['desc'], fn($query, $value) =>
                 $query->where('desc', 'like', "%{$value}%"))
-            ->when($this->filters['is_inactive'] !== '', fn($query, $value) => 
+            ->when($this->filters['alloc_period_unit'], fn($query, $value) =>
+                $query->where('alloc_period_unit', $value))
+            ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
             ->withCount('leaves_quota_template_setups as quota_setups_count')
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
+
     }
 
     public function store()
@@ -146,9 +156,12 @@ class LeavesQuotaTemplates extends Component
             ->toArray();
 
         $validatedData['formData']['firm_id'] = session('firm_id');
+        $validatedData['formData']['is_inactive'] = false; // Always set as active when creating/updating
 
         if ($this->isEditing) {
             $template = LeavesQuotaTemplate::findOrFail($this->formData['id']);
+            // Don't update is_inactive when editing
+            unset($validatedData['formData']['is_inactive']);
             $template->update($validatedData['formData']);
             $toastMsg = 'Template updated successfully';
         } else {
@@ -234,7 +247,7 @@ class LeavesQuotaTemplates extends Component
         $template->is_inactive = !$template->is_inactive;
         $template->save();
 
-        $this->statuses[$id] = !$template->is_inactive;
+        $this->statuses[$id] = $template->is_inactive;
         $this->refreshStatuses();
     }
 
@@ -242,4 +255,4 @@ class LeavesQuotaTemplates extends Component
     {
         return view()->file(app_path('Livewire/Hrms/Leave/blades/leaves-quota-templates.blade.php'));
     }
-} 
+}

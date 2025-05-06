@@ -18,8 +18,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $leaves_quota_template_id
  * @property int $leave_type_id
  * @property int $days_assigned
- * @property string|null $alloc_period_unit
- * @property int|null $alloc_period_value
  * @property bool $is_inactive
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -36,19 +34,11 @@ class LeavesQuotaTemplateSetup extends Model
 	use SoftDeletes;
 	protected $table = 'leaves_quota_template_setups';
 
-	public const ALLOC_PERIOD_UNITS = [
-		'day' => 'Day',
-		'week' => 'Week',
-		'month' => 'Month',
-		'year' => 'Year'
-	];
-
 	protected $casts = [
 		'firm_id' => 'int',
 		'leaves_quota_template_id' => 'int',
 		'leave_type_id' => 'int',
 		'days_assigned' => 'int',
-		'alloc_period_value' => 'int',
 		'is_inactive' => 'bool'
 	];
 
@@ -57,8 +47,6 @@ class LeavesQuotaTemplateSetup extends Model
 		'leaves_quota_template_id',
 		'leave_type_id',
 		'days_assigned',
-		'alloc_period_unit',
-		'alloc_period_value',
 		'is_inactive'
 	];
 

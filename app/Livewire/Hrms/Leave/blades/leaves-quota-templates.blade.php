@@ -98,7 +98,7 @@
     </flux:modal>
 
     <!-- Add/Edit Template Modal -->
-    <flux:modal name="mdl-quota-template" @cancel="resetForm">
+    <flux:modal name="mdl-quota-template" @cancel="resetForm" class="max-w-6xl">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -110,10 +110,14 @@
                     </flux:subheading>
                 </div>
 
-                <div class="grid grid-cols-1 gap-4">
+                <div class="grid grid-cols-2 gap-4">
                     @foreach($fieldConfig as $field => $cfg)
                         @if($field !== 'quota_setups_count')
-                            <div class="@if($cfg['type'] === 'textarea') col-span-1 @endif">
+                            @if(in_array($field, ['alloc_period_value', 'alloc_period_unit']))
+                                <div class="{{ $field === 'alloc_period_value' ? 'col-span-1' : 'col-span-1' }}">
+                            @else
+                                <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
+                            @endif
                                 @switch($cfg['type'])
                                     @case('textarea')
                                         <flux:textarea
@@ -123,11 +127,25 @@
                                         />
                                         @break
 
-                                    @case('switch')
-                                        <flux:switch
+                                    @case('number')
+                                        <flux:input
+                                            type="number"
                                             label="{{ $cfg['label'] }}"
                                             wire:model.live="formData.{{ $field }}"
+                                            min="1"
                                         />
+                                        @break
+
+                                    @case('select')
+                                        <flux:select
+                                            label="{{ $cfg['label'] }}"
+                                            wire:model.live="formData.{{ $field }}"
+                                        >
+                                            <flux:select.option value="">Select {{ $cfg['label'] }}</flux:select.option>
+                                            @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                                <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                            @endforeach
+                                        </flux:select>
                                         @break
 
                                     @default
@@ -178,16 +196,26 @@
                             <flux:table.cell>
                                 @switch($cfg['type'])
                                     @case('switch')
-                                        <flux:switch
-                                            wire:model="statuses.{{ $item->id }}"
-                                            wire:click="toggleStatus({{ $item->id }})"
-                                        />
+                                        <div class="flex justify-start">
+                                            <flux:switch
+                                                wire:model="statuses.{{ $item->id }}"
+                                                wire:click="toggleStatus({{ $item->id }})"
+                                            />
+                                        </div>
                                         @break
 
                                     @case('badge')
                                         <flux:badge color="blue" inset="top bottom">
                                             {{ $item->$field ?? 0 }} Quota Setups
                                         </flux:badge>
+                                        @break
+
+                                    @case('select')
+                                        @if($field === 'alloc_period_unit')
+                                            {{ $item->alloc_period_value }} {{ ucfirst($item->$field) }}
+                                        @else
+                                            {{ $listsForFields[$cfg['listKey']][$item->$field] ?? $item->$field }}
+                                        @endif
                                         @break
 
                                     @default
@@ -203,7 +231,7 @@
                                     wire:click="showTemplateSetups({{ $item->id }})"
                                     color="blue"
                                     size="sm"
-                                    tooltip="View Template Setups"
+
                             >
                                 Setups
                             </flux:button>

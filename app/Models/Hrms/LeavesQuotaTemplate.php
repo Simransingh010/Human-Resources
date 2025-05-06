@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class LeavesQuotaTemplate
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property string $name
@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Firm $firm
  * @property Collection|LeavesQuotaTemplateSetup[] $leaves_quota_template_setups
  *
@@ -33,6 +33,13 @@ class LeavesQuotaTemplate extends Model
 	use SoftDeletes;
 	protected $table = 'leaves_quota_templates';
 
+	public const PERIOD_UNITS = [
+		'day' => 'Day',
+		'week' => 'Week',
+		'month' => 'Month',
+		'year' => 'Year'
+	];
+
 	protected $casts = [
 		'firm_id' => 'int',
 		'is_inactive' => 'bool'
@@ -42,6 +49,8 @@ class LeavesQuotaTemplate extends Model
 		'firm_id',
 		'name',
 		'desc',
+		'alloc_period_unit',
+		'alloc_period_value',
 		'is_inactive'
 	];
 

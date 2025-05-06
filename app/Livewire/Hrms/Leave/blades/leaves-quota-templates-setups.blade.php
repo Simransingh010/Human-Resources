@@ -143,50 +143,44 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     @foreach($fieldConfig as $field => $cfg)
                         @if(!$templateId || $field !== 'leaves_quota_template_id')
-                            <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-                                @switch($cfg['type'])
-                                    @case('select')
-                                        <flux:select
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                            :error="$errors->first('formData.{{ $field }}')"
-                                            required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
-                                        >
-                                            <option value="">Select {{ $cfg['label'] }}</option>
-                                            @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                                <option value="{{ $val }}">{{ $lab }}</option>
-                                            @endforeach
-                                        </flux:select>
-                                        @break
+                            @if($field !== 'is_inactive')
+                                <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
+                                    @switch($cfg['type'])
+                                        @case('select')
+                                            <flux:select
+                                                label="{{ $cfg['label'] }}"
+                                                wire:model.live="formData.{{ $field }}"
+                                                :error="$errors->first('formData.{{ $field }}')"
+                                                required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
+                                            >
+                                                <option value="">Select {{ $cfg['label'] }}</option>
+                                                @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                                    <option value="{{ $val }}">{{ $lab }}</option>
+                                                @endforeach
+                                            </flux:select>
+                                            @break
 
-                                    @case('switch')
-                                        <flux:switch
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                            :error="$errors->first('formData.{{ $field }}')"
-                                        />
-                                        @break
+                                        @case('number')
+                                            <flux:input
+                                                type="number"
+                                                label="{{ $cfg['label'] }}"
+                                                wire:model.live="formData.{{ $field }}"
+                                                :error="$errors->first('formData.{{ $field }}')"
+                                                required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
+                                            />
+                                            @break
 
-                                    @case('number')
-                                        <flux:input
-                                            type="number"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                            :error="$errors->first('formData.{{ $field }}')"
-                                            required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
-                                        />
-                                        @break
-
-                                    @default
-                                        <flux:input
-                                            type="{{ $cfg['type'] }}"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                            :error="$errors->first('formData.{{ $field }}')"
-                                            required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
-                                        />
-                                @endswitch
-                            </div>
+                                        @default
+                                            <flux:input
+                                                type="{{ $cfg['type'] }}"
+                                                label="{{ $cfg['label'] }}"
+                                                wire:model.live="formData.{{ $field }}"
+                                                :error="$errors->first('formData.{{ $field }}')"
+                                                required="{{ isset($rules['formData.' . $field]) && str_contains($rules['formData.' . $field], 'required') }}"
+                                            />
+                                    @endswitch
+                                </div>
+                            @endif
                         @endif
                     @endforeach
                 </div>
@@ -214,7 +208,7 @@
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach($this->list as $item)
+            @forelse($this->list as $item)
                 <flux:table.row :key="$item->id">
                     @foreach($fieldConfig as $field => $cfg)
                         @if(in_array($field, $visibleFields))
@@ -226,16 +220,22 @@
                                                 {{ $item->leaves_quota_template->name }}
                                             @elseif($field === 'leave_type_id')
                                                 {{ $item->leave_type->leave_title }}
-                                            @elseif($field === 'alloc_period_unit')
-                                                {{ $listsForFields['period_units_list'][$item->alloc_period_unit] ?? $item->alloc_period_unit }}
+                                            @else
+                                                {{ $listsForFields[$cfg['listKey']][$item->$field] ?? $item->$field }}
                                             @endif
                                             @break
 
                                         @case('switch')
-                                            <flux:switch
-                                                wire:model="statuses.{{ $item->id }}"
-                                                wire:click="toggleStatus({{ $item->id }})"
-                                            />
+                                            <div class="flex justify-start">
+                                                <flux:switch
+                                                    wire:model="statuses.{{ $item->id }}"
+                                                    wire:click="toggleStatus({{ $item->id }})"
+                                                />
+                                            </div>
+                                            @break
+
+                                        @case('number')
+                                            {{ $item->$field }}
                                             @break
 
                                         @default
@@ -278,7 +278,15 @@
                         </flux:modal>
                     </flux:table.cell>
                 </flux:table.row>
-            @endforeach
+            @empty
+                <flux:table.row>
+                    <flux:table.cell colspan="{{ count($visibleFields) + 1 }}">
+                        <div class="text-center py-4">
+                            No records found
+                        </div>
+                    </flux:table.cell>
+                </flux:table.row>
+            @endforelse
         </flux:table.rows>
     </flux:table>
 </div> 
