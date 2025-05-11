@@ -175,7 +175,7 @@
                                         @if($field === 'rule_id')
                                             {{ $item->leave_approval_rule->id }}
                                         @elseif($field === 'employee_id')
-                                            {{ $item->employee->name }}
+                                            {{ $item->employee->fname }}{{ $item->employee->mname ? ' ' . $item->employee->mname : '' }}{{ $item->employee->lname ? ' ' . $item->employee->lname : '' }}
                                         @endif
                                         @break
 

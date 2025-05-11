@@ -16,6 +16,7 @@ use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Auth;
 use Flux;
+use Illuminate\Support\Facades\DB;
 
 class TeamLeaves extends Component
 {
@@ -26,6 +27,7 @@ class TeamLeaves extends Component
     public $sortDirection = 'desc';
     public $isEditing = false;
     public $selectedId = null;
+    public $id;
     public $showActionModal = false;
     public $selectedLeaveRequestId = null;
     public $showEventsModal = false;
@@ -64,10 +66,12 @@ class TeamLeaves extends Component
         'remarks' => '',
         'acted_at' => '',
         'firm_id' => null,
+        'action' => null,
     ];
 
     protected $rules = [
         'formData.remarks' => 'nullable|string|min:3',
+        'formData.action' => 'required|in:approve,reject',
     ];
 
     protected $messages = [
@@ -76,9 +80,10 @@ class TeamLeaves extends Component
 
     public function mount()
     {
+
         $this->initListsForFields();
 
-        $this->visibleFields = ['employee_id', 'leave_type_id', 'apply_from', 'apply_to', 'apply_days',  'reason'];
+        $this->visibleFields = ['employee_id', 'leave_type_id', 'apply_from', 'apply_to', 'apply_days', 'reason'];
         $this->visibleFilterFields = ['employee_id', 'leave_type_id', 'status', 'apply_from'];
 
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
@@ -205,14 +210,17 @@ class TeamLeaves extends Component
             'remarks' => '',
             'acted_at' => '',
             'firm_id' => null,
+            'action' => null,
         ];
         $this->isEditing = false;
+        $this->selectedId = null;
     }
 
     public function edit($id)
     {
+
         $this->isEditing = true;
-        $this->selectedId = $id;
+         $this->id = $id;
 
         $leave = EmpLeaveRequest::findOrFail($id);
         $this->formData = $leave->toArray();
@@ -266,20 +274,134 @@ class TeamLeaves extends Component
         }
     }
 
-    public function canApproveLeave($leaveRequest)
+    /**
+     * Get all applicable approval rules for a leave request
+     */
+    protected function getApplicableRules($leaveRequest)
     {
-        // Get approval rules for the current user
-        $approvalRules = LeaveApprovalRule::where('firm_id', session('firm_id'))
+        return LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->orderBy('approval_level')
+            ->get();
+    }
+
+    /**
+     * Check if the current user can view this leave request
+     */
+    public function canViewLeave($leaveRequest)
+    {
+        $rules = LeaveApprovalRule::where('firm_id', session('firm_id'))
             ->where('approver_id', Auth::id())
-            ->where(function($query) use ($leaveRequest) {
-                // If leave_type_id is specified, check it matches
+            ->where(function ($query) use ($leaveRequest) {
                 $query->where('leave_type_id', $leaveRequest->leave_type_id)
                     ->orWhereNull('leave_type_id');
             })
             ->where('is_inactive', false)
             ->get();
 
+        foreach ($rules as $rule) {
+            // Check employee and department scopes
+            if ($this->isEmployeeInRuleScope($leaveRequest->employee_id, $rule)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if an employee falls under a rule's scope
+     */
+    protected function isEmployeeInRuleScope($employeeId, $rule)
+    {
+        // If scope is all, employee is in scope
+        if ($rule->department_scope === 'all' || $rule->employee_scope === 'all') {
+            return true;
+        }
+
+        // Check department-based rules
+        if (
+            $rule->departments->contains(function ($department) use ($employeeId) {
+                return $department->employees->contains('id', $employeeId);
+            })
+        ) {
+            return true;
+        }
+
+        // Check direct employee assignments
+        return $rule->employees->contains('id', $employeeId);
+    }
+
+    /**
+     * Get the highest approval level needed for this leave request
+     */
+    protected function getMaxApprovalLevel($leaveRequest)
+    {
+        return LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->max('approval_level') ?? 1;
+    }
+
+    /**
+     * Get all approvers for a leave request
+     */
+    public function getApprovers($leaveRequest)
+    {
+        return LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->whereNotNull('approver_id')
+            ->whereNotNull('approval_level')
+            ->whereNotNull('approval_mode')
+            ->with('user')
+            ->get()
+            ->filter(function ($rule) {
+                return $rule->user !== null;
+            })
+            ->map(function ($rule) {
+                return [
+                    'user' => $rule->user,
+                    'level' => $rule->approval_level,
+                    'mode' => $rule->approval_mode
+                ];
+            });
+    }
+
+
+    public function canApproveLeave($leaveRequest)
+    {
+        // Get approval rules for the current user
+        $approvalRules = LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where('approver_id', Auth::id())
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->get();
+
+        // If no rules found, user cannot approve
+        if ($approvalRules->isEmpty()) {
+            return false;
+        }
+
         foreach ($approvalRules as $rule) {
+            // Skip if view-only mode
+            if ($rule->approval_mode === 'view_only') {
+                continue;
+            }
+
             // Skip if auto_approve is true
             if ($rule->auto_approve) {
                 continue;
@@ -294,25 +416,29 @@ class TeamLeaves extends Component
                 continue;
             }
 
-            // If department_scope is 'all', no need to check departments
-            if ($rule->department_scope === 'all') {
-                return true;
+            // Check if this approval level is currently needed
+            $currentApprovals = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
+                ->where('status', 'approved')
+                ->count();
+
+            // For sequential approval, check if it's this approver's turn
+            if ($rule->approval_mode === 'sequential' && $currentApprovals + 1 !== $rule->approval_level) {
+                continue;
             }
 
-            // If employee_scope is 'all', no need to check specific employees
-            if ($rule->employee_scope === 'all') {
-                return true;
+            // For parallel approval, check if this approver hasn't already approved
+            if ($rule->approval_mode === 'parallel') {
+                $hasApproved = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
+                    ->where('approver_id', Auth::id())
+                    ->where('status', 'approved')
+                    ->exists();
+                if ($hasApproved) {
+                    continue;
+                }
             }
 
-            // Check department-based rules
-            if ($rule->departments->contains(function($department) use ($leaveRequest) {
-                return $department->employees->contains('id', $leaveRequest->employee_id);
-            })) {
-                return true;
-            }
-
-            // Check direct employee assignments
-            if ($rule->employees->contains('id', $leaveRequest->employee_id)) {
+            // Check if employee is in rule's scope
+            if ($this->isEmployeeInRuleScope($leaveRequest->employee_id, $rule)) {
                 return true;
             }
         }
@@ -320,12 +446,41 @@ class TeamLeaves extends Component
         return false;
     }
 
+    /**
+     * Get pending approvers for a leave request
+     */
+    public function getPendingApprovers($leaveRequest)
+    {
+        $approvedBy = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
+            ->where('status', 'approved')
+            ->pluck('approver_id')
+            ->toArray();
+
+        return LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->whereNotIn('approver_id', $approvedBy)
+            ->where('approval_mode', '!=', 'view_only')
+            ->with('user')
+            ->get()
+            ->map(function ($rule) {
+                return [
+                    'user' => $rule->user,
+                    'level' => $rule->approval_level,
+                    'mode' => $rule->approval_mode
+                ];
+            });
+    }
+
     public function showActionModal($id)
     {
         try {
             $this->resetErrorBag();
             $this->resetValidation();
-            
+
             $leaveRequest = EmpLeaveRequest::where('id', $id)
                 ->where('firm_id', session('firm_id'))
                 ->first();
@@ -340,7 +495,7 @@ class TeamLeaves extends Component
             }
 
             $this->selectedId = $leaveRequest->id;
-            
+
             // Reset formData with proper initialization
             $this->formData = [
                 'id' => $leaveRequest->id,
@@ -351,8 +506,9 @@ class TeamLeaves extends Component
                 'remarks' => '',
                 'acted_at' => now()->format('Y-m-d\TH:i'),
                 'firm_id' => session('firm_id'),
+                'action' => null,
             ];
-            
+
             $this->showActionModal = true;
         } catch (\Exception $e) {
             Flux::toast(
@@ -372,13 +528,21 @@ class TeamLeaves extends Component
         $this->resetValidation();
     }
 
-    public function handleAction($action)
+
+    public function handleAction($action, $id)
     {
+//dd($id);
         try {
             // Validate remarks
-            $this->validate();
+            $this->validate([
+                'formData.remarks' => 'nullable|string|min:3',
+            ]);
 
-            if (!$this->selectedId) {
+            if (!in_array($action, ['approve', 'reject'])) {
+                throw new \Exception('Invalid action');
+            }
+
+            if (!$id) {
                 Flux::toast(
                     variant: 'error',
                     heading: 'Error',
@@ -387,7 +551,7 @@ class TeamLeaves extends Component
                 return;
             }
 
-            $leaveRequest = EmpLeaveRequest::where('id', $this->selectedId)
+            $leaveRequest = EmpLeaveRequest::where('id', $id)
                 ->where('firm_id', session('firm_id'))
                 ->first();
 
@@ -399,7 +563,7 @@ class TeamLeaves extends Component
                 );
                 return;
             }
-            
+
             if (!$this->canApproveLeave($leaveRequest)) {
                 Flux::toast(
                     variant: 'error',
@@ -408,24 +572,18 @@ class TeamLeaves extends Component
                 );
                 return;
             }
-
+            
             $approvalLevel = $this->getApprovalLevel($leaveRequest);
             $oldStatus = $leaveRequest->status;
-            
+
             // Determine if this is the final approval or needs further approval
-            $maxApprovalLevel = LeaveApprovalRule::where('firm_id', session('firm_id'))
-                ->where(function($query) use ($leaveRequest) {
-                    $query->where('leave_type_id', $leaveRequest->leave_type_id)
-                        ->orWhereNull('leave_type_id');
-                })
-                ->where('is_inactive', false)
-                ->max('approval_level') ?? 1;
-            
+            $maxApprovalLevel = $this->getMaxApprovalLevel($leaveRequest);
+
             // Count current approvals
-            $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $this->selectedId)
+            $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $id)
                 ->where('status', 'approved')
                 ->count();
-                
+
             // Add the current approval if approving
             if ($action === 'approve') {
                 $approvalCount++;
@@ -434,50 +592,64 @@ class TeamLeaves extends Component
             } else {
                 $newStatus = 'rejected';
             }
-            
-            $leaveRequest->update(['status' => $newStatus]);
 
-            // Create approval record
-            EmpLeaveRequestApproval::create([
-                'emp_leave_request_id' => $this->selectedId,
-                'approval_level' => $approvalLevel,
-                'approver_id' => Auth::id(),
-                'status' => $action === 'approve' ? 'approved' : 'rejected',
-                'remarks' => $this->formData['remarks'],
-                'acted_at' => now(),
-                'firm_id' => session('firm_id')
-            ]);
+            // Begin database transaction
+//            DB::beginTransactio/n();
 
-            // Log the event
-            LeaveRequestEvent::create([
-                'emp_leave_request_id' => $this->selectedId,
-                'user_id' => Auth::id(),
-                'event_type' => 'status_change',
-                'from_status' => $oldStatus,
-                'to_status' => $newStatus,
-                'remarks' => $this->formData['remarks'],
-                'firm_id' => session('firm_id')
-            ]);
+            try {
+                // Update leave request status
+                $leaveRequest->update(['status' => $newStatus]);
 
-            // Close modal at the end
-            $this->closeModal();
-            
-            // Reset pagination to first page and refresh the component
-            $this->resetPage();
-            $this->dispatch('leave-status-updated');
+                // Create approval record
+                EmpLeaveRequestApproval::create([
+                    'emp_leave_request_id' => $id,
+                    'approval_level' => $approvalLevel,
+                    'approver_id' => Auth::id(),
+                    'status' => $action === 'approve' ? 'approved' : 'rejected',
+                    'remarks' => $this->formData['remarks'],
+                    'acted_at' => now(),
+                    'firm_id' => session('firm_id')
+                ]);
 
-            $successMessage = $action === 'approve' 
-                ? ($newStatus === 'approved' 
-                    ? 'Leave request has been fully approved' 
-                    : "Leave request approved ({$approvalCount}/{$maxApprovalLevel} approvals)")
-                : 'Leave request has been rejected';
-                
-            Flux::toast(
-                variant: 'success',
-                heading: $action === 'approve' ? 'Leave Approved' : 'Leave Rejected',
-                text: $successMessage,
-            );
-            
+                // Log the event
+                LeaveRequestEvent::create([
+                    'emp_leave_request_id' => $id,
+                    'user_id' => Auth::id(),
+                    'event_type' => 'status_change',
+                    'from_status' => $oldStatus,
+                    'to_status' => $newStatus,
+                    'remarks' => $this->formData['remarks'],
+                    'firm_id' => session('firm_id')
+                ]);
+
+//                DB::commit();
+
+                // Close modal and reset form
+                $this->closeModal();
+
+                // Reset pagination to first page and refresh the component
+                $this->resetPage();
+
+                // Emit the event for component refresh
+                $this->dispatch('leave-status-updated');
+
+                $successMessage = $action === 'approve'
+                    ? ($newStatus === 'approved'
+                        ? 'Leave request has been fully approved'
+                        : "Leave request approved ({$approvalCount}/{$maxApprovalLevel} approvals)")
+                    : 'Leave request has been rejected';
+
+                Flux::toast(
+                    variant: 'success',
+                    heading: $action === 'approve' ? 'Leave Approved' : 'Leave Rejected',
+                    text: $successMessage,
+                );
+
+            } catch (\Exception $e) {
+//                DB::rollBack();
+                throw $e;
+            }
+
         } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
@@ -498,7 +670,7 @@ class TeamLeaves extends Component
     {
         $approvalRule = LeaveApprovalRule::where('firm_id', session('firm_id'))
             ->where('approver_id', Auth::id())
-            ->where(function($query) use ($leaveRequest) {
+            ->where(function ($query) use ($leaveRequest) {
                 $query->where('leave_type_id', $leaveRequest->leave_type_id)
                     ->orWhereNull('leave_type_id');
             })
@@ -511,7 +683,7 @@ class TeamLeaves extends Component
     public function showLeaveRequestEvents($id)
     {
         try {
-            $this->selectedId = $id;
+            $this->id = $id;
             $this->showEventsModal = true;
         } catch (\Exception $e) {
             Flux::toast(
@@ -533,4 +705,4 @@ class TeamLeaves extends Component
     {
         return view()->file(app_path('Livewire/Hrms/Leave/blades/team-leaves.blade.php'));
     }
-} 
+}

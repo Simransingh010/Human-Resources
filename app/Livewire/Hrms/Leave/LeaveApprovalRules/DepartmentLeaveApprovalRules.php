@@ -57,11 +57,11 @@ class DepartmentLeaveApprovalRules extends Component
     public function mount()
     {
         $this->initListsForFields();
-        
+
         // Set default visible fields
         $this->visibleFields = ['rule_id', 'department_id', 'is_inactive'];
         $this->visibleFilterFields = ['rule_id', 'department_id', 'is_inactive'];
-        
+
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
 
@@ -72,10 +72,14 @@ class DepartmentLeaveApprovalRules extends Component
     protected function initListsForFields(): void
     {
         $this->listsForFields['rules_list'] = LeaveApprovalRule::where('firm_id', session('firm_id'))
-            ->pluck('id', 'id');
+            ->pluck('id', 'id')
+            ->toArray();
 
+        // Enhance department list to show more meaningful information
         $this->listsForFields['departments_list'] = Department::where('firm_id', session('firm_id'))
-            ->pluck('title', 'id');
+            ->orderBy('title')
+            ->pluck('title', 'id')
+            ->toArray();
 
         $this->listsForFields['status_list'] = [
             '0' => 'Active',
@@ -87,7 +91,7 @@ class DepartmentLeaveApprovalRules extends Component
     {
         $this->statuses = DepartmentLeaveApprovalRule::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => !(bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => !(bool) $val])
             ->toArray();
     }
 
@@ -140,13 +144,18 @@ class DepartmentLeaveApprovalRules extends Component
     public function list()
     {
         return DepartmentLeaveApprovalRule::query()
-            ->with(['leave_approval_rule', 'department'])
+            ->with([
+                'leave_approval_rule',
+                'department' => function ($query) {
+                    $query->select('id', 'title');
+                }
+            ])
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->filters['rule_id'], fn($query, $value) => 
+            ->when($this->filters['rule_id'], fn($query, $value) =>
                 $query->where('rule_id', $value))
-            ->when($this->filters['department_id'], fn($query, $value) => 
+            ->when($this->filters['department_id'], fn($query, $value) =>
                 $query->where('department_id', $value))
-            ->when($this->filters['is_inactive'] !== '', fn($query, $value) => 
+            ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);

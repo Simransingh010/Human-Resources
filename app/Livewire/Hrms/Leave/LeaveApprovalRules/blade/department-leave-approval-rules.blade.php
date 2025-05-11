@@ -175,7 +175,7 @@
                                         @if($field === 'rule_id')
                                             {{ $item->leave_approval_rule->id }}
                                         @elseif($field === 'department_id')
-                                            {{ $item->department->name }}
+                                            {{ $item->department->title }}
                                         @else
                                             {{ $listsForFields[$cfg['listKey']][$item->$field] ?? $item->$field }}
                                         @endif

@@ -4,7 +4,7 @@
         @livewire('panel.component-heading')
         <flux:modal.trigger name="mdl-approval-rule" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
-                New
+                New Rule
             </flux:button>
         </flux:modal.trigger>
     </div>
@@ -32,15 +32,6 @@
                                         <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
                                     @endforeach
                                 </flux:select>
-                                @break
-
-                            @case('number')
-                                <flux:input
-                                    type="number"
-                                    placeholder="Search {{ $cfg['label'] }}"
-                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
-                                    wire:change="applyFilters"
-                                />
                                 @break
 
                             @default
@@ -106,64 +97,205 @@
         </div>
     </flux:modal>
 
-    <!-- Add/Edit Approval Rule Modal -->
-    <flux:modal name="mdl-approval-rule" @cancel="resetForm">
+    <!-- Add/Edit Rule Modal -->
+    <flux:modal name="mdl-approval-rule" @cancel="resetForm" position="right" class="max-w-6xl" variant="flyout">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing) Edit Approval Rule @else Add Approval Rule @endif
+                        @if($isEditing) Edit Leave Approval Rule @else New Leave Approval Rule @endif
                     </flux:heading>
-                    <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif leave approval rule details.
-                    </flux:subheading>
+                    <flux:text class="text-gray-500">Configure leave approval rules and assign employees</flux:text>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    @foreach($fieldConfig as $field => $cfg)
-                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-                            @switch($cfg['type'])
-                                @case('select')
-                                    <flux:select
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    >
-                                        <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                    @break
+                <flux:separator/>
 
-                                @case('switch')
-                                    <flux:switch
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                                    @break
+                <!-- Rule Configuration -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="flex items-center space-x-2">
+                        <flux:switch wire:model.live="formData.auto_approve" />
+                        <label class="text-sm font-medium text-gray-700">Auto Approve</label>
+                    </div>
 
-                                @case('date')
-                                    <flux:input
-                                        type="date"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                                    @break
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Leave Type</label>
+                        <select 
+                            wire:model="formData.leave_type_id"
+                            class="block w-full rounded-md border-gray-300 py-2 px-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                            <option value="">Select Leave Type</option>
+                            @foreach($listsForFields['leave_types_list'] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </select>
+                        @error('formData.leave_type_id')
+                            <span class="text-red-500 text-sm">{{ $message }}</span>
+                        @enderror
+                    </div>
+                    @if(!$formData['auto_approve'])
+                        <flux:select variant="listbox"  wire:model="formData.approver_id" searchable placeholder="Choose Approver..">
+                            @foreach($listsForFields['approvers_list'] as $id => $name)
+                                <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+{{--                    <div>--}}
+{{--                        <label class="block text-sm font-medium text-gray-700 mb-1">Approver</label>--}}
+{{--                        <select --}}
+{{--                            wire:model="formData.approver_id"--}}
+{{--                            class="block w-full rounded-md border-gray-300 py-2 px-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"--}}
+{{--                        >--}}
+{{--                            <option value="">Select Approver</option>--}}
+{{--                            @foreach($listsForFields['approvers_list'] as $id => $name)--}}
+{{--                                <option value="{{ $id }}">{{ $name }}</option>--}}
+{{--                            @endforeach--}}
+{{--                        </select>--}}
+{{--                        @error('formData.approver_id')--}}
+{{--                            <span class="text-red-500 text-sm">{{ $message }}</span>--}}
+{{--                        @enderror--}}
+{{--                    </div>--}}
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Approval Mode</label>
+                        <select 
+                            wire:model="formData.approval_mode"
+                            class="block w-full rounded-md border-gray-300 py-2 px-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                        >
+                            <option value="">Select Mode</option>
+                            @foreach($listsForFields['approval_modes'] as $key => $value)
+                                <option value="{{ $key }}">{{ $value }}</option>
+                            @endforeach
+                        </select>
+                        @error('formData.approval_mode')
+                            <span class="text-red-500 text-sm">{{ $message }}</span>
+                        @enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Approval Level</label>
+                        <flux:input type="number" wire:model.live="formData.approval_level" min="1" />
+                    </div>
+                    @endif
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Min Days</label>
+                        <flux:input type="number" wire:model.live="formData.min_days" min="0" step="0.5" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Max Days</label>
+                        <flux:input type="number" wire:model.live="formData.max_days" min="0" step="0.5" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Period Start</label>
+                        <flux:input 
+                            type="date" 
+                            wire:model.live="formData.period_start"
+                            placeholder="Select start date"
+                            class="w-full"
+                        />
+                        @error('formData.period_start')
+                            <span class="text-red-500 text-sm">{{ $message }}</span>
+                        @enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Period End</label>
+                        <flux:input 
+                            type="date" 
+                            wire:model.live="formData.period_end"
+                            placeholder="Select end date"
+                            class="w-full"
+                            min="{{ $formData['period_start'] ?? '' }}"
+                        />
+                        @error('formData.period_end')
+                            <span class="text-red-500 text-sm">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </div>
 
-                                @default
-                                    <flux:input
-                                        type="{{ $cfg['type'] }}"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                            @endswitch
+                <!-- Employee Selection Section -->
+                <div class="mt-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Select Employees</label>
+                        <div class="flex space-x-2">
+                            <flux:button size="xs" variant="outline" wire:click="selectAllEmployeesGlobal">Select All</flux:button>
+                            <flux:button size="xs" variant="ghost" wire:click="deselectAllEmployeesGlobal">Deselect</flux:button>
                         </div>
-                    @endforeach
+                    </div>
+
+
+                    <!-- Employee Search -->
+                    <div class="mb-4">
+                        <flux:input
+                            type="search"
+                            placeholder="Search employees by name, email or phone..."
+                            wire:model.live="employeeSearch"
+                            class="w-full"
+                        >
+                            <x-slot:prefix>
+                                <flux:icon name="magnifying-glass" class="w-5 h-5 text-gray-400"/>
+                            </x-slot:prefix>
+                        </flux:input>
+                    </div>
+
+                    <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
+                        <flux:accordion class="w-full">
+                            @forelse($filteredDepartmentsWithEmployees as $department)
+                                <flux:accordion.item>
+                                    <flux:accordion.heading>
+                                        <div class="flex justify-between items-center w-full">
+                                            <span>{{ $department['title'] }}</span>
+                                            <span class="text-sm text-gray-500">({{ count($department['employees']) }} employees)</span>
+                                        </div>
+                                    </flux:accordion.heading>
+                                    <flux:accordion.content class="pl-4">
+                                        <div class="flex justify-end space-x-2 mb-2">
+                                            <flux:button size="xs" variant="outline" wire:click="selectAllEmployees('{{ $department['id'] }}')">
+                                                Select All
+                                            </flux:button>
+                                            <flux:button size="xs" variant="ghost" wire:click="deselectAllEmployees('{{ $department['id'] }}')">
+                                                Deselect
+                                            </flux:button>
+                                        </div>
+                                        
+                                        <flux:checkbox.group class="space-y-1">
+                                            @foreach($department['employees'] as $employee)
+                                                <div class="flex items-center justify-between space-x-2 mb-2">
+                                                    <flux:checkbox
+                                                        wire:model="selectedEmployees"
+                                                        class="w-full truncate"
+                                                        label="{{ $employee['fname'] }} {{ $employee['lname'] }}"
+                                                        value="{{ (string) $employee['id'] }}"
+                                                        id="employee-{{ $employee['id'] }}"
+                                                    />
+                                                    <flux:tooltip toggleable>
+                                                        <flux:button icon="information-circle" size="xs" variant="ghost" />
+                                                        <flux:tooltip.content class="max-w-[20rem] space-y-2">
+                                                            <p><strong>Email:</strong> {{ $employee['email'] }}</p>
+                                                            <p><strong>Phone:</strong> {{ $employee['phone'] }}</p>
+                                                            <p><strong>ID:</strong> {{ $employee['id'] }}</p>
+                                                        </flux:tooltip.content>
+                                                    </flux:tooltip>
+                                                </div>
+                                            @endforeach
+                                        </flux:checkbox.group>
+                                    </flux:accordion.content>
+                                </flux:accordion.item>
+                            @empty
+                                <div class="text-center py-4 text-gray-500">
+                                    @if($employeeSearch)
+                                        No employees found matching "{{ $employeeSearch }}"
+                                    @else
+                                        No departments or employees available
+                                    @endif
+                                </div>
+                            @endforelse
+                        </flux:accordion>
+                    </div>
                 </div>
 
-                <div class="flex justify-end pt-4">
+                <!-- Submit Button -->
+                <div class="flex justify-end space-x-2 pt-4">
+                    <flux:button x-on:click="$flux.modal('mdl-approval-rule').close()">
+                        Cancel
+                    </flux:button>
                     <flux:button type="submit" variant="primary">
-                        Save
+                        Save Rule
                     </flux:button>
                 </div>
             </div>
@@ -173,97 +305,64 @@
     <!-- Data Table -->
     <flux:table :paginate="$this->list" class="w-full">
         <flux:table.columns>
-            @foreach($fieldConfig as $field => $cfg)
-                @if(in_array($field, $visibleFields))
-                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
-                @endif
-            @endforeach
+            <flux:table.column>Leave Type</flux:table.column>
+            <flux:table.column>Approver</flux:table.column>
+            <flux:table.column>Mode</flux:table.column>
+            <flux:table.column>Level</flux:table.column>
+            <flux:table.column>Period</flux:table.column>
+            <flux:table.column>Days Range</flux:table.column>
+            <flux:table.column>Status</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach($this->list as $item)
-                <flux:table.row :key="$item->id">
-                    @foreach($fieldConfig as $field => $cfg)
-                        @if(in_array($field, $visibleFields))
-                            <flux:table.cell>
-                                @switch($cfg['type'])
-                                    @case('select')
-                                        @if($field === 'leave_type_id')
-                                            {{ $item->leave_type?->leave_title }}
-                                        @elseif($field === 'approver_id')
-                                            {{ $item->user->name }}
-                                        @else
-                                            {{ $listsForFields[$cfg['listKey']][$item->$field] ?? $item->$field }}
-                                        @endif
-                                        @break
 
-                                    @case('switch')
-                                        @if($field === 'is_inactive')
-                                            <flux:switch
-                                                wire:model="statuses.{{ $item->id }}"
-                                                wire:click="toggleStatus({{ $item->id }})"
-                                            />
-                                        @else
-                                            @if($item->$field)
-                                                <flux:badge color="green">Yes</flux:badge>
-                                            @else
-                                                <flux:badge color="gray">No</flux:badge>
-                                            @endif
-                                        @endif
-                                        @break
-
-                                    @case('date')
-                                        {{ $item->$field?->format('Y-m-d') }}
-                                        @break
-
-                                    @default
-                                        {{ $item->$field }}
-                                @endswitch
-                            </flux:table.cell>
-                        @endif
-                    @endforeach
+            @foreach($this->list as $rule)
+                <flux:table.row :key="$rule->id">
+                    <flux:table.cell>
+                        <flux:badge color="blue" inset="top bottom">
+                            {{ $rule->leave_type->leave_title }}
+                        </flux:badge>
+                    </flux:table.cell>
+                    <flux:table.cell>{{ $rule->user->name ?? 'Auto-Approval' }}</flux:table.cell>
+                    <flux:table.cell>{{ ucfirst($rule->approval_mode) }}</flux:table.cell>
+                    <flux:table.cell>{{ $rule->approval_level }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">
+                        {{ \Carbon\Carbon::parse($rule->period_start)->format('Y-m-d') }} to
+                        {{ \Carbon\Carbon::parse($rule->period_end)->format('Y-m-d') }}
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        {{ $rule->min_days ?? 0 }} - {{ $rule->max_days ?? 'No Limit' }}
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        <flux:switch wire:model.live="statuses.{{ $rule->id }}"
+                            wire:change="toggleStatus({{ $rule->id }})" />
+                    </flux:table.cell>
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:dropdown>
-                                <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" inset="top bottom"></flux:button>
 
-                                <flux:menu>
-                                    <flux:menu.item icon="user-group" wire:click="showEmployeeRules({{ $item->id }})">
-                                        Employee Rules
-                                    </flux:menu.item>
-                                    <flux:menu.item icon="building-office" wire:click="showDepartmentRules({{ $item->id }})">
-                                        Department Rules
-                                    </flux:menu.item>
-                                </flux:menu>
-                            </flux:dropdown>
-                            <flux:button
-                                variant="primary"
-                                size="sm"
-                                icon="pencil"
-                                wire:click="edit({{ $item->id }})"
-                            />
-                            <flux:modal.trigger name="delete-{{ $item->id }}">
-                                <flux:button variant="danger" size="sm" icon="trash"/>
+                            <flux:button variant="primary" size="xs" icon="pencil" wire:click="edit({{ $rule->id }})" />
+                            <flux:modal.trigger name="delete-{{ $rule->id }}">
+                                <flux:button variant="danger" size="xs" icon="trash" />
                             </flux:modal.trigger>
                         </div>
 
-                        <!-- Delete Confirmation Modal -->
-                        <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
+                        <!-- Delete Modal -->
+                        <flux:modal name="delete-{{ $rule->id }}" class="min-w-[22rem]">
                             <div class="space-y-6">
                                 <div>
-                                    <flux:heading size="lg">Delete Approval Rule?</flux:heading>
+                                    <flux:heading size="lg">Delete Rule?</flux:heading>
                                     <flux:text class="mt-2">
-                                        <p>You're about to delete this approval rule. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Approval rules with related records cannot be deleted.</p>
+                                        <p>You're about to delete this leave approval rule. This action cannot be undone.</p>
+                                        <p class="mt-2 text-red-500">Note: Rules with related records cannot be deleted.</p>
                                     </flux:text>
                                 </div>
                                 <div class="flex gap-2">
-                                    <flux:spacer/>
+                                    <flux:spacer />
                                     <flux:modal.close>
                                         <flux:button variant="ghost">Cancel</flux:button>
                                     </flux:modal.close>
-                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
+                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $rule->id }})" />
                                 </div>
                             </div>
                         </flux:modal>
@@ -273,21 +372,12 @@
         </flux:table.rows>
     </flux:table>
 
-    <!-- Employee Rules Modal -->
-    <flux:modal name="employee-rules-modal" title="Employee Leave Approval Rules" class="max-w-6xl">
+    <!-- Rule Details Modal -->
+    <flux:modal name="rule-details-modal" wire:model="showDetailsModal" title="Rule Details" class="max-w-6xl">
         @if($selectedRuleId)
-            <livewire:hrms.leave.leave-approval-rules.employee-leave-approval-rules
-                :rule-id="$selectedRuleId"
-                :wire:key="'employee-rules-'.$selectedRuleId"/>
+            @livewire('hrms.leave.rule-details', [
+                'ruleId' => $selectedRuleId
+            ], key('rule-details-'.$selectedRuleId))
         @endif
     </flux:modal>
-
-    <!-- Department Rules Modal -->
-    <flux:modal name="department-rules-modal" title="Department Leave Approval Rules" class="max-w-6xl">
-        @if($selectedRuleId)
-            <livewire:hrms.leave.leave-approval-rules.department-leave-approval-rules 
-                :rule-id="$selectedRuleId"
-                :wire:key="'department-rules-'.$selectedRuleId"/>
-        @endif
-    </flux:modal>
-</div> 
+</div>

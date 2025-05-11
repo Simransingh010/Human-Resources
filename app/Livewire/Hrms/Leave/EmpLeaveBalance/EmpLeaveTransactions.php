@@ -49,10 +49,10 @@ class EmpLeaveTransactions extends Component
     public array $visibleFilterFields = [];
 
     const TRANSACTION_TYPES = [
-        'CREDIT' => 'Credit',
-        'DEBIT' => 'Debit',
-        'LAPSE' => 'Lapse',
-        'CARRY_FORWARD' => 'Carry Forward'
+        'alc' => 'Allocation',
+        'con' => 'Consumption',
+        'cfw' => 'Carry Forward',
+        'lps' => 'Lapse',
     ];
 
     public $formData = [

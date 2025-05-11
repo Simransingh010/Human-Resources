@@ -1,6 +1,7 @@
 <div class="space-y-6"
      x-data
      x-on:leave-status-updated.window="$wire.$refresh()"
+     wire:key="team-leaves-main"
 >
     <!-- Heading Start -->
     <div class="flex justify-between">
@@ -20,7 +21,7 @@
         <div class="flex flex-wrap gap-4">
             @foreach($filterFields as $field => $cfg)
                 @if(in_array($field, $visibleFilterFields))
-                    <div class="w-1/4">
+                    <div class="w-1/4" wire:key="filter-field-{{ $field }}">
                         @switch($cfg['type'])
                             @case('select')
                                 <flux:select
@@ -191,12 +192,12 @@
     </flux:modal>
 
     <!-- Data Table -->
-    <flux:table :paginate="$this->list" class="w-full">
+    <flux:table :paginate="$this->list">
         <flux:table.columns>
             @foreach($fieldConfig as $field => $cfg)
                 @if(in_array($field, $visibleFields))
-                    @if($field !== 'status') {{-- Skip status in the regular columns --}}
-                        <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
+                    @if($field !== 'status')
+                        <flux:table.column wire:key="column-{{ $field }}">{{ $cfg['label'] }}</flux:table.column>
                     @endif
                 @endif
             @endforeach
@@ -206,90 +207,97 @@
 
         <flux:table.rows>
             @foreach($this->list as $item)
-                <flux:table.row :key="$item->id">
-                    @foreach($fieldConfig as $field => $cfg)
-                        @if(in_array($field, $visibleFields))
-                            @if($field !== 'status') {{-- Skip status in the regular cells --}}
-                                <flux:table.cell>
-                                    @switch($field)
-                                        @case('employee_id')
-                                            {{ $item->employee->fname ?? 'N/A' }}
-                                            @break
-                                        @case('leave_type_id')
-                                            {{ $item->leave_type->leave_title ?? 'N/A' }}
-                                            @break
-                                        @case('apply_from')
-                                            {{ $item->apply_from ? $item->apply_from->format('Y-m-d') : 'N/A' }}
-                                            @break
-                                        @case('apply_to')
-                                            {{ $item->apply_to ? $item->apply_to->format('Y-m-d') : 'N/A' }}
-                                            @break
-                                        @default
-                                            {{ $item->$field }}
-                                    @endswitch
-                                </flux:table.cell>
-                            @endif
-                        @endif
-                    @endforeach
-                    <flux:table.cell>
-                        @php
-                            $statusColor = match($item->status) {
-                                'applied' => 'blue',
-                                'reviewed' => 'cyan',
-                                'approved' => 'green',
-                                'approved_further' => 'emerald',
-                                'partially_approved' => 'lime',
-                                'rejected' => 'red',
-                                'cancelled_employee', 'cancelled_hr' => 'zinc',
-                                'modified' => 'orange',
-                                'escalated' => 'yellow',
-                                'delegated' => 'purple',
-                                'hold' => 'amber',
-                                'expired' => 'rose',
-                                'withdrawn' => 'gray',
-                                'auto_approved' => 'teal',
-                                default => 'zinc'
-                            };
-                        @endphp
-                        <flux:badge color="{{ $statusColor }}" variant="solid">
-                            {{ ucfirst(str_replace('_', ' ', $item->status)) }}
-                        </flux:badge>
-                    </flux:table.cell>
-                    <flux:table.cell>
-                        <div class="flex mx-1">
-                            <flux:button
-                                wire:click="showLeaveRequestEvents({{ $item->id }})"
-                                color="blue"
-                                size="sm"
-                                tooltip="View Leave Request Events"
-                            >
-                                Events
-                            </flux:button>  
-                            @if($this->canApproveLeave($item))
-                                @if(!in_array($item->status, ['approved', 'rejected', 'cancelled_employee', 'cancelled_hr']))
-                                    <flux:button 
-                                        variant="primary"
-                                        size="sm"
-                                        icon="pencil-square"
-                                        wire:click="edit({{ $item->id }})"
-                                        class="ml-2"
-                                    />
+                <div wire:key="leave-row-wrapper-{{ $item->id }}" class="contents">
+                    <flux:table.row>
+                        @foreach($fieldConfig as $field => $cfg)
+                            @if(in_array($field, $visibleFields))
+                                @if($field !== 'status')
+                                    <flux:table.cell>
+                                        @switch($field)
+                                            @case('employee_id')
+                                                {{ $item->employee->fname ?? 'N/A' }}
+                                                @break
+                                            @case('leave_type_id')
+                                                {{ $item->leave_type->leave_title ?? 'N/A' }}
+                                                @break
+                                            @case('apply_from')
+                                                {{ $item->apply_from ? $item->apply_from->format('Y-m-d') : 'N/A' }}
+                                                @break
+                                            @case('apply_to')
+                                                {{ $item->apply_to ? $item->apply_to->format('Y-m-d') : 'N/A' }}
+                                                @break
+                                            @default
+                                                {{ $item->$field }}
+                                        @endswitch
+                                    </flux:table.cell>
                                 @endif
-                            @else
-                                <flux:badge color="zinc" variant="solid" class="ml-2">
-                                    Not authorized
-                                </flux:badge>
                             @endif
-                        </div>
-                    </flux:table.cell>
-                </flux:table.row>
+                        @endforeach
+                        <flux:table.cell>
+                            @php
+                                $statusColor = match($item->status) {
+                                    'applied' => 'blue',
+                                    'reviewed' => 'cyan',
+                                    'approved' => 'green',
+                                    'approved_further' => 'emerald',
+                                    'partially_approved' => 'lime',
+                                    'rejected' => 'red',
+                                    'cancelled_employee', 'cancelled_hr' => 'zinc',
+                                    'modified' => 'orange',
+                                    'escalated' => 'yellow',
+                                    'delegated' => 'purple',
+                                    'hold' => 'amber',
+                                    'expired' => 'rose',
+                                    'withdrawn' => 'gray',
+                                    'auto_approved' => 'teal',
+                                    default => 'zinc'
+                                };
+                            @endphp
+                            <flux:badge color="{{ $statusColor }}" variant="solid">
+                                {{ ucfirst(str_replace('_', ' ', $item->status)) }}
+                            </flux:badge>
+                        </flux:table.cell>
+                        <flux:table.cell>
+                            <div class="flex mx-1">
+                                <flux:button
+                                    wire:click="showLeaveRequestEvents({{ $item->id }})"
+                                    color="blue"
+                                    size="sm"
+                                    tooltip="View Leave Request Events"
+                                >
+                                    Events
+                                </flux:button>
+                                @if($this->canApproveLeave($item))
+
+                                    @if(!in_array($item->status, ['approved', 'rejected', 'cancelled_employee', 'cancelled_hr']))
+                                        <flux:button
+                                            variant="primary"
+                                            size="sm"
+                                            icon="pencil-square"
+                                            wire:click="edit({{ $item->id }})"
+                                            class="ml-2"
+                                        />
+                                    @endif
+                                @elseif($this->canViewLeave($item))
+                                    <flux:badge color="blue" variant="solid" class="ml-2">
+                                        View Only
+                                    </flux:badge>
+                                @else
+                                    <flux:badge color="zinc" variant="solid" class="ml-2">
+                                        Not authorized
+                                    </flux:badge>
+                                @endif
+                            </div>
+                        </flux:table.cell>
+                    </flux:table.row>
+                </div>
             @endforeach
         </flux:table.rows>
     </flux:table>
 
     <!-- Leave Action Modal -->
-    <flux:modal name="mdl-leave-action" wire:model="showActionModal" @cancel="resetForm">
-        <div class="space-y-6">
+    <flux:modal name="mdl-leave-action" wire:model.live="showActionModal">
+        <div class="space-y-6" wire:key="leave-action-modal">
             <div>
                 <flux:heading size="lg">Leave Request Action</flux:heading>
                 <flux:subheading>
@@ -306,22 +314,26 @@
                 />
 
                 <div class="flex justify-end space-x-4">
-                    <flux:modal.close>
-                        <flux:button variant="ghost">Cancel</flux:button>
-                    </flux:modal.close>
+                    <flux:button
+                        type="button"
+                        variant="ghost"
+                        wire:click="closeModal"
+                    >
+                        Cancel
+                    </flux:button>
 
                     <flux:button
-                        variant="danger"
                         type="button"
-                        wire:click="handleAction('reject')"
+                        variant="danger"
+                        wire:click="handleAction('reject', {{ $id }})"
                     >
                         Reject
                     </flux:button>
 
                     <flux:button
-                        variant="primary"
                         type="button"
-                        wire:click="handleAction('approve')"
+                        variant="primary"
+                        wire:click="handleAction('approve', {{ $id }})"
                     >
                         Approve
                     </flux:button>
@@ -332,10 +344,10 @@
 
     <!-- Leave Request Events Modal -->
     <flux:modal name="leave-request-events-modal" wire:model="showEventsModal" title="Leave Request Events" class="max-w-6xl">
-        @if($selectedId)
-            <livewire:hrms.leave.emp-leave-requests.leave-request-events 
-                :emp-leave-request-id="$selectedId"
-                :wire:key="'leave-request-events-'.$selectedId"/>
+        @if($id)
+            <livewire:hrms.leave.emp-leave-requests.leave-request-events
+                :emp-leave-request-id="$id"
+                wire:key="leave-request-events-{{ $item->id }}"/>
         @endif
     </flux:modal>
 </div>

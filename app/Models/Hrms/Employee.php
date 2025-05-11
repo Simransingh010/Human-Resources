@@ -55,8 +55,8 @@ class Employee extends Model
 		'gender',
 		'email',
 		'phone',
-        'user_id',
-        'is_inactive'
+		'user_id',
+		'is_inactive'
 	];
 
 	public function firm()
@@ -88,13 +88,13 @@ class Employee extends Model
 	{
 		return $this->hasMany(EmpWorkShift::class);
 	}
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
+	public function user()
+	{
+		return $this->belongsTo(User::class);
+	}
 
-    public function emp_job_profile()
-    {
-        return $this->hasOne(EmployeeJobProfile::class, 'employee_id');
-    }
+	public function emp_job_profile()
+	{
+		return $this->hasOne(EmployeeJobProfile::class, 'employee_id');
+	}
 }

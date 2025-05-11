@@ -22,12 +22,12 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon $period_start
  * @property Carbon $period_end
  * @property int|null $leave_type_id
- * @property string $department_scope
- * @property string $employee_scope
- * @property int $approval_level
- * @property string $approval_mode
+ * @property string|null $department_scope
+ * @property string|null $employee_scope
+ * @property int|null $approval_level
+ * @property string|null $approval_mode
  * @property bool $auto_approve
- * @property int $approver_id
+ * @property int|null $approver_id
  * @property float|null $min_days
  * @property float|null $max_days
  * @property bool $is_inactive
@@ -95,14 +95,14 @@ class LeaveApprovalRule extends Model
 	public function departments()
 	{
 		return $this->belongsToMany(Department::class, 'department_leave_approval_rule', 'rule_id')
-					->withPivot('id', 'firm_id', 'is_inactive', 'deleted_at')
-					->withTimestamps();
+			->withPivot('id', 'firm_id', 'is_inactive', 'deleted_at')
+			->withTimestamps();
 	}
 
 	public function employees()
 	{
 		return $this->belongsToMany(Employee::class, 'employee_leave_approval_rule', 'rule_id')
-					->withPivot('id', 'firm_id', 'is_inactive', 'deleted_at')
-					->withTimestamps();
+			->withPivot('id', 'firm_id', 'is_inactive', 'deleted_at')
+			->withTimestamps();
 	}
 }

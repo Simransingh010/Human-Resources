@@ -21,7 +21,7 @@ class EmployeeLeaveApprovalRules extends Component
     public $isEditing = false;
     public $statuses = [];
 
-    // Field configuration for form and table
+
     public array $fieldConfig = [
         'rule_id' => ['label' => 'Approval Rule', 'type' => 'select', 'listKey' => 'rules_list'],
         'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees_list'],
@@ -57,11 +57,11 @@ class EmployeeLeaveApprovalRules extends Component
     public function mount()
     {
         $this->initListsForFields();
-        
+
         // Set default visible fields
         $this->visibleFields = ['rule_id', 'employee_id', 'is_inactive'];
         $this->visibleFilterFields = ['rule_id', 'employee_id', 'is_inactive'];
-        
+
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
 
@@ -72,11 +72,19 @@ class EmployeeLeaveApprovalRules extends Component
     protected function initListsForFields(): void
     {
         $this->listsForFields['rules_list'] = LeaveApprovalRule::where('firm_id', session('firm_id'))
-            ->pluck('id', 'id');
+            ->pluck('id', 'id')
+            ->toArray();
 
+        // Enhanced employee list with properly formatted names
         $this->listsForFields['employees_list'] = Employee::where('firm_id', session('firm_id'))
-            ->selectRaw("CONCAT(COALESCE(fname, ''), ' ', COALESCE(mname, ''), ' ', COALESCE(lname, '')) as full_name, id")
-            ->pluck('full_name', 'id');
+            ->selectRaw("CONCAT(
+                COALESCE(fname, ''), 
+                CASE WHEN mname IS NOT NULL AND mname != '' THEN CONCAT(' ', mname) ELSE '' END,
+                CASE WHEN lname IS NOT NULL AND lname != '' THEN CONCAT(' ', lname) ELSE '' END
+            ) as full_name, id")
+            ->orderBy('fname')
+            ->pluck('full_name', 'id')
+            ->toArray();
 
         $this->listsForFields['status_list'] = [
             '0' => 'Active',
@@ -88,13 +96,13 @@ class EmployeeLeaveApprovalRules extends Component
     {
         $this->statuses = EmployeeLeaveApprovalRule::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => !(bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => !(bool) $val])
             ->toArray();
     }
 
     public function toggleStatus($id)
     {
-        $rule = EmployeeLeaveApprovalRules::find($id);
+        $rule = EmployeeLeaveApprovalRule::find($id);
         $rule->is_inactive = !$rule->is_inactive;
         $rule->save();
 
@@ -141,13 +149,18 @@ class EmployeeLeaveApprovalRules extends Component
     public function list()
     {
         return EmployeeLeaveApprovalRule::query()
-            ->with(['leave_approval_rule', 'employee'])
+            ->with([
+                'leave_approval_rule',
+                'employee' => function ($query) {
+                    $query->select('id', 'fname', 'mname', 'lname');
+                }
+            ])
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->filters['rule_id'], fn($query, $value) => 
+            ->when($this->filters['rule_id'], fn($query, $value) =>
                 $query->where('rule_id', $value))
-            ->when($this->filters['employee_id'], fn($query, $value) => 
+            ->when($this->filters['employee_id'], fn($query, $value) =>
                 $query->where('employee_id', $value))
-            ->when($this->filters['is_inactive'] !== '', fn($query, $value) => 
+            ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
@@ -164,11 +177,11 @@ class EmployeeLeaveApprovalRules extends Component
         $validatedData['formData']['firm_id'] = session('firm_id');
 
         if ($this->isEditing) {
-            $rule = EmployeeLeaveApprovalRules::findOrFail($this->formData['id']);
+            $rule = EmployeeLeaveApprovalRule::findOrFail($this->formData['id']);
             $rule->update($validatedData['formData']);
             $toastMsg = 'Employee rule updated successfully';
         } else {
-            EmployeeLeaveApprovalRules::create($validatedData['formData']);
+            EmployeeLeaveApprovalRule::create($validatedData['formData']);
             $toastMsg = 'Employee rule added successfully';
         }
 
@@ -192,7 +205,7 @@ class EmployeeLeaveApprovalRules extends Component
     public function edit($id)
     {
         $this->isEditing = true;
-        $rule = EmployeeLeaveApprovalRules::findOrFail($id);
+        $rule = EmployeeLeaveApprovalRule::findOrFail($id);
         $this->formData = $rule->toArray();
         $this->modal('mdl-employee-rule')->show();
     }
@@ -200,7 +213,7 @@ class EmployeeLeaveApprovalRules extends Component
     public function delete($id)
     {
         try {
-            $rule = EmployeeLeaveApprovalRules::findOrFail($id);
+            $rule = EmployeeLeaveApprovalRule::findOrFail($id);
             $rule->delete();
 
             Flux::toast(

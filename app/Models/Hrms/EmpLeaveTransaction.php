@@ -6,6 +6,8 @@
 
 namespace App\Models\Hrms;
 
+use App\Models\Saas\Firm;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 
