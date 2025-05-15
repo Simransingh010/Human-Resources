@@ -303,7 +303,7 @@
     </flux:modal>
 
     <!-- Data Table -->
-    <flux:table :paginate="$this->list" class="w-full">
+    <flux:table class="w-full">
         <flux:table.columns>
             <flux:table.column>Leave Type</flux:table.column>
             <flux:table.column>Approver</flux:table.column>
@@ -316,20 +316,57 @@
         </flux:table.columns>
 
         <flux:table.rows>
-
             @foreach($this->list as $rule)
                 <flux:table.row :key="$rule->id">
                     <flux:table.cell>
-                        <flux:badge color="blue" inset="top bottom">
-                            {{ $rule->leave_type->leave_title }}
+                        @php
+                            $leaveTitle = $rule->leave_type->leave_title ?? '';
+                            $leaveTypeColor = match($leaveTitle) {
+                                'Sick Leave' => 'amber',
+                                'Casual Leave' => 'emerald', 
+                                'Annual Leave' => 'indigo',
+                                'Maternity Leave' => 'rose',
+                                'Paternity Leave' => 'blue',
+                                'Study Leave' => 'violet',
+                                'Unpaid Leave' => 'slate',
+                                'Compensatory Leave' => 'green',
+                                'Bereavement Leave' => 'red',
+                                'Earned Leave' => 'cyan',
+                                'Medical Leave' => 'orange',
+                                default => 'gray'
+                            };
+                        @endphp
+                        <flux:badge color="{{ $leaveTypeColor }}" variant="solid">
+                            {{ $leaveTitle ?? 'N/A' }}
                         </flux:badge>
                     </flux:table.cell>
-                    <flux:table.cell>{{ $rule->user->name ?? 'Auto-Approval' }}</flux:table.cell>
-                    <flux:table.cell>{{ ucfirst($rule->approval_mode) }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rule->user->name ?? 'Auto-Approval' }}</flux:table.cell><flux:table.cell>
+                        @php
+                            $approvalModeColor = match($rule->approval_mode) {
+                                'sequential' => 'emerald',
+                                'parallel' => 'blue',
+                                'any' => 'violet',
+                                'view_only' => 'lime',
+                                default => 'gray'
+                            };
+
+                            $approvalModeLabel = match($rule->approval_mode) {
+                                'sequential' => 'Sequential',
+                                'parallel' => 'Joint Approval',
+                                'any' => 'Approver',
+                                'view_only' => 'View Only',
+                                default => ucfirst($rule->approval_mode)
+                            };
+                        @endphp
+                        <flux:badge class="table-cell-wrap" color="{{ $approvalModeColor }}" variant="solid">
+                            {{ $approvalModeLabel }}
+                        </flux:badge>
+                    </flux:table.cell>
+
                     <flux:table.cell>{{ $rule->approval_level }}</flux:table.cell>
                     <flux:table.cell class="table-cell-wrap">
-                        {{ \Carbon\Carbon::parse($rule->period_start)->format('Y-m-d') }} to
-                        {{ \Carbon\Carbon::parse($rule->period_end)->format('Y-m-d') }}
+                        {{ \Carbon\Carbon::parse($rule->period_start)->format('jS F Y') }} to
+                        {{ \Carbon\Carbon::parse($rule->period_end)->format('jS F Y') }}
                     </flux:table.cell>
                     <flux:table.cell>
                         {{ $rule->min_days ?? 0 }} - {{ $rule->max_days ?? 'No Limit' }}
@@ -338,10 +375,12 @@
                         <flux:switch wire:model.live="statuses.{{ $rule->id }}"
                             wire:change="toggleStatus({{ $rule->id }})" />
                     </flux:table.cell>
-                    <flux:table.cell>
+                    <flux:table.cell>   
                         <div class="flex space-x-2">
-
+                            <flux:button variant="outline" size="xs" icon="users" wire:click="showEmployeeList({{ $rule->id }})" >Employees</flux:button>
+{{--                            <flux:button  />--}}
                             <flux:button variant="primary" size="xs" icon="pencil" wire:click="edit({{ $rule->id }})" />
+
                             <flux:modal.trigger name="delete-{{ $rule->id }}">
                                 <flux:button variant="danger" size="xs" icon="trash" />
                             </flux:modal.trigger>
@@ -371,6 +410,9 @@
             @endforeach
         </flux:table.rows>
     </flux:table>
+    <div class="mt-4">
+        <flux:pagination :paginator="$this->list" />
+    </div>
 
     <!-- Rule Details Modal -->
     <flux:modal name="rule-details-modal" wire:model="showDetailsModal" title="Rule Details" class="max-w-6xl">
@@ -379,5 +421,97 @@
                 'ruleId' => $selectedRuleId
             ], key('rule-details-'.$selectedRuleId))
         @endif
+    </flux:modal>
+
+    <!-- Employee List Modal -->
+    <flux:modal name="mdl-employee-list" variant="default" class="max-w-6xl">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Assigned Employees</flux:heading>
+                <flux:text class="text-gray-500">Employees assigned to this leave approval rule</flux:text>
+            </div>
+
+            <flux:separator />
+
+            @if($selectedRuleForEmployees)
+                <!-- Filters -->
+                <flux:card>
+                    <flux:heading>Filters</flux:heading>
+                    <div class="flex flex-wrap gap-4">
+                        <!-- Search -->
+                        <div class="w-1/4">
+                            <flux:input
+                                type="search"
+                                placeholder="Search by name or email..."
+                                wire:model.live.debounce.500ms="employeeSearch"
+                                wire:change="applyEmployeeFilters"
+                            >
+                                <x-slot:prefix>
+                                    <flux:icon name="magnifying-glass" class="w-5 h-5 text-gray-400"/>
+                                </x-slot:prefix>
+                            </flux:input>
+                        </div>
+
+                        @foreach($employeeFilterFields as $field => $cfg)
+                            @if($cfg['type'] === 'select')
+                                <div class="w-1/4">
+                                    <flux:select
+                                        variant="listbox"
+                                        searchable
+                                        placeholder="All {{ $cfg['label'] }}"
+                                        wire:model="employeeFilters.{{ $field }}"
+                                        wire:change="applyEmployeeFilters"
+                                    >
+                                        <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
+                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                            <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                        @endforeach
+                                    </flux:select>
+                                </div>
+                            @endif
+                        @endforeach
+
+                        <flux:button variant="outline" wire:click="clearEmployeeFilters" tooltip="Clear Filters" icon="x-circle" />
+                    </div>
+                </flux:card>
+
+                    <!-- Employee Table -->
+                    <div class="space-y-4">
+                        <div class="overflow-y-auto max-h-[60vh]">
+                            <flux:table>
+                                <flux:table.columns>
+                                    <flux:table.column>Name</flux:table.column>
+                                    <flux:table.column>Email</flux:table.column>
+                                    <flux:table.column>Department</flux:table.column>
+                                    <flux:table.column>Designation</flux:table.column>
+                                    <flux:table.column>Employment Type</flux:table.column>
+                                </flux:table.columns>
+
+                                <flux:table.rows>
+                                    @forelse($this->employeeList as $employee)
+                                        <flux:table.row>
+                                            <flux:table.cell>{{ $employee->fname }} {{ $employee->lname }}</flux:table.cell>
+                                            <flux:table.cell>{{ $employee->email }}</flux:table.cell>
+                                            <flux:table.cell>{{ $employee->emp_job_profile->department->title ?? '-' }}</flux:table.cell>
+                                            <flux:table.cell>{{ $employee->emp_job_profile->designation->title ?? '-' }}</flux:table.cell>
+                                            <flux:table.cell>{{ $employee->emp_job_profile->employment_type->title ?? '-' }}</flux:table.cell>
+                                        </flux:table.row>
+                                    @empty
+                                        <flux:table.row>
+                                            <flux:table.cell colspan="5" class="text-center py-4 text-gray-500">
+                                                No employees assigned to this rule
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @endforelse
+                                </flux:table.rows>
+                            </flux:table>
+
+                            <div class="mt-4">
+                                <flux:pagination :paginator="$this->employeeList" />
+                            </div>
+                        </div>
+                </div>
+            @endif
+        </div>
     </flux:modal>
 </div>

@@ -364,7 +364,7 @@
             @foreach($this->list as $batch)
                 <flux:table.row :key="$batch->id">
                     <flux:table.cell>{{ $batch->title }}</flux:table.cell>
-                    <flux:table.cell>{{ $batch->created_at->format('Y-m-d H:i:s') }}</flux:table.cell>
+                    <flux:table.cell>{{ $batch->created_at->format('jS F Y h:i a') }}</flux:table.cell>
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button

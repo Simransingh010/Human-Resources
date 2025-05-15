@@ -40,7 +40,7 @@ class WorkShiftDayStatus extends Model
 
 	protected $casts = [
 		'firm_id' => 'int',
-		'work_shift_id' => 'int',
+
 		'paid_percent' => 'float',
 		'count_as_working_day' => 'bool',
 		'is_inactive' => 'bool'
@@ -48,15 +48,24 @@ class WorkShiftDayStatus extends Model
 
 	protected $fillable = [
 		'firm_id',
-		'work_shift_id',
+
 		'day_status_code',
 		'day_status_label',
 		'day_status_desc',
 		'paid_percent',
 		'count_as_working_day',
-		'is_inactive'
+		'is_inactive',
+        'day_status_main'
 	];
 
+
+    public const WORK_STATUS_SELECT = [
+        1 => 'Full Working',
+        2 => 'Holiday',
+        3 => 'Week Off',
+        4 => 'Partial Working',
+        5 => 'Suspended',
+    ];
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);

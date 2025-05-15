@@ -23,9 +23,9 @@ class LeaveRequestEvents extends Component
 
     // Field configuration for form and table
     public array $fieldConfig = [
-        'emp_leave_request_id' => ['label' => 'Leave Request', 'type' => 'select', 'listKey' => 'leave_requests', 'showInForm' => true],
-        'user_id' => ['label' => 'User', 'type' => 'select', 'listKey' => 'users', 'showInForm' => true],
-        'event_type' => ['label' => 'Event Type', 'type' => 'text', 'showInForm' => true],
+//        'emp_leave_request_id' => ['label' => 'Leave Request', 'type' => 'select', 'listKey' => 'leave_requests', 'showInForm' => true],
+        'user_id' => ['label' => 'Action By', 'type' => 'select', 'listKey' => 'users', 'showInForm' => true],
+        'event_type' => ['label' => 'Action Type', 'type' => 'text', 'showInForm' => true],
         'from_status' => ['label' => 'From Status', 'type' => 'text', 'showInForm' => true],
         'to_status' => ['label' => 'To Status', 'type' => 'text', 'showInForm' => true],
         'remarks' => ['label' => 'Remarks', 'type' => 'textarea', 'showInForm' => true],

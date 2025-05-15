@@ -13,7 +13,7 @@ use Flux;
 class WorkShiftDays extends Component
 {
     use WithPagination;
-    
+
     public $selectedDayId = null;
     public $sortBy = 'work_date';
     public $sortDirection = 'desc';
@@ -30,6 +30,24 @@ class WorkShiftDays extends Component
 
     public $isEditing = false;
     public $modal = false;
+    public $perPage = 10;
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'work_shift_id' => ['label' => 'Work Shift', 'type' => 'select', 'listKey' => 'work_shifts'],
+        'work_date' => ['label' => 'Date', 'type' => 'date'],
+        'work_shift_day_status_id' => ['label' => 'Day Status', 'type' => 'select', 'listKey' => 'day_statuses'],
+        'start_time' => ['label' => 'Start Time', 'type' => 'time'],
+        'end_time' => ['label' => 'End Time', 'type' => 'time'],
+        'day_status_main' => ['label' => 'Main Status', 'type' => 'select', 'listKey' => 'work_statuses'],
+        'paid_percent' => ['label' => 'Paid Percent', 'type' => 'number'],
+    ];
+
+    public array $filterFields = [
+        'search_shift' => ['label' => 'Work Shift', 'type' => 'select', 'listKey' => 'work_shifts'],
+        'search_date' => ['label' => 'Date', 'type' => 'date'],
+        'search_status' => ['label' => 'Day Status', 'type' => 'select', 'listKey' => 'day_statuses'],
+    ];
 
     // Add filter properties
     public $filters = [
@@ -38,6 +56,8 @@ class WorkShiftDays extends Component
         'search_status' => '',
     ];
 
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
     public array $listsForFields = [];
 
     public function mount()
@@ -45,6 +65,13 @@ class WorkShiftDays extends Component
         $this->resetPage();
         $this->getWorkShiftsForSelect();
         $this->getDayStatusesForSelect();
+
+        // Add work statuses to lists
+        $this->listsForFields['work_statuses'] = WorkShiftDay::WORK_STATUS_SELECT;
+
+        // Set default visible fields and filters
+        $this->visibleFields = ['work_shift_id', 'work_date', 'start_time', 'end_time', 'work_shift_day_status_id', 'day_status_main', 'paid_percent'];
+        $this->visibleFilterFields = ['search_shift', 'search_date', 'search_status'];
     }
 
     private function getWorkShiftsForSelect()
@@ -68,20 +95,20 @@ class WorkShiftDays extends Component
     {
         return WorkShiftDay::query()
             ->where('firm_id', session('firm_id'))
-            ->when($this->filters['search_shift'], function($query) {
-                $query->whereHas('work_shift', function($q) {
+            ->when($this->filters['search_shift'], function ($query) {
+                $query->whereHas('work_shift', function ($q) {
                     $q->where('shift_title', 'like', '%' . $this->filters['search_shift'] . '%');
                 });
             })
-            ->when($this->filters['search_date'], function($query) {
+            ->when($this->filters['search_date'], function ($query) {
                 $query->whereDate('work_date', $this->filters['search_date']);
             })
-            ->when($this->filters['search_status'], function($query) {
+            ->when($this->filters['search_status'], function ($query) {
                 $query->where('work_shift_day_status_id', $this->filters['search_status']);
             })
             ->with(['work_shift', 'day_status'])
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate(50);
     }
 
     public function store()
@@ -89,16 +116,16 @@ class WorkShiftDays extends Component
         $validatedData = $this->validate([
             'formData.work_shift_id' => 'required|exists:work_shifts,id',
             'formData.work_date' => 'required|date',
-            'formData.work_shift_day_status_id' => 'required|exists:work_shift_day_statuses,id',
+            'formData.work_shift_day_status_id' => 'nullable|exists:work_shift_day_statuses,id',
             'formData.start_time' => 'required|date_format:H:i',
             'formData.end_time' => 'required|date_format:H:i|after:formData.start_time',
-            'formData.day_status_main' => 'nullable|string',
+            'formData.day_status_main' => 'required|numeric|in:' . implode(',', array_keys(WorkShiftDay::WORK_STATUS_SELECT)),
             'formData.paid_percent' => 'required|numeric|min:0|max:100',
         ]);
 
         // Convert empty strings to null
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(function($val) {
+        $data = collect($validatedData['formData'])
+            ->map(function ($val) use ($validatedData) {
                 if ($val === '') {
                     return null;
                 }
@@ -111,14 +138,14 @@ class WorkShiftDays extends Component
             ->toArray();
 
         // Add firm_id from session
-        $validatedData['formData']['firm_id'] = session('firm_id');
+        $data['firm_id'] = session('firm_id');
 
         if ($this->isEditing) {
             $day = WorkShiftDay::findOrFail($this->formData['id']);
-            $day->update($validatedData['formData']);
+            $day->update($data);
             $toastMsg = 'Work Shift Day updated successfully';
         } else {
-            WorkShiftDay::create($validatedData['formData']);
+            WorkShiftDay::create($data);
             $toastMsg = 'Work Shift Day added successfully';
         }
 
@@ -156,7 +183,7 @@ class WorkShiftDays extends Component
     public function delete($id)
     {
         $day = WorkShiftDay::findOrFail($id);
-        
+
         // Check if day has related records
         if ($day->emp_attendances()->count() > 0) {
             Flux::toast(
@@ -168,7 +195,7 @@ class WorkShiftDays extends Component
         }
 
         $day->delete();
-        
+
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -187,4 +214,28 @@ class WorkShiftDays extends Component
     {
         return view()->file(app_path('Livewire/Hrms/WorkShifts/WorkShiftMeta/blades/work-shift-days.blade.php'));
     }
-} 
+
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+}

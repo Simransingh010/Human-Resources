@@ -19,6 +19,10 @@ class LeaveApprovalRules extends Component
 {
     use WithPagination;
 
+    // Specify different pagination names
+    protected string $paginationMainTable = 'page';
+    protected string $paginationEmployeeList = 'employees';
+
     public $perPage = 10;
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
@@ -29,6 +33,18 @@ class LeaveApprovalRules extends Component
     public $filteredDepartmentsWithEmployees = [];
     public $selectedEmployees = [];
     public $employeeSearch = '';
+    public $showEmployeeListModal = false;
+    public $selectedRuleEmployees = [];
+    public $selectedRuleForEmployees = null;
+    public $employeePerPage = 10;
+    public $employeeFilters = [];
+    public $employeeVisibleFields = [];
+    public $employeeFilterFields = [
+        'fname' => ['label' => 'First Name', 'type' => 'text'],
+        'department_id' => ['label' => 'Department', 'type' => 'select', 'listKey' => 'departmentlist'],
+        'designation_id' => ['label' => 'Designation', 'type' => 'select', 'listKey' => 'designationlist'],
+        'employment_type_id' => ['label' => 'Employment Type', 'type' => 'select', 'listKey' => 'employmentTypelist']
+    ];
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -94,6 +110,8 @@ class LeaveApprovalRules extends Component
         'formData.period_end.after' => 'End date must be after start date',
     ];
 
+    public $loadedEmployees = [];
+
     public function mount()
     {
         $this->initListsForFields();
@@ -114,16 +132,22 @@ class LeaveApprovalRules extends Component
         // Set default dates
         $this->formData['period_start'] = now()->format('Y-m-d');
         $this->formData['period_end'] = now()->addYear()->format('Y-m-d');
+
+        // Initialize employee filters
+        $this->employeeFilters = array_fill_keys(array_keys($this->employeeFilterFields), '');
+        $this->employeeVisibleFields = ['fname', 'department_id', 'designation_id', 'employment_type_id'];
     }
 
     protected function initListsForFields(): void
     {
-        $this->listsForFields['leave_types_list'] = LeaveType::where('firm_id', session('firm_id'))
+        $firmId = session('firm_id');
+
+        $this->listsForFields['leave_types_list'] = LeaveType::where('firm_id', $firmId)
             ->pluck('leave_title', 'id')
             ->toArray();
 
-        $this->listsForFields['approvers_list'] = User::whereHas('firms', function ($query) {
-            $query->where('firms.id', session('firm_id'));
+        $this->listsForFields['approvers_list'] = User::whereHas('firms', function ($query) use ($firmId) {
+            $query->where('firms.id', $firmId);
         })
             ->pluck('name', 'id')
             ->toArray();
@@ -139,6 +163,17 @@ class LeaveApprovalRules extends Component
             '0' => 'Active',
             '1' => 'Inactive'
         ];
+
+        // Add lists for employee filters
+        $this->listsForFields['departmentlist'] = \App\Models\Settings\Department::where('firm_id', $firmId)
+            ->pluck('title', 'id')
+            ->toArray();
+        $this->listsForFields['designationlist'] = \App\Models\Settings\Designation::where('firm_id', $firmId)
+            ->pluck('title', 'id')
+            ->toArray();
+        $this->listsForFields['employmentTypelist'] = \App\Models\Settings\EmploymentType::where('firm_id', $firmId)
+            ->pluck('title', 'id')
+            ->toArray();
     }
 
     public function applyFilters()
@@ -191,7 +226,7 @@ class LeaveApprovalRules extends Component
             ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
-            ->paginate($this->perPage);
+            ->paginate($this->perPage, ['*'], $this->paginationMainTable);
     }
 
     public function refreshStatuses()
@@ -493,6 +528,88 @@ class LeaveApprovalRules extends Component
             $this->formData['approval_level'] = null;
             $this->formData['approval_mode'] = null;
         }
+    }
+
+    public function showEmployeeList($ruleId)
+    {
+        $this->selectedRuleForEmployees = LeaveApprovalRule::findOrFail($ruleId);
+
+        // Load all employees with their job profiles at once
+        $this->loadedEmployees = $this->selectedRuleForEmployees->employees()
+            ->with(['emp_job_profile.department', 'emp_job_profile.designation', 'emp_job_profile.employment_type'])
+            ->get();
+
+        $this->resetPage('employees');
+        $this->modal('mdl-employee-list')->show();
+    }
+
+    public function getEmployeeListProperty()
+    {
+        if (!$this->selectedRuleForEmployees) {
+            return collect();
+        }
+
+        $filteredEmployees = collect($this->loadedEmployees);
+
+        // Apply search filter
+        if ($this->employeeSearch) {
+            $search = strtolower($this->employeeSearch);
+            $filteredEmployees = $filteredEmployees->filter(function ($employee) use ($search) {
+                return str_contains(strtolower($employee->fname . ' ' . $employee->lname), $search) ||
+                    str_contains(strtolower($employee->email), $search);
+            });
+        }
+
+        // Apply department filter
+        if ($this->employeeFilters['department_id']) {
+            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
+                return $employee->emp_job_profile &&
+                    $employee->emp_job_profile->department_id == $this->employeeFilters['department_id'];
+            });
+        }
+
+        // Apply designation filter
+        if ($this->employeeFilters['designation_id']) {
+            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
+                return $employee->emp_job_profile &&
+                    $employee->emp_job_profile->designation_id == $this->employeeFilters['designation_id'];
+            });
+        }
+
+        // Apply employment type filter
+        if ($this->employeeFilters['employment_type_id']) {
+            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
+                return $employee->emp_job_profile &&
+                    $employee->emp_job_profile->employment_type_id == $this->employeeFilters['employment_type_id'];
+            });
+        }
+
+        // Manual pagination with specific page name
+        $page = $this->getPage($this->paginationEmployeeList);
+        $items = $filteredEmployees->forPage($page, $this->employeePerPage);
+
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            $items,
+            $filteredEmployees->count(),
+            $this->employeePerPage,
+            $page,
+            [
+                'path' => \Illuminate\Support\Facades\Request::url(),
+                'pageName' => $this->paginationEmployeeList
+            ]
+        );
+    }
+
+    public function clearEmployeeFilters()
+    {
+        $this->employeeFilters = array_fill_keys(array_keys($this->employeeFilterFields), '');
+        $this->employeeSearch = '';
+        $this->resetPage($this->paginationEmployeeList);
+    }
+
+    public function applyEmployeeFilters()
+    {
+        $this->resetPage($this->paginationEmployeeList);
     }
 
     public function render()

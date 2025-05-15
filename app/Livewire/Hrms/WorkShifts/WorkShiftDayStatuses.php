@@ -12,7 +12,7 @@ use Flux;
 class WorkShiftDayStatuses extends Component
 {
     use WithPagination;
-    
+
     public $selectedStatusId = null;
     public array $listsForFields = [];
     public $sortBy = 'created_at';
@@ -20,38 +20,57 @@ class WorkShiftDayStatuses extends Component
     public $statuses;
     public $formData = [
         'id' => null,
-        'work_shift_id' => '',
         'day_status_code' => '',
         'day_status_label' => '',
         'day_status_desc' => '',
         'paid_percent' => 100,
         'count_as_working_day' => true,
         'is_inactive' => false,
+        'day_status_main' => '',
     ];
 
     public $isEditing = false;
     public $modal = false;
+    public $perPage = 10;
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'day_status_code' => ['label' => 'Day Status Code', 'type' => 'text'],
+        'day_status_label' => ['label' => 'Day Status Label', 'type' => 'text'],
+        'day_status_desc' => ['label' => 'Day Status Description', 'type' => 'textarea'],
+        'paid_percent' => ['label' => 'Paid Percent', 'type' => 'number'],
+        'count_as_working_day' => ['label' => 'Count as Working Day', 'type' => 'boolean'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+        'day_status_main' => ['label' => 'Work Status', 'type' => 'select', 'listKey' => 'work_statuses'],
+    ];
+
+    public array $filterFields = [
+        'search_label' => ['label' => 'Label', 'type' => 'text'],
+        'search_code' => ['label' => 'Code', 'type' => 'text'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+    ];
 
     // Add filter properties
     public $filters = [
         'search_label' => '',
         'search_code' => '',
-        'search_shift' => '',
+        'is_inactive' => '',
     ];
+
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
 
     public function mount()
     {
         $this->resetPage();
         $this->refreshStatuses();
-        $this->getWorkShiftsForSelect();
-    }
 
-    private function getWorkShiftsForSelect()
-    {
-        $this->listsForFields['work_shifts'] = WorkShift::where('firm_id', session('firm_id'))
-            ->where('is_inactive', 0)
-            ->pluck('shift_title', 'id')
-            ->toArray();
+        // Add work statuses to lists
+        $this->listsForFields['work_statuses'] = WorkShiftDayStatus::WORK_STATUS_SELECT;
+
+        // Set default visible fields and filters
+        $this->visibleFields = ['day_status_code', 'day_status_label', 'day_status_desc', 'paid_percent', 'count_as_working_day', 'day_status_main'];
+        $this->visibleFilterFields = ['search_label', 'search_code'];
     }
 
     #[\Livewire\Attributes\Computed]
@@ -59,57 +78,60 @@ class WorkShiftDayStatuses extends Component
     {
         return WorkShiftDayStatus::query()
             ->where('firm_id', session('firm_id'))
-            ->when($this->filters['search_label'], function($query) {
+            ->when($this->filters['search_label'], function ($query) {
                 $query->where('day_status_label', 'like', '%' . $this->filters['search_label'] . '%');
             })
-            ->when($this->filters['search_code'], function($query) {
+            ->when($this->filters['search_code'], function ($query) {
                 $query->where('day_status_code', 'like', '%' . $this->filters['search_code'] . '%');
             })
-            ->when($this->filters['search_shift'], function($query) {
-                $query->where('work_shift_id', $this->filters['search_shift']);
+            ->when($this->filters['is_inactive'] !== '', function ($query) {
+                $query->where('is_inactive', $this->filters['is_inactive']);
             })
-            ->with('work_shift')
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate($this->perPage);
     }
 
     public function store()
     {
-        $validatedData = $this->validate([
-            'formData.work_shift_id' => 'required|exists:work_shifts,id',
-            'formData.day_status_code' => 'required|string|max:50',
-            'formData.day_status_label' => 'required|string|max:255',
-            'formData.day_status_desc' => 'nullable|string',
-            'formData.paid_percent' => 'required|numeric|min:0|max:100',
-            'formData.count_as_working_day' => 'boolean',
-            'formData.is_inactive' => 'boolean',
-        ]);
+        try {
+            $validatedData = $this->validate([
+                'formData.day_status_code' => 'required|string|max:50',
+                'formData.day_status_label' => 'required|string|max:255',
+                'formData.day_status_desc' => 'nullable|string',
+                'formData.paid_percent' => 'required|numeric|min:0|max:100',
+                'formData.count_as_working_day' => 'boolean',
+                'formData.is_inactive' => 'boolean',
+                'formData.day_status_main' => 'required|numeric|in:' . implode(',', array_keys(WorkShiftDayStatus::WORK_STATUS_SELECT)),
+            ]);
 
-        // Convert empty strings to null
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
+            $data = collect($validatedData['formData'])
+                ->map(fn($val) => $val === '' ? null : $val)
+                ->toArray();
+            $data['firm_id'] = session('firm_id');
+            if ($this->isEditing) {
+                $status = WorkShiftDayStatus::findOrFail($this->formData['id']);
+                $status->update($data);
+                $toastMsg = 'Day Status updated successfully';
+            } else {
+                WorkShiftDayStatus::create($data);
+                $toastMsg = 'Day Status added successfully';
+            }
 
-        // Add firm_id from session
-        $validatedData['formData']['firm_id'] = session('firm_id');
-
-        if ($this->isEditing) {
-            $status = WorkShiftDayStatus::findOrFail($this->formData['id']);
-            $status->update($validatedData['formData']);
-            $toastMsg = 'Day Status updated successfully';
-        } else {
-            WorkShiftDayStatus::create($validatedData['formData']);
-            $toastMsg = 'Day Status added successfully';
+            $this->resetForm();
+            $this->refreshStatuses();
+            $this->modal('mdl-status')->close();
+            Flux::toast(
+                variant: 'success',
+                heading: 'Changes saved.',
+                text: $toastMsg,
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to save day status: ' . $e->getMessage(),
+            );
         }
-
-        $this->resetForm();
-        $this->refreshStatuses();
-        $this->modal('mdl-status')->close();
-        Flux::toast(
-            variant: 'success',
-            heading: 'Changes saved.',
-            text: $toastMsg,
-        );
     }
 
     public function clearFilters()
@@ -128,7 +150,7 @@ class WorkShiftDayStatuses extends Component
     public function delete($id)
     {
         $status = WorkShiftDayStatus::findOrFail($id);
-        
+
         // Check if status has related records
         if ($status->work_shift_days()->count() > 0) {
             Flux::toast(
@@ -140,7 +162,7 @@ class WorkShiftDayStatuses extends Component
         }
 
         $status->delete();
-        
+
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -161,7 +183,7 @@ class WorkShiftDayStatuses extends Component
     {
         $this->statuses = WorkShiftDayStatus::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => (bool) $val])
             ->toArray();
     }
 
@@ -175,8 +197,32 @@ class WorkShiftDayStatuses extends Component
         $this->refreshStatuses();
     }
 
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/WorkShifts/blades/work-shift-day-statuses.blade.php'));
     }
-} 
+}

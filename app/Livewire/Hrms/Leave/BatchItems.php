@@ -22,12 +22,37 @@ class BatchItems extends Component
     public $sortDirection = 'asc';
     public $perPage = 10;
 
+    // Add filter configuration
+    public array $filterFields = [
+        'employee_name' => ['label' => 'Employee', 'type' => 'text'],
+        'leave_type' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leaveTypeList'],
+        'operation' => ['label' => 'Operation', 'type' => 'select', 'listKey' => 'operationList'],
+        'period_start' => ['label' => 'From Date', 'type' => 'date'],
+        'period_end' => ['label' => 'To Date', 'type' => 'date'],
+    ];
+
+    public array $visibleFilterFields = [];
+    public array $filters = [];
+    public array $listsForFields = [];
+
     public function mount($batchId = null)
     {
         $this->batchId = $batchId;
         if ($this->batchId) {
             $this->batch = Batch::with('user')->findOrFail($this->batchId);
         }
+
+        // Initialize visible filters
+        $this->visibleFilterFields = ['employee_name', 'leave_type', 'operation'];
+
+        // Initialize filters with empty values
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+
+        // Initialize dropdown lists
+        $this->listsForFields = [
+            'leaveTypeList' => LeaveType::where('firm_id', session('firm_id'))->pluck('leave_title', 'id')->toArray(),
+            'operationList' => ['insert' => 'Insert', 'update' => 'Update', 'delete' => 'Delete']
+        ];
     }
 
     public function sort($column)
@@ -38,6 +63,24 @@ class BatchItems extends Component
             $this->sortBy = $column;
             $this->sortDirection = 'asc';
         }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
+    public function clearFilters()
+    {
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        $this->resetPage();
     }
 
     protected function getLeaveData($newData)
@@ -65,11 +108,70 @@ class BatchItems extends Component
     #[\Livewire\Attributes\Computed]
     public function batchItems()
     {
-        return BatchItem::query()
+        $query = BatchItem::query()
             ->when($this->batchId, fn($query) => $query->where('batch_id', $this->batchId))
-            ->where('model_type', 'App\Models\Hrms\EmpLeaveBalance')
-            ->orderBy($this->sortBy, $this->sortDirection)
-            ->paginate($this->perPage);
+            ->where('model_type', 'App\Models\Hrms\EmpLeaveBalance');
+
+        // Apply filters
+        if (!empty($this->filters['operation'])) {
+            $query->where('operation', $this->filters['operation']);
+        }
+
+        // Get all batch items first
+        $batchItems = $query->orderBy($this->sortBy, $this->sortDirection)->get();
+
+        // Filter the collection based on decoded JSON data
+        $filteredItems = $batchItems->filter(function ($item) {
+            $leaveData = $this->getLeaveData($item->new_data);
+            if (!$leaveData)
+                return true;
+
+            // Employee name filter
+            if (!empty($this->filters['employee_name'])) {
+                if (
+                    !str_contains(
+                        strtolower($leaveData['employee_name']),
+                        strtolower($this->filters['employee_name'])
+                    )
+                ) {
+                    return false;
+                }
+            }
+
+            // Leave type filter
+            if (!empty($this->filters['leave_type'])) {
+                if ($leaveData['leave_type'] != $this->listsForFields['leaveTypeList'][$this->filters['leave_type']]) {
+                    return false;
+                }
+            }
+
+            // Date filters
+            if (!empty($this->filters['period_start'])) {
+                if ($leaveData['period_start'] < $this->filters['period_start']) {
+                    return false;
+                }
+            }
+
+            if (!empty($this->filters['period_end'])) {
+                if ($leaveData['period_end'] > $this->filters['period_end']) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        // Convert filtered collection back to paginator
+        $page = request()->get('page', 1);
+        $items = $filteredItems->forPage($page, $this->perPage);
+
+        return new \Illuminate\Pagination\LengthAwarePaginator(
+            $items,
+            $filteredItems->count(),
+            $this->perPage,
+            $page,
+            ['path' => request()->url()]
+        );
     }
 
     public function render()

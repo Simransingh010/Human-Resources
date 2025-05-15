@@ -11,11 +11,14 @@ use Flux;
 class HolidayCalendars extends Component
 {
     use WithPagination;
-    
+
     public $selectedCalendarId = null;
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
+    public $perPage = 10;
+    public $showHolidaysModal = false;
+
     public $formData = [
         'id' => null,
         'title' => '',
@@ -28,16 +31,42 @@ class HolidayCalendars extends Component
     public $isEditing = false;
     public $modal = false;
 
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'title' => ['label' => 'Title', 'type' => 'text'],
+        'description' => ['label' => 'Description', 'type' => 'textarea'],
+        'start_date' => ['label' => 'Start Date', 'type' => 'date'],
+        'end_date' => ['label' => 'End Date', 'type' => 'date'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+    ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'search_title' => ['label' => 'Title', 'type' => 'text'],
+        'search_date' => ['label' => 'Date', 'type' => 'date'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+    ];
+
     // Add filter properties
     public $filters = [
         'search_title' => '',
         'search_date' => '',
+        'is_inactive' => '',
     ];
+
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
+
+    protected $listeners = ['refreshCalendarList' => '$refresh'];
 
     public function mount()
     {
         $this->resetPage();
         $this->refreshStatuses();
+
+        // Set default visible fields and filters
+        $this->visibleFields = ['title', 'description', 'start_date', 'end_date'];
+        $this->visibleFilterFields = ['search_title', 'search_date'];
     }
 
     #[\Livewire\Attributes\Computed]
@@ -45,14 +74,17 @@ class HolidayCalendars extends Component
     {
         return HolidayCalendar::query()
             ->where('firm_id', session('firm_id'))
-            ->when($this->filters['search_title'], function($query) {
+            ->when($this->filters['search_title'], function ($query) {
                 $query->where('title', 'like', '%' . $this->filters['search_title'] . '%');
             })
-            ->when($this->filters['search_date'], function($query) {
+            ->when($this->filters['search_date'], function ($query) {
                 $query->where('start_date', 'like', '%' . $this->filters['search_date'] . '%');
             })
+            ->when($this->filters['is_inactive'] !== '', function ($query) {
+                $query->where('is_inactive', $this->filters['is_inactive']);
+            })
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate($this->perPage);
     }
 
     public function store()
@@ -65,12 +97,10 @@ class HolidayCalendars extends Component
             'formData.is_inactive' => 'boolean',
         ]);
 
-        // Convert empty strings to null
         $validatedData['formData'] = collect($validatedData['formData'])
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
-        // Add firm_id from session
         $validatedData['formData']['firm_id'] = session('firm_id');
 
         if ($this->isEditing) {
@@ -108,8 +138,7 @@ class HolidayCalendars extends Component
     public function delete($id)
     {
         $calendar = HolidayCalendar::findOrFail($id);
-        
-        // Check if calendar has related holidays
+
         if ($calendar->holidays()->count() > 0) {
             Flux::toast(
                 variant: 'error',
@@ -120,7 +149,7 @@ class HolidayCalendars extends Component
         }
 
         $calendar->delete();
-        
+
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -139,7 +168,7 @@ class HolidayCalendars extends Component
     {
         $this->statuses = HolidayCalendar::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => (bool) $val])
             ->toArray();
     }
 
@@ -153,8 +182,38 @@ class HolidayCalendars extends Component
         $this->refreshStatuses();
     }
 
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
+    public function showCalendarHolidays($id)
+    {
+        $this->selectedCalendarId = $id;
+        $this->showHolidaysModal = true;
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/WorkShifts/blades/holiday-calendars.blade.php'));
     }
-} 
+}

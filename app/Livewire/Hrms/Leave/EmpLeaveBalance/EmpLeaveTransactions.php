@@ -26,7 +26,7 @@ class EmpLeaveTransactions extends Component
         'leave_balance_id' => ['label' => 'Leave Balance', 'type' => 'select', 'listKey' => 'leave_balances', 'showInForm' => true],
         'transaction_type' => ['label' => 'Transaction Type', 'type' => 'select', 'listKey' => 'transaction_types', 'showInForm' => true],
         'transaction_date' => ['label' => 'Transaction Date', 'type' => 'datetime-local', 'showInForm' => true],
-        'amount' => ['label' => 'Amount', 'type' => 'number', 'showInForm' => true],
+        'amount' => ['label' => 'Balance', 'type' => 'number', 'showInForm' => true],
         'reference_id' => ['label' => 'Reference ID', 'type' => 'number', 'showInForm' => true],
         'created_by' => ['label' => 'Created By', 'type' => 'select', 'listKey' => 'users', 'showInForm' => false],
         'created_at' => ['label' => 'Created At', 'type' => 'datetime', 'showInForm' => false],

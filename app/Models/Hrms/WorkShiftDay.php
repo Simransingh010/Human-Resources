@@ -55,6 +55,13 @@ class WorkShiftDay extends Model
         'day_status_main',
         'paid_percent'
 	];
+    public const WORK_STATUS_SELECT = [
+        1 => 'Full Working',
+        2 => 'Holiday',
+        3 => 'Week Off',
+        4 => 'Partial Working',
+        5 => 'Suspended',
+    ];
 
 	public function firm()
 	{

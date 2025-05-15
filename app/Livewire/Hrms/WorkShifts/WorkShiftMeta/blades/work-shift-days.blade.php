@@ -1,4 +1,5 @@
-<div>
+<?php ?>
+<div class="space-y-6">
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
@@ -12,97 +13,165 @@
     <!-- Heading End -->
 
     <!-- Filters Start -->
-    <div class="flex flex-wrap gap-4 mb-4">
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Work Shift</label>
-            <select
-                wire:model.live="filters.search_shift"
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
-            >
-                <option value="">All Work Shifts</option>
-                @foreach($listsForFields['work_shifts'] ?? [] as $id => $title)
-                    <option value="{{ $id }}">{{ $title }}</option>
-                @endforeach
-            </select>
+    <flux:card>
+        <flux:heading>Filters</flux:heading>
+        <div class="flex flex-wrap gap-4">
+            @foreach($filterFields as $field => $cfg)
+                @if(in_array($field, $visibleFilterFields))
+                    <div class="w-1/4" wire:key="filter-field-{{ $field }}">
+                        @switch($cfg['type'])
+                            @case('select')
+                                <flux:select
+                                    placeholder="All {{ $cfg['label'] }}"
+                                    wire:model.live="filters.{{ $field }}"
+                                    wire:change="$refresh"
+                                >
+                                    <option value="">All {{ $cfg['label'] }}</option>
+                                    @foreach($listsForFields[$cfg['listKey']] ?? [] as $id => $title)
+                                        <option value="{{ $id }}">{{ $title }}</option>
+                                    @endforeach
+                                </flux:select>
+                                @break
+
+                            @case('date')
+                                <flux:date-picker
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live="filters.{{ $field }}"
+                                    wire:change="$refresh"
+                                    selectable-header
+                                />
+                                @break
+
+                            @default
+                                <flux:input
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="$refresh"
+                                />
+                        @endswitch
+                    </div>
+                @endif
+            @endforeach
+
+            <flux:button.group>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters"
+                            icon="x-circle"></flux:button>
+                <flux:modal.trigger name="mdl-show-hide-filters">
+                    <flux:button variant="outline" tooltip="Set Filters" icon="funnel"></flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="mdl-show-hide-columns">
+                    <flux:button variant="outline" tooltip="Set Columns" icon="bars-3"></flux:button>
+                </flux:modal.trigger>
+            </flux:button.group>
         </div>
-        <flux:input
-            label="Search by Date"
-            wire:model.live="filters.search_date"
-            type="date"
-            placeholder="Search by date..."
-            class="w-48"
-        />
-        <div class="relative">
-            <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Day Status</label>
-            <select
-                wire:model.live="filters.search_status"
-                class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
-            >
-                <option value="">All Statuses</option>
-                @foreach($listsForFields['day_statuses'] ?? [] as $id => $label)
-                    <option value="{{ $id }}">{{ $label }}</option>
-                @endforeach
-            </select>
+    </flux:card>
+
+    <!-- Filter Fields Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-filters" variant="flyout">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Filters</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($filterFields as $field => $cfg)
+                        <flux:checkbox
+                            :checked="in_array($field, $visibleFilterFields)"
+                            label="{{ $cfg['label'] }}"
+                            wire:click="toggleFilterColumn('{{ $field }}')"
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
         </div>
-        <div class="flex items-end">
-            <flux:button variant="filled" class="px-2" tooltip="Cancel Filter" icon="x-circle"
-                         wire:click="clearFilters()"></flux:button>
+    </flux:modal>
+
+    <!-- Columns Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Columns</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <flux:checkbox
+                            :checked="in_array($field, $visibleFields)"
+                            label="{{ $cfg['label'] }}"
+                            wire:click="toggleColumn('{{ $field }}')"
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
         </div>
-    </div>
-    <!-- Filters End -->
+    </flux:modal>
 
     <!-- Modal Start -->
-    <flux:modal name="mdl-day" @cancel="resetForm" class="max-w-none">
+    <flux:modal name="mdl-day" @cancel="resetForm" position="right" class="max-w-none" variant="flyout">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing)
-                            Edit Work Shift Day
-                        @else
-                            Add Work Shift Day
-                        @endif
+                        @if($isEditing) Edit Work Shift Day @else Add Work Shift Day @endif
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing)
-                            Update
-                        @else
-                            Add new
-                        @endif work shift day details.
+                        @if($isEditing) Update @else Add new @endif work shift day details.
                     </flux:subheading>
                 </div>
 
                 <!-- Grid layout for form fields -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="relative">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Work Shift</label>
-                        <select
-                            wire:model="formData.work_shift_id"
-                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
-                        >
-                            <option value="">Select Work Shift</option>
-                            @foreach($listsForFields['work_shifts'] ?? [] as $id => $title)
-                                <option value="{{ $id }}">{{ $title }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <flux:input label="Work Date" wire:model="formData.work_date" type="date"/>
-                    <div class="relative">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">Day Status</label>
-                        <select
-                            wire:model="formData.work_shift_day_status_id"
-                            class="block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm px-2 py-2"
-                        >
-                            <option value="">Select Day Status</option>
-                            @foreach($listsForFields['day_statuses'] ?? [] as $id => $label)
-                                <option value="{{ $id }}">{{ $label }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <flux:input label="Start Time" wire:model="formData.start_time" type="time"/>
-                    <flux:input label="End Time" wire:model="formData.end_time" type="time"/>
-                    <flux:input label="Day Status Main" wire:model="formData.day_status_main" placeholder="Main status"/>
-                    <flux:input label="Paid Percent" wire:model="formData.paid_percent" type="number" min="0" max="100" step="1"/>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    @foreach($fieldConfig as $field => $cfg)
+                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
+                            @switch($cfg['type'])
+                                @case('select')
+                                    <flux:select
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                    >
+                                        <option value="">Select {{ $cfg['label'] }}</option>
+                                        @foreach($listsForFields[$cfg['listKey']] ?? [] as $id => $title)
+                                            <option value="{{ $id }}">{{ $title }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                    @break
+
+                                @case('date')
+                                    <flux:date-picker
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                        selectable-header
+                                    />
+                                    @break
+
+                                @case('time')
+                                    <flux:input
+                                        type="time"
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                    />
+                                    @break
+
+                                @case('number')
+                                    <flux:input
+                                        type="number"
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                        min="0"
+                                        max="100"
+                                        step="1"
+                                    />
+                                    @break
+
+                                @default
+                                    <flux:input
+                                        label="{{ $cfg['label'] }}"
+                                        wire:model.live="formData.{{ $field }}"
+                                        placeholder="{{ $cfg['label'] }}"
+                                    />
+                            @endswitch
+                        </div>
+                    @endforeach
                 </div>
 
                 <!-- Submit Button -->
@@ -117,29 +186,54 @@
     <!-- Modal End -->
 
     <!-- Table Start-->
-    <flux:table :paginate="$this->list" class="">
+    <flux:table :paginate="$this->list">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            <flux:table.column>Work Shift</flux:table.column>
-            <flux:table.column>Work Date</flux:table.column>
-            <flux:table.column>Time</flux:table.column>
-            <flux:table.column>Day Status</flux:table.column>
-            <flux:table.column>Main Status</flux:table.column>
-            <flux:table.column>Paid %</flux:table.column>
+            @foreach($fieldConfig as $field => $cfg)
+                @if(in_array($field, $visibleFields))
+                    <flux:table.column wire:key="column-{{ $field }}">{{ $cfg['label'] }}</flux:table.column>
+                @endif
+            @endforeach
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
             @foreach ($this->list as $rec)
                 <flux:table.row :key="$rec->id" class="border-b">
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->work_shift->shift_title }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->work_date->format('Y-m-d') }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">
-                        {{ $rec->start_time ? $rec->start_time->format('H:i') : '-' }} - 
-                        {{ $rec->end_time ? $rec->end_time->format('H:i') : '-' }}
-                    </flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ optional($rec->day_status)->day_status_label }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->day_status_main }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->paid_percent }}%</flux:table.cell>
+                    @foreach($fieldConfig as $field => $cfg)
+                        @if(in_array($field, $visibleFields))
+                            <flux:table.cell class="table-cell-wrap">
+                                @switch($field)
+                                    @case('work_shift_id')
+                                        {{ $rec->work_shift->shift_title ?? 'N/A' }}
+                                        @break
+
+                                    @case('work_shift_day_status_id')
+                                        {{ $rec->day_status->day_status_label ?? 'N/A' }}
+                                        @break
+
+                                    @case('work_date')
+                                        {{ $rec->work_date ? date('jS F Y', strtotime($rec->work_date)) : '-' }}
+                                        @break
+
+                                    @case('start_time')
+                                    @case('end_time')
+                                        {{ $rec->$field ? date('H:i', strtotime($rec->$field)) : '-' }}
+                                        @break
+
+                                    @case('paid_percent')
+                                        {{ $rec->paid_percent }}%
+                                        @break
+
+                                    @case('day_status_main')
+                                        {{ \App\Models\Hrms\WorkShiftDay::WORK_STATUS_SELECT[$rec->day_status_main] ?? '-' }}
+                                        @break
+
+                                    @default
+                                        {{ $rec->$field }}
+                                @endswitch
+                            </flux:table.cell>
+                        @endif
+                    @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button

@@ -11,7 +11,7 @@ use Flux;
 class WorkShifts extends Component
 {
     use WithPagination;
-    
+
     public $selectedShiftId = null;
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
@@ -20,24 +20,42 @@ class WorkShifts extends Component
         'id' => null,
         'shift_title' => '',
         'shift_desc' => '',
-        'start_date' => '',
-        'end_date' => '',
         'is_inactive' => false,
     ];
 
     public $isEditing = false;
     public $modal = false;
+    public $perPage = 10;
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'shift_title' => ['label' => 'Title', 'type' => 'text'],
+        'shift_desc' => ['label' => 'Description', 'type' => 'textarea'],
+        'is_inactive' => ['label' => 'isInactive', 'type' => 'boolean'],
+    ];
+
+    public array $filterFields = [
+        'search_title' => ['label' => 'Title', 'type' => 'text'],
+        'is_inactive' => ['label' => 'isInactive', 'type' => 'boolean'],
+    ];
 
     // Add filter properties
     public $filters = [
         'search_title' => '',
-        'search_date' => '',
+        'is_inactive' => '',
     ];
+
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
 
     public function mount()
     {
         $this->resetPage();
         $this->refreshStatuses();
+
+        // Set default visible fields and filters
+        $this->visibleFields = ['shift_title', 'shift_desc'];
+        $this->visibleFilterFields = ['search_title', 'is_inactive'];
     }
 
     #[\Livewire\Attributes\Computed]
@@ -45,14 +63,14 @@ class WorkShifts extends Component
     {
         return WorkShift::query()
             ->where('firm_id', session('firm_id'))
-            ->when($this->filters['search_title'], function($query) {
+            ->when($this->filters['search_title'], function ($query) {
                 $query->where('shift_title', 'like', '%' . $this->filters['search_title'] . '%');
             })
-            ->when($this->filters['search_date'], function($query) {
-                $query->where('start_date', 'like', '%' . $this->filters['search_date'] . '%');
+            ->when($this->filters['is_inactive'] !== '', function ($query) {
+                $query->where('is_inactive', $this->filters['is_inactive']);
             })
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate($this->perPage);
     }
 
     public function store()
@@ -60,17 +78,13 @@ class WorkShifts extends Component
         $validatedData = $this->validate([
             'formData.shift_title' => 'required|string|max:255',
             'formData.shift_desc' => 'nullable|string',
-            'formData.start_date' => 'nullable|date',
-            'formData.end_date' => 'nullable|date|after_or_equal:formData.start_date',
             'formData.is_inactive' => 'boolean',
         ]);
 
-        // Convert empty strings to null
         $validatedData['formData'] = collect($validatedData['formData'])
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
-        // Add firm_id from session
         $validatedData['formData']['firm_id'] = session('firm_id');
 
         if ($this->isEditing) {
@@ -108,11 +122,13 @@ class WorkShifts extends Component
     public function delete($id)
     {
         $shift = WorkShift::findOrFail($id);
-        
+
         // Check if shift has related records
-        if ($shift->work_shift_days()->count() > 0 || 
-            $shift->emp_work_shifts()->count() > 0 || 
-            $shift->work_shifts_algos()->count() > 0) {
+        if (
+            $shift->work_shift_days()->count() > 0 ||
+            $shift->emp_work_shifts()->count() > 0 ||
+            $shift->work_shifts_algos()->count() > 0
+        ) {
             Flux::toast(
                 variant: 'error',
                 heading: 'Cannot Delete',
@@ -122,7 +138,7 @@ class WorkShifts extends Component
         }
 
         $shift->delete();
-        
+
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -141,7 +157,7 @@ class WorkShifts extends Component
     {
         $this->statuses = WorkShift::where('firm_id', session('firm_id'))
             ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => (bool)$val])
+            ->mapWithKeys(fn($val, $key) => [$key => (bool) $val])
             ->toArray();
     }
 
@@ -167,8 +183,32 @@ class WorkShifts extends Component
         $this->modal('emp-work-shifts-modal')->show();
     }
 
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/WorkShifts/blades/work-shifts.blade.php'));
     }
-} 
+}

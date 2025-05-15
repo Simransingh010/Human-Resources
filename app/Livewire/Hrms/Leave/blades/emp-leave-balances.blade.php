@@ -2,11 +2,6 @@
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <flux:modal.trigger name="mdl-leave-balance" class="flex justify-end">
-            <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
-                New
-            </flux:button>
-        </flux:modal.trigger>
     </div>
     <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->
@@ -191,7 +186,7 @@
                             <flux:table.cell>
                                 @switch($cfg['type'])
                                     @case('date')
-                                        {{ $item->$field?->format('Y-m-d') }}
+                                        {{ $item->$field?->format('jS F Y') }}
                                         @break
                                     @case('number')
                                         {{ number_format($item->$field, 2) }}
@@ -218,17 +213,17 @@
                                     color="green"
                                     size="sm"
                             >
-                                Leave Transactions
+                                    Transactions
                             </flux:button>
-                            <flux:button
-                                variant="primary"
-                                size="sm"
-                                icon="pencil"
-                                wire:click="edit({{ $item->id }})"
-                            />
-                            <flux:modal.trigger name="delete-{{ $item->id }}">
-                                <flux:button variant="danger" size="sm" icon="trash"/>
-                            </flux:modal.trigger>
+{{--                            <flux:button--}}
+{{--                                variant="primary"--}}
+{{--                                size="sm"--}}
+{{--                                icon="pencil"--}}
+{{--                                wire:click="edit({{ $item->id }})"--}}
+{{--                            />--}}
+{{--                            <flux:modal.trigger name="delete-{{ $item->id }}">--}}
+{{--                                <flux:button variant="danger" size="sm" icon="trash"/>--}}
+{{--                            </flux:modal.trigger>--}}
                         </div>
 
                         <!-- Delete Confirmation Modal -->

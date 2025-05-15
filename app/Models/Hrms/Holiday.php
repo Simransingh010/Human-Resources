@@ -51,8 +51,18 @@ class Holiday extends Model
 		'start_date',
 		'end_date',
 		'repeat_annually',
-		'is_inactive'
+		'is_inactive',
+        'day_status_main'
 	];
+
+    public const WORK_STATUS_SELECT = [
+        1 => 'Full Working',
+        2 => 'Holiday',
+        3 => 'Week Off',
+        4 => 'Partial Working',
+        5 => 'Suspended',
+    ];
+
 
     protected function serializeDate(\DateTimeInterface $date)
     {
