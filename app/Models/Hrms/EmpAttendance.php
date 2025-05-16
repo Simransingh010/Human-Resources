@@ -68,11 +68,15 @@ class EmpAttendance extends Model
         'P'   => 'Present',
         'A'   => 'Absent',
         'HD'  => 'Half Day',
+        'PW'  => 'Partial Working',
         'L'   => 'Leave',
         'WFR' => 'Work from Remote',
+        'CW'   => 'Compensatory Work',
         'OD'  => 'On Duty',
         'H'   => 'Holiday',
-        'W'   => 'Weekend',
+        'W'   => 'Week Off',
+        'S'   => 'Suspended',
+
     ];
     public function getAttendanceStatusMainLabelAttribute($value)
     {

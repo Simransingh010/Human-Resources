@@ -159,10 +159,10 @@
                     <!-- Employee Search and Filters -->
                     <div class="mb-4">
                         <!-- Filters Row -->
-                        <div class="grid grid-cols-12 gap-4 lg:grid-cols-3 items-end">
+                        <div class="flex flex-wrap gap-1">
                             <!-- Employee Search -->
                             <div class="col-span-6 relative">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Search Employees</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Search Employees</label>
                                 <flux:input
                                     type="search"
                                     placeholder="Search employees by name, email or phone..."
@@ -189,7 +189,7 @@
                             <!-- Employment Type Filter -->
                             @if(count($employmentTypes) > 0)
                             <div class="p-0.5" wire:key="employment-type-filter">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Employment Type</label>
+                                <label class="block text-sm font-medium text-gray-700 mb-1 px-2">Employment Type</label>
                                 <flux:select
                                     wire:model.live="selectedEmploymentType"
                                     placeholder="All Types"
@@ -306,7 +306,7 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
-                                wire:click="showBatchItems({{ $batch->id }})"
+                                wire:click="viewDetails({{ $batch->id }})"
                                 variant="primary"
                                 size="xs"
                                 icon="eye"
@@ -344,11 +344,144 @@
     </flux:table>
 
     <!-- Batch Items Modal -->
-    <flux:modal name="batch-items-modal" wire:model="showItemsModal" title="Batch Items" class="max-w-6xl">
+    <flux:modal name="batch-items-modal" wire:model="showItemsModal" title="Work Shift Assignment Details" class="max-w-6xl">
         @if($selectedBatchId)
-            @livewire('hrms.leave.batch-items', [
-                'batchId' => $selectedBatchId
-            ], key('batch-items-'.$selectedBatchId))
+            <div class="space-y-6">
+                <!-- Filters Section -->
+                <flux:card>
+                    <flux:heading>Filters</flux:heading>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- Search -->
+                        <div>
+                            <flux:input
+                                type="search"
+                                placeholder="Search by employee or shift..."
+                                wire:model.live="batchItemSearch"
+                                class="w-full"
+                            >
+                                <x-slot:prefix>
+                                    <flux:icon name="magnifying-glass" class="w-5 h-5 text-gray-400"/>
+                                </x-slot:prefix>
+                                @if($batchItemSearch)
+                                    <x-slot:suffix>
+                                        <flux:button
+                                            wire:click="$set('batchItemSearch', '')"
+                                            variant="ghost"
+                                            size="xs"
+                                            icon="x-mark"
+                                            class="text-gray-400 hover:text-gray-600"
+                                        />
+                                    </x-slot:suffix>
+                                @endif
+                            </flux:input>
+                        </div>
+
+                        <!-- Operation Filter -->
+                        <div>
+                            <flux:select
+                                wire:model.live="batchItemFilters.operation"
+                                placeholder="All Operations"
+                            >
+                                <flux:select.option value="">All Operations</flux:select.option>
+                                <flux:select.option value="insert">Insert</flux:select.option>
+                                <flux:select.option value="update">Update</flux:select.option>
+                            </flux:select>
+                        </div>
+
+                        <!-- Status Filter -->
+                        <div>
+                            <flux:select
+                                wire:model.live="batchItemFilters.status"
+                                placeholder="All Status"
+                            >
+                                <flux:select.option value="">All Status</flux:select.option>
+                                <flux:select.option value="active">Active</flux:select.option>
+                                <flux:select.option value="inactive">Inactive</flux:select.option>
+                            </flux:select>
+                        </div>
+                    </div>
+
+                    <!-- Clear Filters Button -->
+                    <div class="mt-4 flex justify-end">
+                        <flux:button
+                            wire:click="clearBatchItemFilters"
+                            variant="outline"
+                            size="sm"
+                            icon="x-circle"
+                        >
+                            Clear Filters
+                        </flux:button>
+                    </div>
+                </flux:card>
+
+                <!-- Results Table -->
+                <flux:table :items="$this->filteredBatchItems" class="w-full">
+                    <flux:table.columns>
+                        <flux:table.column>Employee</flux:table.column>
+                        <flux:table.column>Work Shift</flux:table.column>
+                        <flux:table.column>Period</flux:table.column>
+                        <flux:table.column>Operation</flux:table.column>
+                        <flux:table.column>Status</flux:table.column>
+                    </flux:table.columns>
+
+                    <flux:table.rows>
+                        @forelse($this->filteredBatchItems as $item)
+                            <flux:table.row :key="$item->id">
+                                <flux:table.cell>
+                                    @if($item->empWorkShift && $item->empWorkShift->employee)
+                                        {{ $item->empWorkShift->employee->fname }} 
+                                        {{ $item->empWorkShift->employee->lname }}
+                                    @else
+                                        <span class="text-gray-400">Employee not found</span>
+                                    @endif
+                                </flux:table.cell>
+                                <flux:table.cell>
+                                    @if($item->empWorkShift && $item->empWorkShift->work_shift)
+                                        {{ $item->empWorkShift->work_shift->shift_title }}
+                                    @else
+                                        <span class="text-gray-400">Shift not found</span>
+                                    @endif
+                                </flux:table.cell>
+                                <flux:table.cell>
+                                    @if($item->empWorkShift)
+                                        {{ \Carbon\Carbon::parse($item->empWorkShift->start_date)->format('j M Y') }} - 
+                                        {{ \Carbon\Carbon::parse($item->empWorkShift->end_date)->format('j M Y') }}
+                                    @else
+                                        <span class="text-gray-400">Period not found</span>
+                                    @endif
+                                </flux:table.cell>
+                                <flux:table.cell>
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                        {{ $item->operation === 'insert' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800' }}">
+                                        {{ ucfirst($item->operation) }}
+                                    </span>
+                                </flux:table.cell>
+                                <flux:table.cell>
+                                    @if($item->empWorkShift && !$item->empWorkShift->deleted_at)
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                            Active
+                                        </span>
+                                    @else
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                                            Inactive
+                                        </span>
+                                    @endif
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @empty
+                            <flux:table.row>
+                                <flux:table.cell colspan="5" class="text-center py-4 text-gray-500">
+                                    @if($batchItemSearch || $batchItemFilters['operation'] || $batchItemFilters['status'])
+                                        No records match the selected filters
+                                    @else
+                                        No work shift assignments found in this batch
+                                    @endif
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @endforelse
+                    </flux:table.rows>
+                </flux:table>
+            </div>
         @endif
     </flux:modal>
 </div>

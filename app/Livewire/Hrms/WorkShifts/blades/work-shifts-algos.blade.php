@@ -239,24 +239,6 @@
                                         @break
                                     @case('week_off_pattern')
                                         <div class="space-y-2">
-                                            @php
-                                                $pattern = json_decode($rec->week_off_pattern, true);
-                                                $patternType = $pattern['type'] ?? '';
-                                                $displayText = '';
-
-                                                if ($patternType === 'fixed_weekly') {
-                                                    $offDays = $pattern['fixed_weekly']['off_days'] ?? [];
-                                                    $days = array_map(function($day) use ($weekDays) {
-                                                        return $weekDays[$day] ?? '';
-                                                    }, $offDays);
-                                                    $displayText = 'Fixed Weekly: ' . implode(', ', $days);
-                                                } elseif ($patternType === 'holiday_calendar') {
-                                                    $calendarId = $pattern['holiday_calendar']['id'] ?? null;
-                                                    $displayText = 'Holiday Calendar';
-                                                } elseif ($patternType === 'combined') {
-                                                    $displayText = 'Combined Pattern';
-                                                }
-                                            @endphp
 
                                             @if($displayText)
                                                 <div class="text-sm text-gray-600">{{ $displayText }}</div>

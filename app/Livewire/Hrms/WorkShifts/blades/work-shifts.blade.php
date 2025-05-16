@@ -200,14 +200,14 @@
                     @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:button
-                                wire:click="showWorkShiftDays({{ $rec->id }})"
-                                color="green"
-                                size="sm"
-                                tooltip="Manage Work Shift Days"
-                            >
-                                Work Shift Days
-                            </flux:button>
+{{--                            <flux:button--}}
+{{--                                wire:click="showWorkShiftDays({{ $rec->id }})"--}}
+{{--                                color="green"--}}
+{{--                                size="sm"--}}
+{{--                                tooltip="Manage Work Shift Days"--}}
+{{--                            >--}}
+{{--                                Work Shift Days--}}
+{{--                            </flux:button>--}}
                             <flux:button
                                 wire:click="showEmpWorkShifts({{ $rec->id }})"
                                 color="blue"

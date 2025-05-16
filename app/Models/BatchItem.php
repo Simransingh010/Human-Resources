@@ -8,6 +8,7 @@ namespace App\Models;
 
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Hrms\EmpWorkShift;
 
 /**
  * Class BatchItem
@@ -43,9 +44,19 @@ class BatchItem extends Model
 		'original_data',
 		'new_data'
 	];
-    protected $guarded = [];
+	protected $guarded = [];
 	public function batch()
 	{
 		return $this->belongsTo(Batch::class);
+	}
+
+	public function model()
+	{
+		return $this->morphTo();
+	}
+
+	public function empWorkShift()
+	{
+		return $this->belongsTo(EmpWorkShift::class, 'model_id');
 	}
 }

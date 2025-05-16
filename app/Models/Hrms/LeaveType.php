@@ -41,30 +41,6 @@ class LeaveType extends Model
 	use SoftDeletes;
 	protected $table = 'leave_types';
 
-	// Define constants for leave natures
-	const NATURE_SICK = 'Sick';
-	const NATURE_CASUAL = 'Casual';
-	const NATURE_ANNUAL = 'Annual';
-	const NATURE_MATERNITY = 'Maternity';
-	const NATURE_PATERNITY = 'Paternity';
-	const NATURE_STUDY = 'Study';
-	const NATURE_UNPAID = 'Unpaid';
-	const NATURE_COMPENSATORY = 'Compensatory';
-	const NATURE_BEREAVEMENT = 'Bereavement';
-
-	// Array of all valid leave natures
-	public static $validNatures = [
-		self::NATURE_SICK,
-		self::NATURE_CASUAL,
-		self::NATURE_ANNUAL,
-		self::NATURE_MATERNITY,
-		self::NATURE_PATERNITY,
-		self::NATURE_STUDY,
-		self::NATURE_UNPAID,
-		self::NATURE_COMPENSATORY,
-		self::NATURE_BEREAVEMENT,
-	];
-
 	protected $casts = [
 		'firm_id' => 'int',
 		'max_days' => 'int',

@@ -1,17 +1,25 @@
 <div class="w-full p-0 m-0">
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <flux:modal.trigger name="mdl-employee" class="flex justify-end">
-            <flux:button variant="primary" icon="plus" class="bg-blue-500 text-white px-4 py-2 rounded-md">
-                @if($isEditing)
-                    Edit Employee Record
-                @else
-                    New
-                @endif
-            </flux:button>
-        </flux:modal.trigger>
+        <div class="flex">
+            <flux:modal.trigger name="mdl-employee" class="flex justify-end">
+                <flux:button variant="primary" icon="plus" class="bg-blue-500 me-3 text-white px-4 py-2 rounded-md">
+                    @if($isEditing)
+                        Edit Employee Record
+                    @else
+                        New
+                    @endif
+                </flux:button>
+            </flux:modal.trigger>
+            <flux:modal.trigger name="bulk-upload" class="flex justify-end">
+                <flux:button variant="filled" icon="arrow-up-on-square-stack"
+                             class=" text-white px-4 py-2 rounded-md">
+                    Bulk Upload
+                </flux:button>
+            </flux:modal.trigger>
+        </div>
     </div>
-    <flux:separator class="mt-2 mb-2" />
+    <flux:separator class="mt-2 mb-2"/>
     <flux:modal name="mdl-employee" @close="resetForm" position="right" class="max-w-none">
         <form wire:submit.prevent="saveEmployee">
             <div class="space-y-6">
@@ -63,12 +71,12 @@
             <div class="grid md:grid-cols-3 gap-2 items-end">
                 <div class="">
                     <flux:select
-                        variant="listbox"
-                        searchable
-                        multiple
-                        placeholder="Employees"
-                        wire:model="filters.employees"
-                        wire:key="employees-filter"
+                            variant="listbox"
+                            searchable
+                            multiple
+                            placeholder="Employees"
+                            wire:model="filters.employees"
+                            wire:key="employees-filter"
                     >
                         @foreach($this->listsForFields['employeelist'] as $key => $value)
                             <flux:select.option value="{{ $key }}">{{ $value }}</flux:select.option>
@@ -76,18 +84,18 @@
                     </flux:select>
                 </div>
                 <div>
-                    <flux:input type="text" placeholder="Phone" wire:model="filters.phone" />
+                    <flux:input type="text" placeholder="Phone" wire:model="filters.phone"/>
                 </div>
                 <div>
-                    <flux:input type="text" placeholder="Email" wire:model="filters.email" />
+                    <flux:input type="text" placeholder="Email" wire:model="filters.email"/>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <flux:select
-                        variant="listbox"
-                        multiple
-                        placeholder="Status"
-                        wire:model="filters.status"
-                        wire:key="status-filter"
+                            variant="listbox"
+                            multiple
+                            placeholder="Status"
+                            wire:model="filters.status"
+                            wire:key="status-filter"
                     >
                         <flux:select.option value="0">Active</flux:select.option>
                         <flux:select.option value="1">Inactive</flux:select.option>
@@ -145,18 +153,18 @@
                     {{--                    <flux:table.cell>{{ $employee->created_at }}</flux:table.cell>--}}
                     <flux:table.cell>
                         <div class="flex space-x-2">
-{{--                            <flux:dropdown>--}}
-{{--                                <flux:button icon="calendar-days" size="sm"></flux:button>--}}
+                            {{--                            <flux:dropdown>--}}
+                            {{--                                <flux:button icon="calendar-days" size="sm"></flux:button>--}}
 
-{{--                                <flux:menu>--}}
-{{--                                    <flux:modal.trigger wire:click="showmodal_leave_allocations({{ $employee->id }})">--}}
-{{--                                        <flux:menu.item icon="calendar-days" class="mt-0.5">Leave Allocations</flux:menu.item>--}}
-{{--                                    </flux:modal.trigger>--}}
-{{--                                    <flux:modal.trigger wire:click="showmodal_leave_requests({{ $employee->id }})">--}}
-{{--                                        <flux:menu.item icon="clock" class="mt-0.5">Leave Requests</flux:menu.item>--}}
-{{--                                    </flux:modal.trigger>--}}
-{{--                                </flux:menu>--}}
-{{--                            </flux:dropdown>--}}
+                            {{--                                <flux:menu>--}}
+                            {{--                                    <flux:modal.trigger wire:click="showmodal_leave_allocations({{ $employee->id }})">--}}
+                            {{--                                        <flux:menu.item icon="calendar-days" class="mt-0.5">Leave Allocations</flux:menu.item>--}}
+                            {{--                                    </flux:modal.trigger>--}}
+                            {{--                                    <flux:modal.trigger wire:click="showmodal_leave_requests({{ $employee->id }})">--}}
+                            {{--                                        <flux:menu.item icon="clock" class="mt-0.5">Leave Requests</flux:menu.item>--}}
+                            {{--                                    </flux:modal.trigger>--}}
+                            {{--                                </flux:menu>--}}
+                            {{--                            </flux:dropdown>--}}
                             <flux:dropdown>
                                 <flux:button icon="ellipsis-vertical" size="sm"></flux:button>
 
@@ -169,7 +177,7 @@
                                         </flux:menu.item>
                                     </flux:modal.trigger>
                                     <flux:modal.trigger
-                                        wire:click="showmodal_employeebankaccounts({{ $employee->id }})">
+                                            wire:click="showmodal_employeebankaccounts({{ $employee->id }})">
                                         <flux:menu.item icon="building-library" class="mt-0.5">Bank Accounts
                                         </flux:menu.item>
                                     </flux:modal.trigger>
@@ -279,17 +287,20 @@
         @endif
 
     </flux:modal>
-{{--    <flux:modal name="add-leave-allocations" title="Leave Allocations" class="p-10 max-w-none">--}}
-{{--        @if ($selectedEmpId)--}}
-{{--            <livewire:hrms.attendance.emp-leave-allocations :employeeId="$selectedEmpId"--}}
-{{--                                                            :wire:key="'add-leave-allocations-'.$selectedEmpId"/>--}}
-{{--        @endif--}}
-{{--    </flux:modal>--}}
+    <flux:modal name="bulk-upload" title="Employees Bulk Upload" class="p-10 max-w-none">
 
-{{--    <flux:modal name="add-leave-requests" title="Leave Requests" class="p-10 max-w-none">--}}
-{{--        @if ($selectedEmpId)--}}
-{{--            <livewire:hrms.attendance.emp-leave-requests :employeeId="$selectedEmpId"--}}
-{{--                                                         :wire:key="'add-leave-requests-'.$selectedEmpId"/>--}}
-{{--        @endif--}}
-{{--    </flux:modal>--}}
+    </flux:modal>
+    {{--    <flux:modal name="add-leave-allocations" title="Leave Allocations" class="p-10 max-w-none">--}}
+    {{--        @if ($selectedEmpId)--}}
+    {{--            <livewire:hrms.attendance.emp-leave-allocations :employeeId="$selectedEmpId"--}}
+    {{--                                                            :wire:key="'add-leave-allocations-'.$selectedEmpId"/>--}}
+    {{--        @endif--}}
+    {{--    </flux:modal>--}}
+
+    {{--    <flux:modal name="add-leave-requests" title="Leave Requests" class="p-10 max-w-none">--}}
+    {{--        @if ($selectedEmpId)--}}
+    {{--            <livewire:hrms.attendance.emp-leave-requests :employeeId="$selectedEmpId"--}}
+    {{--                                                         :wire:key="'add-leave-requests-'.$selectedEmpId"/>--}}
+    {{--        @endif--}}
+    {{--    </flux:modal>--}}
 </div>

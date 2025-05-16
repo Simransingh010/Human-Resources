@@ -236,15 +236,29 @@ class Employees extends Component
             // Assign the employee role (or update it)
             $role = Role::where('name', 'employee')->first();
             if ($role) {
-                $user->roles()->sync([$role->id]); // Sync the 'employee' role
+                $user->roles()->sync([
+                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
+                ]);
             }
 
-            // Sync firm_user pivot table
-            $firm_user_data = [
-                'firm_id' => session('firm_id'),
-                'is_default' => true, // You can adjust this based on your requirements
-            ];
-            $user->firms()->syncWithoutDetaching([$firm_user_data]);
+
+//            // Sync firm_user pivot table
+//            $firm_user_data = [
+//                'firm_id' => session('firm_id'),
+//                'is_default' => true, // You can adjust this based on your requirements
+//            ];
+//            $user->firms()->syncWithoutDetaching([$firm_user_data]);
+
+            $firmId = session('firm_id');
+
+            if (! $user->firms()->where('firm_id', $firmId)->exists()) {
+                // only attach if not present
+                $user->firms()->attach($firmId, [
+                    'is_default' => true,
+                ]);
+            }
+            
+
 
             // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
             $panel_id = 1; // Employee panel for App

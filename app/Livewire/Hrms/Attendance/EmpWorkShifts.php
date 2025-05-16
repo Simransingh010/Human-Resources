@@ -64,7 +64,7 @@ class EmpWorkShifts extends Component
         return Employee::where('firm_id', session('firm_id'))
             ->where('is_inactive', false)
             ->get()
-            ->map(function($employee) {
+            ->map(function ($employee) {
                 return [
                     'id' => $employee->id,
                     'name' => $employee->fname . ' ' . $employee->lname
@@ -149,4 +149,4 @@ class EmpWorkShifts extends Component
     {
         return view('livewire.hrms.attendance.emp-work-shifts');
     }
-} 
+}

@@ -96,9 +96,7 @@ class WorkShiftDays extends Component
         return WorkShiftDay::query()
             ->where('firm_id', session('firm_id'))
             ->when($this->filters['search_shift'], function ($query) {
-                $query->whereHas('work_shift', function ($q) {
-                    $q->where('shift_title', 'like', '%' . $this->filters['search_shift'] . '%');
-                });
+                $query->where('work_shift_id', $this->filters['search_shift']);
             })
             ->when($this->filters['search_date'], function ($query) {
                 $query->whereDate('work_date', $this->filters['search_date']);

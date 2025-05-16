@@ -66,6 +66,15 @@ class WorkShiftAllocations extends Component
     public array $visibleFields = [];
     public array $visibleFilterFields = [];
 
+    public $batchItems;
+
+    // Batch items search and filters
+    public $batchItemSearch = '';
+    public $batchItemFilters = [
+        'operation' => '',
+        'status' => ''
+    ];
+
     protected function rules()
     {
         return [
@@ -77,6 +86,7 @@ class WorkShiftAllocations extends Component
 
     public function mount()
     {
+        $this->batchItems = collect();
         $this->initListsForFields();
         $this->loadWorkShifts();
         $this->loadDepartmentsWithEmployees();
@@ -286,6 +296,74 @@ class WorkShiftAllocations extends Component
         }
     }
 
+    public function getFilteredBatchItemsProperty()
+    {
+        return $this->batchItems
+            ->when($this->batchItemSearch, function ($items) {
+                return $items->filter(function ($item) {
+                    $searchTerm = strtolower($this->batchItemSearch);
+                    $employeeName = strtolower($item->empWorkShift->employee->fname . ' ' . $item->empWorkShift->employee->lname);
+                    $shiftTitle = strtolower($item->empWorkShift->work_shift->shift_title);
+
+                    return str_contains($employeeName, $searchTerm) ||
+                        str_contains($shiftTitle, $searchTerm);
+                });
+            })
+            ->when($this->batchItemFilters['operation'], function ($items) {
+                return $items->filter(function ($item) {
+                    return $item->operation === $this->batchItemFilters['operation'];
+                });
+            })
+            ->when($this->batchItemFilters['status'], function ($items) {
+                return $items->filter(function ($item) {
+                    if ($this->batchItemFilters['status'] === 'active') {
+                        return !$item->empWorkShift->deleted_at;
+                    }
+                    return $item->empWorkShift->deleted_at;
+                });
+            });
+    }
+
+    public function clearBatchItemFilters()
+    {
+        $this->batchItemSearch = '';
+        $this->batchItemFilters = [
+            'operation' => '',
+            'status' => ''
+        ];
+    }
+
+    public function viewDetails($batchId)
+    {
+        try {
+            $this->selectedBatchId = $batchId;
+            $this->clearBatchItemFilters();
+
+            // Load batch items with their relationships
+            $this->batchItems = BatchItem::where('batch_id', $batchId)
+                ->where('model_type', 'App\Models\Hrms\EmpWorkShift')
+                ->with(['empWorkShift.employee', 'empWorkShift.work_shift'])
+                ->get();
+
+            if ($this->batchItems->isEmpty()) {
+                Flux::toast(
+                    variant: 'warning',
+                    heading: 'Warning',
+                    text: 'No work shift assignments found in this batch.'
+                );
+            }
+
+            $this->showItemsModal = true;
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load batch details: ' . $e->getMessage()
+            );
+        }
+    }
+
     public function store()
     {
         try {
@@ -312,9 +390,13 @@ class WorkShiftAllocations extends Component
             $periodStart = $this->workShiftDays->first()->work_date;
             $periodEnd = $this->workShiftDays->last()->work_date;
 
-            $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployees);
+            // Get all work shift days with special statuses (only H, W, S)
+            $specialDays = WorkShiftDay::where('work_shift_id', $this->selectedWorkShift)
+                ->whereIn('day_status_main', ['H', 'W', 'S'])
+                ->whereBetween('work_date', [$periodStart, $periodEnd])
+                ->get();
 
-            foreach ($actualSelectedEmployeeIds as $employeeId) {
+            foreach ($this->selectedEmployees as $employeeId) {
                 // Create work shift assignment
                 $assignmentData = [
                     'firm_id' => session('firm_id'),
@@ -324,36 +406,6 @@ class WorkShiftAllocations extends Component
                     'end_date' => $periodEnd
                 ];
 
-                // Check for overlapping assignments
-                $overlapping = EmpWorkShift::where('employee_id', $employeeId)
-                    ->where(function ($query) use ($periodStart, $periodEnd) {
-                        $query->whereBetween('start_date', [$periodStart, $periodEnd])
-                            ->orWhereBetween('end_date', [$periodStart, $periodEnd])
-                            ->orWhere(function ($q) use ($periodStart, $periodEnd) {
-                                $q->where('start_date', '<=', $periodStart)
-                                    ->where('end_date', '>=', $periodEnd);
-                            });
-                    })
-                    ->first();
-
-                if ($overlapping) {
-                    // Store original end date for rollback
-                    $originalEndDate = $overlapping->end_date;
-
-                    // End the existing assignment one day before the new one starts
-                    $overlapping->end_date = $periodStart->copy()->subDay();
-                    $overlapping->save();
-
-                    BatchItem::create([
-                        'batch_id' => $batch->id,
-                        'operation' => 'update',
-                        'model_type' => EmpWorkShift::class,
-                        'model_id' => $overlapping->id,
-                        'original_data' => json_encode(['end_date' => $originalEndDate]),
-                        'new_data' => json_encode(['end_date' => $overlapping->end_date])
-                    ]);
-                }
-
                 // Create new work shift assignment
                 $assignment = EmpWorkShift::create($assignmentData);
 
@@ -362,31 +414,50 @@ class WorkShiftAllocations extends Component
                     'operation' => 'insert',
                     'model_type' => EmpWorkShift::class,
                     'model_id' => $assignment->id,
-                    'new_data' => json_encode($assignment->toArray())
+                    'new_data' => json_encode($assignmentData)
                 ]);
 
-                // Create attendance records for each day
-                foreach ($this->workShiftDays as $day) {
-                    $attendanceData = [
-                        'firm_id' => session('firm_id'),
+                // Create attendance records for special days
+                foreach ($specialDays as $workShiftDay) {
+                    // Check if attendance already exists with any other status
+                    $existingAttendance = EmpAttendance::where([
                         'employee_id' => $employeeId,
-                        'work_shift_day_id' => $day->id,
-                        'work_date' => $day->work_date,
-                        'attendance_status_main' => $day->day_status_main ?? 'P',
-                        'ideal_working_hours' => $this->calculateWorkingHours($day->start_time, $day->end_time),
-                        'actual_worked_hours' => 0,
-                        'final_day_weightage' => $day->paid_percent ? ($day->paid_percent / 100) : 1
-                    ];
+                        'work_date' => $workShiftDay->work_date,
+                    ])
+                        ->whereNotIn('attendance_status_main', ['H', 'W', 'S'])
+                        ->first();
 
-                    // $attendance = EmpAttendance::create($attendanceData);
+                    // Skip if there's an existing attendance with other status
+                    if ($existingAttendance) {
+                        continue;
+                    }
 
-                    // BatchItem::create([
-                    //     'batch_id' => $batch->id,
-                    //     'operation' => 'insert',
-                    //     'model_type' => EmpAttendance::class,
-                    //     'model_id' => $attendance->id,
-                    //     'new_data' => json_encode($attendance->toArray())
-                    // ]);
+                    // Map work shift day status to attendance status
+                    $attendanceStatus = match ($workShiftDay->day_status_main) {
+                        'H' => 'H',  // Holiday
+                        'W' => 'W',  // Week Off
+                        'S' => 'S',  // Suspended
+                        default => null
+                    };
+
+                    if ($attendanceStatus) {
+                        // Create or update attendance record
+                        EmpAttendance::updateOrCreate(
+                            [
+                                'firm_id' => session('firm_id'),
+                                'employee_id' => $employeeId,
+                                'work_date' => $workShiftDay->work_date,
+                            ],
+                            [
+                                'work_shift_day_id' => $workShiftDay->id,
+                                'attendance_status_main' => $attendanceStatus,
+                                'ideal_working_hours' => 0,
+                                'actual_worked_hours' => 0,
+                                'final_day_weightage' => $workShiftDay->paid_percent ? ($workShiftDay->paid_percent / 100) : 0,
+                                'attend_remarks' => 'Auto-marked: ' . WorkShiftDay::WORK_STATUS_SELECT[$attendanceStatus]
+                            ]
+                        );
+                    }
                 }
             }
 
@@ -396,18 +467,18 @@ class WorkShiftAllocations extends Component
 
             Flux::toast(
                 heading: 'Success',
-                text: 'Work shift assignments and attendance records created successfully.',
+                text: 'Work shift assignments and holiday/off day attendance records created successfully.'
             );
 
             $this->resetForm();
-            $this->modal('mdl-batch')->close();
+            $this->dispatch('close-modal', ['name' => 'mdl-batch']);
 
         } catch (\Exception $e) {
             DB::rollBack();
             Flux::toast(
                 variant: 'error',
                 heading: 'Error',
-                text: 'Failed to assign work shift: ' . $e->getMessage(),
+                text: 'Failed to assign work shift: ' . $e->getMessage()
             );
         }
     }
@@ -415,45 +486,57 @@ class WorkShiftAllocations extends Component
     public function rollbackBatch($batchId)
     {
         try {
-            DB::transaction(function () use ($batchId) {
-                $batch = Batch::with([
-                    'items' => function ($query) {
-                        $query->orderBy('id', 'desc');
-                    }
-                ])->findOrFail($batchId);
+            DB::beginTransaction();
 
-                foreach ($batch->items as $item) {
-                    switch ($item->model_type) {
-                        case EmpWorkShift::class:
-                        case EmpAttendance::class:
-                            $model = $item->model_type::withTrashed()->find($item->model_id);
+            // Find the batch with its items
+            $batch = Batch::with([
+                'items' => function ($query) {
+                    $query->where('model_type', 'App\Models\Hrms\EmpWorkShift');
+                }
+            ])->findOrFail($batchId);
 
-                            if ($model) {
-                                if ($item->operation === 'insert') {
-                                    $model->forceDelete();
-                                } elseif ($item->operation === 'update' && $item->original_data) {
-                                    $originalData = json_decode($item->original_data, true);
-                                    if (is_array($originalData)) {
-                                        $model->update($originalData);
-                                    }
-                                }
-                            }
-                            break;
-                    }
+            // Process each work shift assignment
+            foreach ($batch->items as $item) {
+                if ($workShift = EmpWorkShift::withTrashed()->find($item->model_id)) {
+                    // Get the employee and date range
+                    $employeeId = $workShift->employee_id;
+                    $startDate = $workShift->start_date;
+                    $endDate = $workShift->end_date;
+
+                    // Delete only H, W, S attendance records within the period
+                    EmpAttendance::where('employee_id', $employeeId)
+                        ->whereBetween('work_date', [$startDate, $endDate])
+                        ->whereIn('attendance_status_main', ['H', 'W', 'S'])
+                        ->delete();
+
+                    // Delete the work shift assignment
+                    $workShift->forceDelete();
                 }
 
-                $batch->update(['action' => 'bulk_allocation_rolled_back']);
-            });
+                // Delete the batch item
+                $item->delete();
+            }
+
+            // Delete the batch
+            $batch->delete();
+
+            DB::commit();
+
+            // Close any open modals
+            $this->dispatch('close-modal', ['name' => "rollback-{$batchId}"]);
+            $this->showItemsModal = false;
 
             Flux::toast(
                 heading: 'Success',
-                text: 'Work shift assignments and attendance records rolled back successfully.',
+                text: 'Work shift assignments and holiday/off day attendance records have been successfully rolled back.'
             );
+
         } catch (\Exception $e) {
+            DB::rollBack();
             Flux::toast(
                 variant: 'error',
                 heading: 'Error',
-                text: 'Failed to rollback: ' . $e->getMessage(),
+                text: 'Failed to rollback work shift assignments: ' . $e->getMessage()
             );
         }
     }

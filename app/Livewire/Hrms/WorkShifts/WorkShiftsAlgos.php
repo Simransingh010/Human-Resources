@@ -108,7 +108,7 @@ class WorkShiftsAlgos extends Component
         'start_time' => ['label' => 'Start Time', 'type' => 'time'],
         'week_off_pattern' => ['label' => 'Week Off Pattern', 'type' => 'text'],
         'end_time' => ['label' => 'End Time', 'type' => 'time'],
-        
+
         'work_breaks' => ['label' => 'Work Breaks', 'type' => 'multiselect', 'listKey' => 'work_breaks'],
         'holiday_calendar_id' => ['label' => 'Holiday Calendar', 'type' => 'select', 'listKey' => 'holiday_calendars'],
         'allow_wfh' => ['label' => 'Allow WFH', 'type' => 'boolean'],
@@ -766,7 +766,7 @@ class WorkShiftsAlgos extends Component
 
         // Default status for working day
         $status = [
-            'day_status_main' => 1, // Full Working
+            'day_status_main' => 'F', // Full Working
             'paid_percent' => 100
         ];
 
@@ -818,12 +818,12 @@ class WorkShiftsAlgos extends Component
 
             if ($isHoliday) {
                 $status = [
-                    'day_status_main' => 2, // Holiday
+                    'day_status_main' => 'H', // Holiday
                     'paid_percent' => 100  // Paid holiday
                 ];
             } else {
                 $status = [
-                    'day_status_main' => 3, // Week Off
+                    'day_status_main' => 'W', // Week Off
                     'paid_percent' => 0     // Unpaid
                 ];
             }

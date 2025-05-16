@@ -139,7 +139,7 @@ class Holidays extends Component
                 'formData.end_date' => 'nullable|date|after_or_equal:formData.start_date',
                 'formData.repeat_annually' => 'boolean',
                 'formData.is_inactive' => 'boolean',
-                'formData.day_status_main' => 'required|numeric|in:' . implode(',', array_keys(Holiday::WORK_STATUS_SELECT)),
+                'formData.day_status_main' => 'required|string|in:' . implode(',', array_keys(Holiday::WORK_STATUS_SELECT)),
             ];
 
             // Only add holiday_calendar_id validation if not using a specific calendar
