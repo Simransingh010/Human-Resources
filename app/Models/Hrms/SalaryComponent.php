@@ -62,6 +62,30 @@ class SalaryComponent extends Model
 		'document_required'
 	];
 
+	public const NATURE_SELECT = [
+		'earning' => 'Earning',
+		'deduction' => 'Deduction',
+		'no_impact' => 'No Impact'
+	];
+
+	public const COMPONENT_TYPE_SELECT = [
+		'regular' => 'Regular',
+		'one_time' => 'One Time',
+		'reimbursement' => 'Reimbursement',
+		'advance' => 'Advance',
+		'arrear' => 'Arrear',
+		'tax' => 'Tax',
+		'employee_contribution' => 'Employee Contribution',
+		'employer_contribution' => 'Employer Contribution'
+	];
+
+	public const AMOUNT_TYPE_SELECT = [
+		'static_known' => 'Static Known',
+		'static_unknown' => 'Static Unknown',
+		'calculated_known' => 'Calculated Known',
+        'calculated_unknown' => 'Calculated Unknown',
+	];
+
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
@@ -75,8 +99,8 @@ class SalaryComponent extends Model
 	public function employees()
 	{
 		return $this->belongsToMany(Employee::class, 'salary_components_employees')
-					->withPivot('id', 'firm_id', 'salary_template_id', 'salary_component_group_id', 'sequence', 'nature', 'component_type', 'amount_type', 'amount', 'taxable', 'calculation_json', 'effective_from', 'effective_to', 'user_id', 'deleted_at')
-					->withTimestamps();
+			->withPivot('id', 'firm_id', 'salary_template_id', 'salary_component_group_id', 'sequence', 'nature', 'component_type', 'amount_type', 'amount', 'taxable', 'calculation_json', 'effective_from', 'effective_to', 'user_id', 'deleted_at')
+			->withTimestamps();
 	}
 
 	public function salary_templates_components()

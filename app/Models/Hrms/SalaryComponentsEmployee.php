@@ -80,6 +80,30 @@ class SalaryComponentsEmployee extends Model
 		'user_id'
 	];
 
+	public const NATURE_SELECT = [
+		'earning' => 'Earning',
+		'deduction' => 'Deduction',
+		'no_impact' => 'No Impact'
+	];
+
+	public const COMPONENT_TYPE_SELECT = [
+		'regular' => 'Regular',
+		'one_time' => 'One Time',
+		'reimbursement' => 'Reimbursement',
+		'advance' => 'Advance',
+		'arrear' => 'Arrear',
+		'tax' => 'Tax',
+		'employee_contribution' => 'Employee Contribution',
+		'employer_contribution' => 'Employer Contribution'
+	];
+
+	public const AMOUNT_TYPE_SELECT = [
+		'static_known' => 'Static Known',
+		'static_unknown' => 'Static Unknown',
+		'calculated_known' => 'Calculated Known',
+		'calculated_unknown' => 'Calculated Unknown'
+	];
+
 	public function employee()
 	{
 		return $this->belongsTo(Employee::class);

@@ -369,11 +369,11 @@
     </flux:modal>
 
     <!-- Leave Request Events Modal -->
-    <flux:modal name="leave-request-events-modal" wire:model="showEventsModal" title="Leave Request Events" class="max-w-6xl">
+    <flux:modal name="leave-request-events-modal" wire:model="showEventsModal" title="Leave Request Events" @cancel="closeEventsModal" class="max-w-6xl">
         @if($id)
             <livewire:hrms.leave.emp-leave-requests.leave-request-events
                 :emp-leave-request-id="$id"
-                wire:key="leave-request-events-{{ $item->id }}"/>
+                :key="'leave-request-events-'.$id"/>
         @endif
     </flux:modal>
 </div>

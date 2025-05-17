@@ -9,6 +9,7 @@ namespace App\Models;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Hrms\EmpWorkShift;
+use App\Models\Hrms\SalaryComponentsEmployee;
 
 /**
  * Class BatchItem
@@ -58,5 +59,10 @@ class BatchItem extends Model
 	public function empWorkShift()
 	{
 		return $this->belongsTo(EmpWorkShift::class, 'model_id');
+	}
+
+	public function salaryComponentEmployee()
+	{
+		return $this->belongsTo(SalaryComponentsEmployee::class, 'model_id');
 	}
 }

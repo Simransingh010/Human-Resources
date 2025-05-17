@@ -58,6 +58,19 @@ class SalaryTemplateGroup extends Model
 		'is_inactive'
 	];
 
+	public const CYCLE_UNIT_SELECT = [
+		'day' => 'Day',
+		'week' => 'Week',
+		'month' => 'Month',
+		'year' => 'Year'
+	];
+
+	public const CYCLE_START_UNIT_SELECT = [
+		'week_day' => 'Week Day',
+		'month_day' => 'Month Day',
+		'month_date' => 'Month Date'
+	];
+
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
