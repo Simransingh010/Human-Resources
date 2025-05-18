@@ -11,12 +11,6 @@
                     @endif
                 </flux:button>
             </flux:modal.trigger>
-            <flux:modal.trigger name="bulk-upload" class="flex justify-end">
-                <flux:button variant="filled" icon="arrow-up-on-square-stack"
-                             class=" text-white px-4 py-2 rounded-md">
-                    Bulk Upload
-                </flux:button>
-            </flux:modal.trigger>
         </div>
     </div>
     <flux:separator class="mt-2 mb-2"/>
@@ -287,20 +281,4 @@
         @endif
 
     </flux:modal>
-    <flux:modal name="bulk-upload" title="Employees Bulk Upload" class="p-10 max-w-none">
-
-    </flux:modal>
-    {{--    <flux:modal name="add-leave-allocations" title="Leave Allocations" class="p-10 max-w-none">--}}
-    {{--        @if ($selectedEmpId)--}}
-    {{--            <livewire:hrms.attendance.emp-leave-allocations :employeeId="$selectedEmpId"--}}
-    {{--                                                            :wire:key="'add-leave-allocations-'.$selectedEmpId"/>--}}
-    {{--        @endif--}}
-    {{--    </flux:modal>--}}
-
-    {{--    <flux:modal name="add-leave-requests" title="Leave Requests" class="p-10 max-w-none">--}}
-    {{--        @if ($selectedEmpId)--}}
-    {{--            <livewire:hrms.attendance.emp-leave-requests :employeeId="$selectedEmpId"--}}
-    {{--                                                         :wire:key="'add-leave-requests-'.$selectedEmpId"/>--}}
-    {{--        @endif--}}
-    {{--    </flux:modal>--}}
 </div>
