@@ -24,27 +24,7 @@ class SalaryComponents extends Component
     public $rule = [
         'type' => 'operation',
         'operator' => '+',
-        'operands' => [],
-        'condition' => [
-            'left' => [
-                'type' => 'component',
-                'key' => null
-            ],
-            'operator' => '>=',
-            'right' => [
-                'type' => 'constant',
-                'value' => 0
-            ]
-        ],
-        'then' => [
-            'type' => 'operation',
-            'operator' => '+',
-            'operands' => []
-        ],
-        'else' => [
-            'type' => 'constant',
-            'value' => 0
-        ]
+        'operands' => []
     ];
     public $currentPath = '';
 
@@ -127,7 +107,7 @@ class SalaryComponents extends Component
         $this->resetRule();
 
         // Set default visible fields
-        $this->visibleFields = ['title', 'salary_component_group_id', 'nature', 'component_type', 'taxable', 'calculation_json'];
+        $this->visibleFields = ['title', 'salary_component_group_id', 'nature', 'component_type', 'taxable', 'amount_type'];
         $this->visibleFilterFields = ['title', 'salary_component_group_id', 'nature', 'component_type'];
 
         // Initialize filters
@@ -360,27 +340,7 @@ class SalaryComponents extends Component
         $this->rule = [
             'type' => 'operation',
             'operator' => '+',
-            'operands' => [],
-            'condition' => [
-                'left' => [
-                    'type' => 'component',
-                    'key' => null
-                ],
-                'operator' => '>=',
-                'right' => [
-                    'type' => 'constant',
-                    'value' => 0
-                ]
-            ],
-            'then' => [
-                'type' => 'operation',
-                'operator' => '+',
-                'operands' => []
-            ],
-            'else' => [
-                'type' => 'constant',
-                'value' => 0
-            ]
+            'operands' => []
         ];
     }
 
@@ -598,29 +558,6 @@ class SalaryComponents extends Component
         }
 
         switch ($rule['type']) {
-            case 'conditional':
-                if (!isset($rule['condition'])) {
-                    throw new \Exception('Conditional rule requires a condition');
-                }
-                if (!isset($rule['condition']['left']) || !isset($rule['condition']['operator']) || !isset($rule['condition']['right'])) {
-                    throw new \Exception('Condition requires left operand, operator, and right operand');
-                }
-                if (!isset($rule['then'])) {
-                    throw new \Exception('Conditional rule requires a then clause');
-                }
-                if (!isset($rule['else'])) {
-                    throw new \Exception('Conditional rule requires an else clause');
-                }
-
-                // Validate condition operands
-                $this->validateRule($rule['condition']['left'], $depth + 1);
-                $this->validateRule($rule['condition']['right'], $depth + 1);
-
-                // Validate then and else clauses
-                $this->validateRule($rule['then'], $depth + 1);
-                $this->validateRule($rule['else'], $depth + 1);
-                break;
-
             case 'operation':
                 if (!isset($rule['operator'])) {
                     throw new \Exception('Operation requires an operator');
@@ -637,8 +574,13 @@ class SalaryComponents extends Component
                 break;
 
             case 'component':
-                if (!isset($rule['key']) || !array_key_exists($rule['key'], $this->salaryComponents)) {
-                    throw new \Exception('Invalid or missing component key');
+                // Debug information
+                if (!isset($rule['key'])) {
+                    throw new \Exception('Component key is missing. Rule: ' . json_encode($rule));
+                }
+
+                if (!array_key_exists($rule['key'], $this->salaryComponents)) {
+                    throw new \Exception('Invalid component key: ' . $rule['key'] . '. Available keys: ' . implode(', ', array_keys($this->salaryComponents)));
                 }
                 break;
 
@@ -776,42 +718,6 @@ class SalaryComponents extends Component
         $html .= '</div>';
 
         return $html;
-    }
-
-    public function addThenOperand()
-    {
-        if (!isset($this->rule['then']['operands'])) {
-            $this->rule['then']['operands'] = [];
-        }
-        $this->rule['then']['operands'][] = [
-            'type' => 'component',
-            'key' => null
-        ];
-    }
-
-    public function removeThenOperand($index)
-    {
-        if (isset($this->rule['then']['operands'])) {
-            array_splice($this->rule['then']['operands'], $index, 1);
-        }
-    }
-
-    public function addElseOperand()
-    {
-        if (!isset($this->rule['else']['operands'])) {
-            $this->rule['else']['operands'] = [];
-        }
-        $this->rule['else']['operands'][] = [
-            'type' => 'component',
-            'key' => null
-        ];
-    }
-
-    public function removeElseOperand($index)
-    {
-        if (isset($this->rule['else']['operands'])) {
-            array_splice($this->rule['else']['operands'], $index, 1);
-        }
     }
 
     public function render()

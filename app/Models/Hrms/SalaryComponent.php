@@ -74,6 +74,7 @@ class SalaryComponent extends Model
 		'reimbursement' => 'Reimbursement',
 		'advance' => 'Advance',
 		'arrear' => 'Arrear',
+        'tds' => 'TDS',
 		'tax' => 'Tax',
 		'employee_contribution' => 'Employee Contribution',
 		'employer_contribution' => 'Employer Contribution'
@@ -106,5 +107,10 @@ class SalaryComponent extends Model
 	public function salary_templates_components()
 	{
 		return $this->hasMany(SalaryTemplatesComponent::class);
+	}
+
+	public function salary_components_employees()
+	{
+		return $this->hasMany(SalaryComponentsEmployee::class);
 	}
 }

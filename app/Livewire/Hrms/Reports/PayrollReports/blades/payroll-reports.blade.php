@@ -1,5 +1,5 @@
 <div class="space-y-6">
-    <flux:heading size="lg">Attendance Summary Report</flux:heading>
+    <flux:heading size="lg">Payroll Summary Report</flux:heading>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <!-- Date Range -->
@@ -33,6 +33,14 @@
         <flux:select label="Employment Type" variant="listbox" multiple searchable  wire:model.defer="filters.employment_type_id">
             <flux:select.option value="">All</flux:select.option>
             @foreach($listsForFields['employment_types'] as $id => $name)
+                <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
+            @endforeach
+        </flux:select>
+
+        <!-- Salary Execution Group -->
+        <flux:select label="Salary Execution Group" variant="listbox" wire:model.defer="filters.salary_execution_group_id">
+            <flux:select.option value="">All</flux:select.option>
+            @foreach($listsForFields['salary_execution_groups'] as $id => $name)
                 <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
             @endforeach
         </flux:select>

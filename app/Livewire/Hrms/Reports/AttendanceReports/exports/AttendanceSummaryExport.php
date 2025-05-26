@@ -133,7 +133,7 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 
         $row[] = $totalPresent;
 
-//        dd($row);
+       
 
         return $row;
     }

@@ -92,6 +92,7 @@ class SalaryComponentsEmployee extends Model
 		'reimbursement' => 'Reimbursement',
 		'advance' => 'Advance',
 		'arrear' => 'Arrear',
+        'tds' => 'TDS',
 		'tax' => 'Tax',
 		'employee_contribution' => 'Employee Contribution',
 		'employer_contribution' => 'Employer Contribution'

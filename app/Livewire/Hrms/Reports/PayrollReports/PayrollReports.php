@@ -1,9 +1,8 @@
 <?php
 
-namespace App\Livewire\Hrms\Reports\AttendanceReports;
+namespace App\Livewire\Hrms\Reports\PayrollReports;
 
-
-use App\Livewire\Hrms\Reports\AttendanceReports\exports\AttendanceSummaryExport;
+use App\Livewire\Hrms\Reports\PayrollReports\exports\PayrollSummaryExport;
 use App\Models\Hrms\EmpAttendance;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmployeeJobProfile;
@@ -12,7 +11,14 @@ use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Carbon;
 use Flux;
 
-class AttendanceSummary extends Component
+
+//D:\HRMS_12\app\Livewire\Hrms\Reports\AttendanceReports\exports\PayrollSummaryExport.php
+//use function App\Livewire\Hrms\Reports\PayrollReports\app_path;
+//use function App\Livewire\Hrms\Reports\PayrollReports\now;
+//use function App\Livewire\Hrms\Reports\PayrollReports\session;
+//use function App\Livewire\Hrms\Reports\PayrollReports\view;
+
+class PayrollReports extends Component
 {
 
     public $filters = [
@@ -21,6 +27,7 @@ class AttendanceSummary extends Component
         'department_id' => null,
         'joblocation_id' => null,
         'employment_type_id' => null,
+        'salary_execution_group_id' => null,
     ];
 
     public array $listsForFields = [];
@@ -28,8 +35,8 @@ class AttendanceSummary extends Component
     public function mount()
     {
         $this->initListsForFields();
-        $this->filters['date_from'] = now()->startOfMonth()->format('Y-m-d');
-        $this->filters['date_to'] = now()->format('Y-m-d');
+        $this->filters['date_from'] = '2025-04-01';
+        $this->filters['date_to'] = '2025-04-30';
     }
 
     protected function initListsForFields(): void
@@ -59,6 +66,11 @@ class AttendanceSummary extends Component
             ->unique()
             ->filter()
             ->toArray();
+
+        $this->listsForFields['salary_execution_groups'] = \App\Models\Hrms\SalaryExecutionGroup::where('firm_id', session('firm_id'))
+            ->where('is_inactive', false)
+            ->pluck('title', 'id')
+            ->toArray();
     }
 
     public function export()
@@ -69,14 +81,14 @@ class AttendanceSummary extends Component
         ]);
 
         return Excel::download(
-            new AttendanceSummaryExport($this->filters),
-            'attendance-summary-' . now()->format('Ymd_His') . '.xlsx'
+            new PayrollSummaryExport($this->filters),
+            'payroll-report-' . now()->format('Ymd_His') . '.xlsx'
         );
     }
 
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Reports/AttendanceReports/blades/attendance-summary.blade.php'));
+        return view()->file(app_path('Livewire/Hrms/Reports/PayrollReports/blades/payroll-reports.blade.php'));
     }
 }

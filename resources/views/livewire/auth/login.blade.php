@@ -57,6 +57,8 @@ new #[Layout('components.layouts.auth')] class extends Component {
         // Few System Settings  be loaded  and saved in session
         session(['dateFormat' => 'd-M-Y']);
         session(['defaultwire' => 'panel.dashboard']);
+        session(['fy_start' => '2025-04-01']);
+        session(['fy_end' => '2026-03-31']);
 
 
         $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);

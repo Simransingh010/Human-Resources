@@ -7,6 +7,10 @@ use App\Models\Hrms\SalaryComponent;
 use App\Models\Settings\Department;
 use App\Models\Settings\Designation;
 use App\Models\Hrms\SalaryComponentsEmployee;
+use App\Models\Hrms\EmployeeTaxRegime;
+use App\Models\Hrms\PayrollComponentsEmployeesTrack;
+use App\Models\Hrms\EmployeesSalaryExecutionGroup;
+use App\Models\Hrms\PayrollSlot;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
@@ -27,6 +31,15 @@ class BulkEmployeeSalaryComponents extends Component
     public $employees = [];
     public $employeeComponents = [];
     public array $bulkupdate = [];
+
+    // Salary Slip Modal Properties
+    public $showSalarySlipModal = false;
+    public $selectedEmployee = null;
+    public $salaryComponents = [];
+    public $totalEarnings = 0;
+    public $totalDeductions = 0;
+    public $netSalary = 0;
+    public $netSalaryInWords = '';
 
     // Filter fields configuration
     public array $filterFields = [
@@ -69,8 +82,12 @@ class BulkEmployeeSalaryComponents extends Component
     protected function loadComponents()
     {
         $this->components = SalaryComponent::where('firm_id', Session::get('firm_id'))
-            ->orderBy('title')
             ->get()
+            ->filter(function ($component) {
+                // Only include components with static_known or static_unknown amount_type
+                return in_array($component->amount_type, ['static_known', ]);
+            })
+            ->sortBy('title')
             ->map(function ($component) {
                 return [
                     'id' => $component->id,
@@ -306,6 +323,670 @@ class BulkEmployeeSalaryComponents extends Component
     public function getComponentAmount($employeeId, $componentId)
     {
         return $this->componentAmounts[$employeeId][$componentId] ?? null;
+    }
+
+    protected function buildDependencyGraph($components)
+    {
+        $graph = [];
+        foreach ($components as $component) {
+            $graph[$component['id']] = [
+                'dependencies' => $this->findDependencies($component['calculation_json']),
+                'calculated' => false,
+                'component' => $component
+            ];
+        }
+        return $graph;
+    }
+
+    protected function findDependencies($formula)
+    {
+        $dependencies = [];
+
+        if (!is_array($formula)) {
+            return $dependencies;
+        }
+
+        if ($formula['type'] === 'component' && isset($formula['key'])) {
+            $dependencies[] = $formula['key'];
+        }
+
+        if (isset($formula['operands']) && is_array($formula['operands'])) {
+            foreach ($formula['operands'] as $operand) {
+                $dependencies = array_merge($dependencies, $this->findDependencies($operand));
+            }
+        }
+
+        return array_unique($dependencies);
+    }
+
+    protected function getCalculationOrder($graph)
+    {
+        $order = [];
+        $visited = [];
+        $temp = [];
+
+        // Helper function for topological sort
+        $visit = function ($nodeId) use (&$visit, &$order, &$visited, &$temp, $graph) {
+            if (isset($temp[$nodeId])) {
+                throw new \Exception("Circular dependency detected in salary components");
+            }
+            if (isset($visited[$nodeId])) {
+                return;
+            }
+
+            $temp[$nodeId] = true;
+
+            foreach ($graph[$nodeId]['dependencies'] as $depId) {
+                if (isset($graph[$depId])) {
+                    $visit($depId);
+                }
+            }
+
+            unset($temp[$nodeId]);
+            $visited[$nodeId] = true;
+            $order[] = $nodeId;
+        };
+
+        // Visit each node
+        foreach ($graph as $nodeId => $node) {
+            if (!isset($visited[$nodeId])) {
+                $visit($nodeId);
+            }
+        }
+
+        return $order;
+    }
+
+    public function syncCalculations($employeeId)
+    {
+        try {
+            // Get the employee
+            $employee = Employee::findOrFail($employeeId);
+
+            // Get calculated components
+            $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                ->where('firm_id', Session::get('firm_id'))
+                ->whereHas('salary_component', function ($query) {
+                    $query->where('amount_type', 'calculated_known')
+                          ->where('component_type', '!=', 'tds');
+                })
+                ->with('salary_component')
+                ->get()
+                ->map(function ($employeeComponent) {
+                    if (empty($employeeComponent->calculation_json)) {
+                        throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
+                    }
+                    return [
+                        'id' => $employeeComponent->salary_component->id,
+                        'title' => $employeeComponent->salary_component->title,
+                        'calculation_json' => $employeeComponent->calculation_json
+                    ];
+                });
+
+//            dd($calculatedComponents);
+
+
+
+
+            // Build dependency graph
+            $graph = $this->buildDependencyGraph($calculatedComponents);
+
+            // Get calculation order
+            try {
+                $calculationOrder = $this->getCalculationOrder($graph);
+//dd($calculationOrder);
+            } catch (\Exception $e) {
+                throw new \Exception("Error in calculation dependencies: " . $e->getMessage());
+            }
+
+            // Get initial component values
+            $componentValues = $this->getComponentValuesForEmployee($employeeId);
+
+            // Calculate components in order
+            foreach ($calculationOrder as $componentId) {
+                try {
+                    $component = $graph[$componentId]['component'];
+
+                    if (empty($component['calculation_json'])) {
+                        throw new \Exception("No calculation formula defined for component {$component['title']}");
+                    }
+
+                    // Calculate value using all previously calculated values
+                    $calculatedValue = $this->executeCalculation($component['calculation_json'], $componentValues);
+
+                    // Update the component value in database
+                    SalaryComponentsEmployee::where('employee_id', $employeeId)
+                        ->where('salary_component_id', $componentId)
+                        ->where('firm_id', Session::get('firm_id'))
+                        ->update([
+                            'amount' => $calculatedValue
+                        ]);
+
+                    // Update component values for next calculations
+                    $componentValues[$componentId] = $calculatedValue;
+                    $componentValues[$component['title']] = $calculatedValue;
+
+                    // Mark as calculated in graph
+                    $graph[$componentId]['calculated'] = true;
+
+                } catch (\Exception $e) {
+                    throw new \Exception("Error calculating {$component['title']}: " . $e->getMessage());
+                }
+            }
+
+            // After calculating other components, calculate tax
+            $this->calculateTax($employeeId);
+
+            // Reload employee components
+            $this->loadEmployeeComponents([$employeeId]);
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Calculations Updated',
+                text: "Calculated components for {$employee->fname} have been updated successfully"
+            );
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage()
+            );
+        }
+    }
+
+    protected function getComponentValuesForEmployee($employeeId)
+    {
+        $values = [];
+        $components = SalaryComponentsEmployee::select([
+            'salary_components_employees.amount',
+            'salary_components_employees.salary_component_id',
+            'salary_components.title'
+        ])
+            ->join('salary_components', 'salary_components.id', '=', 'salary_components_employees.salary_component_id')
+            ->where('salary_components_employees.employee_id', $employeeId)
+            ->where('salary_components_employees.firm_id', Session::get('firm_id'))
+            ->get();
+
+        foreach ($components as $component) {
+            $values[$component->salary_component_id] = floatval($component->amount);
+            $values[$component->title] = floatval($component->amount);
+        }
+
+        return $values;
+    }
+
+    protected function validateRequiredComponents($calculationJson, $componentValues)
+    {
+        // Handle both array and string inputs
+        $json = is_array($calculationJson) ? $calculationJson : json_decode($calculationJson, true);
+        $requiredComponents = $this->extractRequiredComponents($json);
+
+        foreach ($requiredComponents as $component) {
+            // Case-insensitive component check
+            $found = false;
+            foreach ($componentValues as $title => $value) {
+                if (strtolower($title) === strtolower($component)) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function calculateTax($employeeId)
+    {
+        try {
+            // 1. Get employee's tax regime
+            $employeeTaxRegime = EmployeeTaxRegime::where('employee_id', $employeeId)
+                ->where('firm_id', Session::get('firm_id'))
+                ->where(function ($query) {
+                    $query->whereNull('effective_to')
+                        ->orWhere('effective_to', '>', now());
+                })
+                ->with('tax_regime.tax_brackets')
+                ->first();
+
+            if (!$employeeTaxRegime) {
+                throw new \Exception("No active tax regime found for employee");
+            }
+
+            // 2. Get total earnings for the month
+            $salaryCycleEarnings = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                ->where('firm_id', Session::get('firm_id'))
+                ->where('nature', 'earning')
+                ->where('taxable', true)
+                ->where(function ($query) {
+                    $query->whereNull('effective_to')
+                        ->orWhere('effective_to', '>', now());
+                })
+                ->sum('amount');
+            $monthlyEarnings = $salaryCycleEarnings; //function to be added later
+
+            // 3. Calculate annual income
+            $annualIncome = ($monthlyEarnings * 12)-75000;//assuming standard deduction of 75000
+
+
+
+            // 4. Get tax brackets for the regime
+            $taxBrackets = $employeeTaxRegime->tax_regime->tax_brackets()
+                ->where('type', 'SLAB')
+                ->orderBy('income_from')
+                ->get();
+
+            // 5. Calculate tax for each slab
+            $totalTax = 0;
+            $tax_see='';
+            $health_education_cess = 0;
+
+            $remainingIncome = $annualIncome;
+
+            foreach ($taxBrackets as $bracket) {
+                $slabAmount = min(
+                    $remainingIncome,
+                    ($bracket->income_to ?? PHP_FLOAT_MAX) - $bracket->income_from
+                );
+
+                if ($slabAmount > 0) {
+                    $taxForSlab = round(   ($slabAmount * $bracket->rate) / 100);
+                    $totalTax += $taxForSlab;
+                    $tax_see.="*".$taxForSlab;
+                    $remainingIncome -= $slabAmount;
+                }
+
+                if ($remainingIncome <= 0) {
+                    break;
+                }
+            }
+$health_education_cess = .04 * $totalTax;
+
+
+            // 6. Calculate monthly
+            $total_tds_applicable_for_year = $totalTax + $health_education_cess; // Total TDS applicable for the year
+            $total_tds_ytd = $this->calculateTdsTillytd($employeeId); // Get actual YTD from PayrollComponentsEmployeesTrack
+            $total_tds_remaining_for_year = $total_tds_applicable_for_year - $total_tds_ytd;
+            
+            // Get actual slot counts
+            $total_count_of_salary_slots = $this->getTotalSlotsCount($employeeId);
+            $total_count_of_salary_slots_proccessed = $this->getProcessedSlotsCount($employeeId);
+            $total_count_of_salary_slots_remaining = $total_count_of_salary_slots - $total_count_of_salary_slots_proccessed;
+
+            if ($total_count_of_salary_slots_remaining <= 0) {
+                throw new \Exception("No remaining salary slots in current financial year");
+            }
+
+            $monthlyTax = ($total_tds_remaining_for_year) / $total_count_of_salary_slots_remaining;
+            $monthlyTax = $this->roundOffTax($monthlyTax);
+
+            // 7. Update or create TDS component
+            $tdsComponent = SalaryComponentsEmployee::updateOrCreate(
+                [
+                    'employee_id' => $employeeId,
+                    'firm_id' => Session::get('firm_id'),
+                    'salary_component_id' => $this->getTDSComponentId(), // You'll need to implement this
+                ],
+                [
+                    'amount' => $monthlyTax,
+                    'nature' => 'deduction',
+                    'component_type' => 'tax',
+                    'amount_type' => 'calculated_known',
+                    'effective_from' => now(),
+                ]
+            );
+
+            return $monthlyTax;
+
+        } catch (\Exception $e) {
+            throw new \Exception("Error calculating tax: " . $e->getMessage());
+        }
+    }
+
+    // Helper method to get TDS component ID
+
+    function roundOffTax($amount) {
+        return round($amount / 10) * 10;
+    }
+    protected function calculateTdsTillytd($employeeId) 
+    {
+        try {
+            // Get TDS component ID
+            $tdsComponentId = $this->getTDSComponentId();
+            
+            // Get financial year from session
+            $fyStart = session('fy_start');
+            $fyEnd = session('fy_end');
+
+            if (!$fyStart || !$fyEnd) {
+                throw new \Exception("Financial year not set in session");
+            }
+
+            // Calculate total TDS deducted in current financial year
+            $totalTdsYtd = PayrollComponentsEmployeesTrack::join('payroll_slots', 'payroll_components_employees_tracks.payroll_slot_id', '=', 'payroll_slots.id')
+                ->where('payroll_components_employees_tracks.firm_id', Session::get('firm_id'))
+                ->where('payroll_components_employees_tracks.employee_id', $employeeId)
+                ->where('payroll_components_employees_tracks.salary_component_id', $tdsComponentId)
+                ->where('payroll_components_employees_tracks.component_type', 'tds')
+                ->whereBetween('payroll_components_employees_tracks.salary_period_from', [$fyStart, $fyEnd])
+                ->where('payroll_slots.payroll_slot_status', 'CM') // Using the status from payroll_slots table
+                ->sum('payroll_components_employees_tracks.amount_payable');
+
+            return $totalTdsYtd;
+
+        } catch (\Exception $e) {
+            throw new \Exception("Error calculating YTD TDS: " . $e->getMessage());
+        }
+    }
+
+    protected function getProcessedSlotsCount($employeeId) 
+    {
+        // Get financial year from session
+        $fyStart = session('fy_start');
+        $fyEnd = session('fy_end');
+
+        // Get employee's execution group
+        $executionGroupId = EmployeesSalaryExecutionGroup::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->value('salary_execution_group_id');
+
+        // Count completed slots in current financial year
+        return PayrollSlot::where('firm_id', Session::get('firm_id'))
+            ->where('salary_execution_group_id', $executionGroupId)
+            ->whereBetween('from_date', [$fyStart, $fyEnd])
+            ->where('payroll_slot_status', 'CM')
+            ->count();
+    }
+
+    protected function getTotalSlotsCount($employeeId) 
+    {
+        // Get financial year from session
+        $fyStart = session('fy_start');
+        $fyEnd = session('fy_end');
+
+        // Get employee's execution group
+        $executionGroupId = EmployeesSalaryExecutionGroup::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->value('salary_execution_group_id');
+
+        // Count total slots in current financial year
+        return PayrollSlot::where('firm_id', Session::get('firm_id'))
+            ->where('salary_execution_group_id', $executionGroupId)
+            ->whereBetween('from_date', [$fyStart, $fyEnd])
+            ->count();
+    }
+
+    protected function getTDSComponentId()
+    {
+        return SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->where('component_type', 'tds')
+
+            ->value('id');
+    }
+
+    protected function extractRequiredComponents($node)
+    {
+        $components = [];
+
+        if (is_array($node)) {
+            if (isset($node['type']) && $node['type'] === 'component') {
+                $components[] = $node['key'];
+            } else {
+                foreach ($node as $value) {
+                    if (is_array($value)) {
+                        $components = array_merge($components, $this->extractRequiredComponents($value));
+                    }
+                }
+            }
+        }
+
+        return array_unique($components);
+    }
+
+    protected function executeCalculation($calculationJson, $componentValues)
+    {
+        if (empty($calculationJson)) {
+            throw new \Exception("No calculation formula provided");
+        }
+
+        // If calculationJson is already an array, use it directly
+        if (is_array($calculationJson)) {
+            $json = $calculationJson;
+        } else {
+            // If it's a string, try to decode it
+            $json = json_decode($calculationJson, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \Exception("Invalid JSON formula: " . json_last_error_msg());
+            }
+        }
+
+        return $this->evaluateNode($json, $componentValues);
+    }
+
+    protected function evaluateNode($node, $componentValues)
+    {
+        if (!is_array($node)) {
+            return $node;
+        }
+
+        if (!isset($node['type'])) {
+            throw new \Exception("Node type is not specified in formula");
+        }
+
+        switch ($node['type']) {
+            case 'constant':
+                return floatval($node['value']);
+
+            case 'component':
+                // Try to get value by ID first, then by title
+                $key = $node['key'];
+                if (isset($componentValues[$key])) {
+                    return $componentValues[$key];
+                }
+
+                // If not found by ID, try to find by title (case-insensitive)
+                $componentTitle = strtolower($key);
+                foreach ($componentValues as $title => $value) {
+                    if (strtolower($title) === $componentTitle) {
+                        return $value;
+                    }
+                }
+                throw new \Exception("Component '{$key}' not found in available components");
+
+            case 'operation':
+                $operands = array_map(
+                    fn($operand) => $this->evaluateNode($operand, $componentValues),
+                    $node['operands']
+                );
+
+                return $this->executeOperation($node['operator'], $operands);
+
+            case 'function':
+                $args = array_map(
+                    fn($arg) => $this->evaluateNode($arg, $componentValues),
+                    $node['args']
+                );
+
+                return $this->executeFunction($node['name'], $args);
+
+            case 'conditional':
+                $condition = $this->evaluateNode($node['if'], $componentValues);
+                return $condition
+                    ? $this->evaluateNode($node['then'], $componentValues)
+                    : $this->evaluateNode($node['else'], $componentValues);
+
+            default:
+                throw new \Exception("Unknown node type: {$node['type']}");
+        }
+    }
+
+    protected function executeOperation($operator, $operands)
+    {
+        if (empty($operands)) {
+            throw new \Exception("No operands provided for operation");
+        }
+
+        switch ($operator) {
+            case '+':
+                return array_sum($operands);
+            case '-':
+                return $operands[0] - array_sum(array_slice($operands, 1));
+            case '*':
+                return array_reduce($operands, fn($carry, $item) => $carry * $item, 1);
+            case '/':
+                $result = $operands[0];
+                for ($i = 1; $i < count($operands); $i++) {
+                    if ($operands[$i] == 0) {
+                        throw new \Exception("Division by zero");
+                    }
+                    $result /= $operands[$i];
+                }
+                return $result;
+            case '>=':
+                return $operands[0] >= ($operands[1] ?? 0);
+            case '<=':
+                return $operands[0] <= ($operands[1] ?? 0);
+            case '>':
+                return $operands[0] > ($operands[1] ?? 0);
+            case '<':
+                return $operands[0] < ($operands[1] ?? 0);
+            case '==':
+                return $operands[0] == ($operands[1] ?? 0);
+            default:
+                throw new \Exception("Unknown operator: {$operator}");
+        }
+    }
+
+    protected function executeFunction($name, $args)
+    {
+        if (empty($args)) {
+            throw new \Exception("No arguments provided for function {$name}");
+        }
+
+        switch ($name) {
+            case 'min':
+                return min(...$args);
+            case 'max':
+                return max(...$args);
+            case 'round':
+                $precision = $args[1] ?? 0;
+                return round($args[0], $precision);
+            case 'ceil':
+                return ceil($args[0]);
+            case 'floor':
+                return floor($args[0]);
+            default:
+                throw new \Exception("Unknown function: {$name}");
+        }
+    }
+
+    protected function hasCalculatedComponents($employeeId)
+    {
+        return SalaryComponentsEmployee::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('amount_type', 'calculated_known')
+            ->exists();
+    }
+
+    public function showSalarySlip($employeeId)
+    {
+        try {
+            // Load employee with job profile
+            $this->selectedEmployee = Employee::with('emp_job_profile.department', 'emp_job_profile.designation')
+                ->findOrFail($employeeId);
+
+            // Get salary components for the employee with their base component details
+            $components = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                ->where('firm_id', Session::get('firm_id'))
+                ->where(function ($query) {
+                    $query->whereNull('effective_to')
+                        ->orWhere('effective_to', '>', now());
+                })
+                ->with([
+                    'salary_component' => function ($query) {
+                        $query->select('id', 'title', 'nature', 'component_type', 'amount_type', 'calculation_json');
+                    }
+                ])
+                ->get();
+
+            $this->salaryComponents = [];
+            $this->totalEarnings = 0;
+            $this->totalDeductions = 0;
+
+            // Group components by nature (earnings/deductions)
+            foreach ($components as $component) {
+                // Skip if salary_component relation is not loaded
+                if (!$component->salary_component) {
+                    continue;
+                }
+
+                $componentData = [
+                    'title' => $component->salary_component->title,
+                    'amount' => $component->amount,
+                    'nature' => $component->nature,
+                    'component_type' => $component->component_type,
+                    'amount_type' => $component->amount_type,
+                    'calculation_json' => $component->calculation_json
+                ];
+
+                $this->salaryComponents[] = $componentData;
+
+                // Calculate totals based on nature
+                if ($component->nature === 'earning') {
+                    $this->totalEarnings += $component->amount;
+                } elseif ($component->nature === 'deduction') {
+                    $this->totalDeductions += $component->amount;
+                }
+            }
+
+            // Sort components by nature and title
+            $this->salaryComponents = collect($this->salaryComponents)->sortBy([
+                ['nature', 'desc'], // earnings first
+                ['title', 'asc']
+            ])->values()->all();
+
+            $this->netSalary = $this->totalEarnings - $this->totalDeductions;
+            $this->netSalaryInWords = $this->numberToWords($this->netSalary);
+            $this->showSalarySlipModal = true;
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load salary slip: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    public function closeSalarySlipModal()
+    {
+        $this->showSalarySlipModal = false;
+        $this->selectedEmployee = null;
+        $this->salaryComponents = [];
+        $this->totalEarnings = 0;
+        $this->totalDeductions = 0;
+        $this->netSalary = 0;
+        $this->netSalaryInWords = '';
+    }
+
+    protected function numberToWords($number)
+    {
+        $f = new \NumberFormatter("en", \NumberFormatter::SPELLOUT);
+        return ucfirst($f->format($number)) . ' Rupees Only';
+    }
+
+    public function downloadSalarySlip()
+    {
+        // TODO: Implement PDF generation and download
+        // This will be implemented based on your PDF generation library preference
+        Flux::toast(
+            variant: 'info',
+            heading: 'Coming Soon',
+            text: 'PDF download functionality will be available soon.',
+        );
     }
 
     public function render()

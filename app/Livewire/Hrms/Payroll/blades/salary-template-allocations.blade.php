@@ -136,6 +136,21 @@
                     @else
                         <!-- Direct Component Selection -->
                         <div class="mb-4">
+                            <!-- Salary Cycle Selection -->
+                            <div class="mb-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Salary Cycle</label>
+                                <select 
+                                    wire:model.live="selectedSalaryCycleId"
+                                    class="block w-full rounded-md border-gray-300 py-3 px-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                                    required
+                                >
+                                    <option value="">Select Salary Cycle</option>
+                                    @foreach($salaryCycles as $cycle)
+                                        <option value="{{ $cycle->id }}">{{ $cycle->title }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
                             <!-- Effective Dates Row -->
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>
@@ -264,26 +279,26 @@
 
                         <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
                             <flux:accordion class="w-full">
-                                @forelse($filteredDepartmentsWithEmployees as $department)
+                                @forelse($filteredDepartmentsWithEmployees as $group)
                                     <flux:accordion.item>
                                         <flux:accordion.heading>
                                             <div class="flex justify-between items-center w-full">
-                                                <span>{{ $department['title'] }}</span>
-                                                <span class="text-sm text-gray-500">({{ count($department['employees']) }} employees)</span>
+                                                <span>{{ $group['title'] }}</span>
+                                                <span class="text-sm text-gray-500">({{ count($group['employees']) }} employees)</span>
                                             </div>
                                         </flux:accordion.heading>
                                         <flux:accordion.content class="pl-4">
                                             <div class="flex justify-end space-x-2 mb-2">
-                                                <flux:button size="xs" variant="outline" wire:click="selectAllEmployees('{{ $department['id'] }}')">
+                                                <flux:button size="xs" variant="outline" wire:click="selectAllEmployees('{{ $group['id'] }}')">
                                                     Select All
                                                 </flux:button>
-                                                <flux:button size="xs" variant="ghost" wire:click="deselectAllEmployees('{{ $department['id'] }}')">
+                                                <flux:button size="xs" variant="ghost" wire:click="deselectAllEmployees('{{ $group['id'] }}')">
                                                     Deselect
                                                 </flux:button>
                                             </div>
                                             
                                             <flux:checkbox.group class="space-y-1">
-                                                @foreach($department['employees'] as $employee)
+                                                @foreach($group['employees'] as $employee)
                                                     <div class="flex items-center justify-between space-x-2 mb-2">
                                                         <flux:checkbox
                                                             wire:model="selectedEmployees"
@@ -310,7 +325,7 @@
                                         @if($employeeSearch)
                                             No employees found matching "{{ $employeeSearch }}"
                                         @else
-                                            No departments or employees available
+                                            No salary execution groups or employees available
                                         @endif
                                     </div>
                                 @endforelse
@@ -343,7 +358,7 @@
 
         <flux:table.rows>
             @foreach($this->list as $batch)
-                <flux:table.row :key="$batch->id">
+                <flux:table.row :key="$batch->id" class="table-cell-wrap">
                     <flux:table.cell>{{ $batch->title }}</flux:table.cell>
                     <flux:table.cell>{{ $batch->created_at->format('jS F Y h:i a') }}</flux:table.cell>
                     <flux:table.cell>{{ $batch->items_count }}</flux:table.cell>

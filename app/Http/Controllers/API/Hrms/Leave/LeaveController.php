@@ -67,7 +67,7 @@ class LeaveController extends Controller
         ], 200);
     }
 
-    public function submitLeaveRequest(Request $request)
+    public function submitLeaveRequest_old(Request $request)
     {
         $user     = $request->user();
         $employee = $user->employee;
@@ -160,7 +160,134 @@ class LeaveController extends Controller
         ], 201);
     }
 
+    public function submitLeaveRequest(Request $request)
+    {
+        $user     = $request->user();
+        $employee = $user->employee;
+        $firmId   = $employee->firm_id;
+
+        $validated = $request->validate([
+            'leave_type_id' => 'required|integer|exists:leave_types,id',
+            'apply_from'    => 'required|date',
+            'apply_to'      => 'required|date|after_or_equal:apply_from',
+            'reason'        => 'nullable|string|max:1000',
+        ]);
+
+        $from = Carbon::parse($validated['apply_from']);
+        $to   = Carbon::parse($validated['apply_to']);
+        $days = $from->diffInDays($to) + 1;
+
+        DB::beginTransaction();
+        try {
+            // 1) Create the leave request
+            $lr = EmpLeaveRequest::create([
+                'firm_id'       => $firmId,
+                'employee_id'   => $employee->id,
+                'leave_type_id' => $validated['leave_type_id'],
+                'apply_from'    => $from,
+                'apply_to'      => $to,
+                'apply_days'    => $days,
+                'reason'        => $validated['reason'] ?? null,
+                'status'        => 'applied',
+            ]);
+
+            // 2) Fetch the *latest* active rule for THIS employee
+            $rule = LeaveApprovalRule::with('employees')
+                ->where('firm_id', $firmId)
+                ->where('is_inactive', false)
+                ->whereDate('period_start', '<=', now())
+                ->whereDate('period_end',   '>=', now())
+                ->where(function($q) use ($validated) {
+                    $q->whereNull('leave_type_id')
+                        ->orWhere('leave_type_id', $validated['leave_type_id']);
+                })
+                ->whereHas('employees', function($q) use ($employee) {
+                    $q->where('employee_id', $employee->id);
+                })
+                ->orderBy('created_at', 'desc')   // “latest” by created date
+                ->first();
+
+            if (! $rule) {
+                throw new \Exception('No applicable leave approval rule found for this employee');
+            }
+
+            // 3) Create a single approval record from that rule
+            EmpLeaveRequestApproval::create([
+                'emp_leave_request_id' => $lr->id,
+                'approval_level'       => $rule->approval_level,
+                'approver_id'          => $rule->approver_id ?? 0,
+                'status'               => 'applied',
+                'remarks'              => null,
+                'acted_at'             => null,
+                'firm_id'              => $firmId,
+            ]);
+
+            // 4) Log the “created” event
+            LeaveRequestEvent::create([
+                'emp_leave_request_id' => $lr->id,
+                'user_id'              => $user->id,
+                'event_type'           => 'status_changed',
+                'from_status'          => null,
+                'to_status'            => 'applied',
+                'remarks'              => $validated['reason'] ?? null,
+                'firm_id'              => $firmId,
+                'created_at'           => now(),
+            ]);
+
+            DB::commit();
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type'    => 'error',
+                'message_display' => 'popup',
+                'message'         => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'message_type'    => 'success',
+            'message_display' => 'popup',
+            'message'         => 'Leave request submitted',
+            'data'            => $lr->load('leave_type'),
+        ], 201);
+    }
+
     public function leaveRequests(Request $request)
+    {
+        $employee = $request->user()->employee;
+
+        $leaves = EmpLeaveRequest::with([
+            'leave_type',
+            // 1) order events DESC, 2) eager-load the user (only id & name)
+            'leave_request_events' => function($q) {
+                $q->orderBy('created_at', 'desc')
+                    ->with('user:id,name');
+            },
+        ])
+            ->where('employee_id', $employee->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        // inject user_name into each event, then remove the nested user object
+        $leaves->each(function($leave) {
+            $leave->leave_request_events->transform(function($evt) {
+                $evt->user_name = $evt->user->name ?? null;
+                unset($evt->user);
+                return $evt;
+            });
+        });
+
+        return response()->json([
+            'message_type'    => 'success',
+            'message_display' => 'none',
+            'message'         => 'Leave requests list',
+            'data'            => $leaves,
+        ], 200);
+    }
+
+
+    public function leaveRequests_old(Request $request)
     {
         $employee = $request->user()->employee;
 

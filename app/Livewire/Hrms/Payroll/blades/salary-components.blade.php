@@ -267,13 +267,13 @@
         }
     @endphp
 
-    <flux:modal name="mdl-calculation-rule">
+    <flux:modal name="mdl-calculation-rule" class="max-w-lg">
         <div class="p-6">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-lg font-semibold">Calculation Rule Builder</h3>
             </div>
 
-            <div class="grid grid-cols-2 gap-6">
+            <div class="grid gap-6">
                 <!-- Left Side: Builder Form -->
                 <div class="space-y-6 border rounded-lg p-6 bg-white">
                     <!-- Root Type Selection -->
@@ -281,7 +281,6 @@
                         <label class="block text-sm font-medium text-gray-700 mb-2">Root Type</label>
                         <flux:select wire:model.live="rule.type">
                             <flux:select.option value="operation">Operation (+, -, ×, ÷)</flux:select.option>
-                            <flux:select.option value="conditional">Conditional (If/Then/Else)</flux:select.option>
                             <flux:select.option value="component">Salary Component</flux:select.option>
                             <flux:select.option value="constant">Fixed Value</flux:select.option>
                         </flux:select>
@@ -326,9 +325,132 @@
                                             </div>
 
                                             @if($operand['type'] === 'operation')
-                                                @php
-                                                    echo renderNestedOperation("operands.{$i}", $operand);
-                                                @endphp
+                                                <div class="ml-4 border-l-2 border-blue-200 pl-4">
+                                                    <!-- Nested Operator -->
+                                                    <div class="mb-4">
+                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Nested Operator</label>
+                                                        <flux:select wire:model.live="rule.operands.{{ $i }}.operator">
+                                                            <flux:select.option value="+">Add (+)</flux:select.option>
+                                                            <flux:select.option value="-">Subtract (-)</flux:select.option>
+                                                            <flux:select.option value="*">Multiply (×)</flux:select.option>
+                                                            <flux:select.option value="/">Divide (÷)</flux:select.option>
+                                                        </flux:select>
+                                                    </div>
+
+                                                    <!-- Nested Operands -->
+                                                    <div class="space-y-4">
+                                                        <div class="flex justify-between items-center mb-4">
+                                                            <label class="block text-sm font-medium text-gray-700">Nested Operands</label>
+                                                            <flux:button size="sm" wire:click="addNestedOperand({{ $i }})" class="text-sm">
+                                                                Add Nested Operand
+                                                            </flux:button>
+                                                        </div>
+
+                                                        @foreach($operand['operands'] ?? [] as $j => $nestedOperand)
+                                                            <div class="p-4 border rounded-lg bg-white">
+                                                                <div class="flex items-center gap-4 mb-4">
+                                                                    <div class="flex-1">
+                                                                        <flux:select wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.type">
+                                                                            <flux:select.option value="component">Salary Component</flux:select.option>
+                                                                            <flux:select.option value="constant">Fixed Value</flux:select.option>
+                                                                            <flux:select.option value="operation">Nested Operation</flux:select.option>
+                                                                        </flux:select>
+                                                                    </div>
+                                                                    <flux:button variant="danger" size="sm" wire:click="removeNestedOperand({{ $i }}, {{ $j }})" class="text-sm">
+                                                                        Remove
+                                                                    </flux:button>
+                                                                </div>
+
+                                                                @if($nestedOperand['type'] === 'operation')
+                                                                    <div class="ml-4 border-l-2 border-blue-200 pl-4">
+                                                                        <!-- Deeply Nested Operator -->
+                                                                        <div class="mb-4">
+                                                                            <label class="block text-sm font-medium text-gray-700 mb-2">Nested Operator</label>
+                                                                            <flux:select wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.operator">
+                                                                                <flux:select.option value="+">Add (+)</flux:select.option>
+                                                                                <flux:select.option value="-">Subtract (-)</flux:select.option>
+                                                                                <flux:select.option value="*">Multiply (×)</flux:select.option>
+                                                                                <flux:select.option value="/">Divide (÷)</flux:select.option>
+                        </flux:select>
+                    </div>
+
+                                                                        <!-- Deeply Nested Operands -->
+                                                                        <div class="space-y-4">
+                                                                            <div class="flex justify-between items-center mb-4">
+                                                                                <label class="block text-sm font-medium text-gray-700">Deep Nested Operands</label>
+                                                                                    <flux:button size="sm" wire:click="addDeepNestedOperand({{ $i }}, {{ $j }})" class="text-sm">
+                                                                                        Add Deep Nested Operand
+                                                                                    </flux:button>
+                                                                            </div>
+
+                                                                            @foreach($nestedOperand['operands'] ?? [] as $k => $deepOperand)
+                                                                                <div class="p-4 border rounded-lg bg-gray-50">
+                                                                                    <div class="flex items-center gap-4 mb-4">
+                                                                                        <div class="flex-1">
+                                                                                            <flux:select wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.operands.{{ $k }}.type">
+                                                                                                <flux:select.option value="component">Salary Component</flux:select.option>
+                                                                                                <flux:select.option value="constant">Fixed Value</flux:select.option>
+                        </flux:select>
+                    </div>
+                                                                                        <flux:button variant="danger" size="sm" wire:click="removeDeepNestedOperand({{ $i }}, {{ $j }}, {{ $k }})" class="text-sm">
+                                                                                            Remove
+                                                                                        </flux:button>
+                </div>
+
+                                                                                    @if($deepOperand['type'] === 'component')
+                                                                                        <div class="ml-4">
+                                                                                            <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
+                                                                                            <flux:select wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.operands.{{ $k }}.key">
+                                                                                                @foreach($salaryComponents as $id => $component)
+                                                                                                    @php
+                                                                                                        $title = $this->getComponentTitle($component);
+                                                                                                    @endphp
+                                                                                                    <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                                                                                        </div>
+                                                                                    @else
+                                                                                        <div class="ml-4">
+                                                                                            <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
+                                                                                            <flux:input 
+                                                                                                type="number" 
+                                                                                                step="0.01" 
+                                                                                                wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.operands.{{ $k }}.value" 
+                                                                                                placeholder="Enter value" 
+                                                                                            />
+                                                                                        </div>
+                                                                                    @endif
+                                                                                </div>
+                                                                            @endforeach
+                                                                        </div>
+                                                                    </div>
+                                                                @elseif($nestedOperand['type'] === 'component')
+                                                                    <div class="ml-4">
+                                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
+                                                                        <flux:select wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.key">
+                                                                            @foreach($salaryComponents as $id => $component)
+                                                                                @php
+                                                                                    $title = $this->getComponentTitle($component);
+                                                                                @endphp
+                                                                                <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                                                    </div>
+                                                                @else
+                                                                    <div class="ml-4">
+                                                                        <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
+                                                                        <flux:input 
+                                                                            type="number" 
+                                                                            step="0.01" 
+                                                                            wire:model.live="rule.operands.{{ $i }}.operands.{{ $j }}.value" 
+                                                                            placeholder="Enter value" 
+                                                                        />
+                                                                    </div>
+                                                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
                                             @elseif($operand['type'] === 'component')
                                                 <div class="ml-4">
                                                     <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
@@ -338,8 +460,8 @@
                                                                 $title = $this->getComponentTitle($component);
                                                             @endphp
                                                             <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                                        @endforeach
-                                                    </flux:select>
+                        @endforeach
+                    </flux:select>
                                                 </div>
                                             @else
                                                 <div class="ml-4">
@@ -354,292 +476,10 @@
                                             @endif
                                         </div>
                                     @endforeach
-                                </div>
                             </div>
-                        </div>
-                    @elseif($rule['type'] === 'conditional')
-                        <div class="space-y-6">
-                            <!-- Condition Section -->
-                            <div class="p-4 border rounded-lg bg-gray-50">
-                                <label class="block text-sm font-medium text-gray-700 mb-4">If Condition</label>
-                                
-                                <!-- Left Side -->
-                                <div class="grid grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Left Side</label>
-                                        <flux:select wire:model.live="rule.condition.left.type">
-                                            <flux:select.option value="component">Salary Component</flux:select.option>
-                                            <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                        </flux:select>
-
-                                        @if($rule['condition']['left']['type'] === 'component')
-                                            <div class="mt-2">
-                                                <flux:select wire:model.live="rule.condition.left.key">
-                                                    @foreach($salaryComponents as $id => $component)
-                                                        @php
-                                                            $title = $this->getComponentTitle($component);
-                                                        @endphp
-                                                        <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                                    @endforeach
-                                                </flux:select>
-                                            </div>
-                                        @else
-                                            <div class="mt-2">
-                                                <flux:input 
-                                                    type="number" 
-                                                    step="0.01" 
-                                                    wire:model.live="rule.condition.left.value" 
-                                                    placeholder="Enter value" 
-                                                />
-                                            </div>
-                                        @endif
-                                    </div>
-
-                                    <!-- Comparison Operator -->
-                                    <div>
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Comparison</label>
-                                        <flux:select wire:model.live="rule.condition.operator">
-                                            <flux:select.option value=">">&gt; (Greater Than)</flux:select.option>
-                                            <flux:select.option value=">=">&gt;= (Greater Than or Equal)</flux:select.option>
-                                            <flux:select.option value="<">&lt; (Less Than)</flux:select.option>
-                                            <flux:select.option value="<=">&lt;= (Less Than or Equal)</flux:select.option>
-                                            <flux:select.option value="==">= (Equal To)</flux:select.option>
-                                            <flux:select.option value="!=">≠ (Not Equal To)</flux:select.option>
-                                        </flux:select>
-                                    </div>
-
-                                    <!-- Right Side -->
-                                    <div class="col-span-2">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Right Side</label>
-                                        <flux:select wire:model.live="rule.condition.right.type">
-                                            <flux:select.option value="component">Salary Component</flux:select.option>
-                                            <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                        </flux:select>
-
-                                        @if($rule['condition']['right']['type'] === 'component')
-                                            <div class="mt-2">
-                                                <flux:select wire:model.live="rule.condition.right.key">
-                                                    @foreach($salaryComponents as $id => $component)
-                                                        @php
-                                                            $title = $this->getComponentTitle($component);
-                                                        @endphp
-                                                        <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                                    @endforeach
-                                                </flux:select>
-                                            </div>
-                                        @else
-                                            <div class="mt-2">
-                                                <flux:input 
-                                                    type="number" 
-                                                    step="0.01" 
-                                                    wire:model.live="rule.condition.right.value" 
-                                                    placeholder="Enter value" 
-                                                />
-                                            </div>
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Then Section -->
-                            <div class="p-4 border rounded-lg bg-gray-50">
-                                <label class="block text-sm font-medium text-gray-700 mb-4">Then Result</label>
-                                <flux:select wire:model.live="rule.then.type">
-                                    <flux:select.option value="operation">Operation (+, -, ×, ÷)</flux:select.option>
-                                    <flux:select.option value="component">Salary Component</flux:select.option>
-                                    <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                </flux:select>
-
-                                @if($rule['then']['type'] === 'operation')
-                                    <div class="mt-4">
-                                        <!-- Operator Selection -->
-                                        <div class="mb-4">
-                                            <label class="block text-sm font-medium text-gray-700 mb-2">Select Operator</label>
-                                            <flux:select wire:model.live="rule.then.operator">
-                                                <flux:select.option value="+">Add (+)</flux:select.option>
-                                                <flux:select.option value="-">Subtract (-)</flux:select.option>
-                                                <flux:select.option value="*">Multiply (×)</flux:select.option>
-                                                <flux:select.option value="/">Divide (÷)</flux:select.option>
-                                            </flux:select>
-                                        </div>
-
-                                        <!-- Then Operands -->
-                                        <div>
-                                            <div class="flex justify-between items-center mb-4">
-                                                <label class="block text-sm font-medium text-gray-700">Operands</label>
-                                                <flux:button size="sm" wire:click="addThenOperand" class="text-sm">
-                                                    Add Operand
-                                                </flux:button>
-                                            </div>
-
-                                            <div class="space-y-4">
-                                                @foreach($rule['then']['operands'] ?? [] as $i => $operand)
-                                                    <div class="p-4 border rounded-lg bg-white">
-                                                        <div class="flex items-center gap-4 mb-4">
-                                                            <div class="flex-1">
-                                                                <flux:select wire:model.live="rule.then.operands.{{ $i }}.type">
-                                                                    <flux:select.option value="component">Salary Component</flux:select.option>
-                                                                    <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                                                </flux:select>
-                                                            </div>
-                                                            <flux:button variant="danger" size="sm" wire:click="removeThenOperand({{ $i }})" class="text-sm">
-                                                                Remove
-                                                            </flux:button>
-                                                        </div>
-
-                                                        @if($operand['type'] === 'component')
-                                                            <div class="ml-4">
-                                                                <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
-                                                                <flux:select wire:model.live="rule.then.operands.{{ $i }}.key">
-                                                                    @foreach($salaryComponents as $id => $component)
-                                                                        @php
-                                                                            $title = $this->getComponentTitle($component);
-                                                                        @endphp
-                                                                        <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                                                    @endforeach
-                                                                </flux:select>
-                                                            </div>
-                                                        @else
-                                                            <div class="ml-4">
-                                                                <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
-                                                                <flux:input 
-                                                                    type="number" 
-                                                                    step="0.01" 
-                                                                    wire:model.live="rule.then.operands.{{ $i }}.value" 
-                                                                    placeholder="Enter value" 
-                                                                />
-                                                            </div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        </div>
-                                    </div>
-                                @elseif($rule['then']['type'] === 'component')
-                                    <div class="mt-4">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
-                                        <flux:select wire:model.live="rule.then.key">
-                                            @foreach($salaryComponents as $id => $component)
-                                                @php
-                                                    $title = $this->getComponentTitle($component);
-                                                @endphp
-                                                <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                            @endforeach
-                                        </flux:select>
-                                    </div>
-                                @else
-                                    <div class="mt-4">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
-                                        <flux:input 
-                                            type="number" 
-                                            step="0.01" 
-                                            wire:model.live="rule.then.value" 
-                                            placeholder="Enter value" 
-                                        />
-                                    </div>
-                                @endif
-                            </div>
-
-                            <!-- Else Section -->
-                            <div class="p-4 border rounded-lg bg-gray-50">
-                                <label class="block text-sm font-medium text-gray-700 mb-4">Else Result</label>
-                                <flux:select wire:model.live="rule.else.type">
-                                    <flux:select.option value="operation">Operation (+, -, ×, ÷)</flux:select.option>
-                                    <flux:select.option value="component">Salary Component</flux:select.option>
-                                    <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                </flux:select>
-
-                                @if($rule['else']['type'] === 'operation')
-                                    <div class="mt-4">
-                                        <!-- Operator Selection -->
-                                        <div class="mb-4">
-                                            <label class="block text-sm font-medium text-gray-700 mb-2">Select Operator</label>
-                                            <flux:select wire:model.live="rule.else.operator">
-                                                <flux:select.option value="+">Add (+)</flux:select.option>
-                                                <flux:select.option value="-">Subtract (-)</flux:select.option>
-                                                <flux:select.option value="*">Multiply (×)</flux:select.option>
-                                                <flux:select.option value="/">Divide (÷)</flux:select.option>
-                                            </flux:select>
-                                        </div>
-
-                                        <!-- Else Operands -->
-                                        <div>
-                                            <div class="flex justify-between items-center mb-4">
-                                                <label class="block text-sm font-medium text-gray-700">Operands</label>
-                                                <flux:button size="sm" wire:click="addElseOperand" class="text-sm">
-                                                    Add Operand
-                                                </flux:button>
-                                            </div>
-
-                                            <div class="space-y-4">
-                                                @foreach($rule['else']['operands'] ?? [] as $i => $operand)
-                                                    <div class="p-4 border rounded-lg bg-white">
-                                                        <div class="flex items-center gap-4 mb-4">
-                                                            <div class="flex-1">
-                                                                <flux:select wire:model.live="rule.else.operands.{{ $i }}.type">
-                                                                    <flux:select.option value="component">Salary Component</flux:select.option>
-                                                                    <flux:select.option value="constant">Fixed Value</flux:select.option>
-                                                                </flux:select>
-                                                            </div>
-                                                            <flux:button variant="danger" size="sm" wire:click="removeElseOperand({{ $i }})" class="text-sm">
-                                                                Remove
-                                                            </flux:button>
-                                                        </div>
-
-                                                        @if($operand['type'] === 'component')
-                                                            <div class="ml-4">
-                                                                <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
-                                                                <flux:select wire:model.live="rule.else.operands.{{ $i }}.key">
-                                                                    @foreach($salaryComponents as $id => $component)
-                                                                        @php
-                                                                            $title = $this->getComponentTitle($component);
-                                                                        @endphp
-                                                                        <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                                                    @endforeach
-                                                                </flux:select>
-                                                            </div>
-                                                        @else
-                                                            <div class="ml-4">
-                                                                <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
-                                                                <flux:input 
-                                                                    type="number" 
-                                                                    step="0.01" 
-                                                                    wire:model.live="rule.else.operands.{{ $i }}.value" 
-                                                                    placeholder="Enter value" 
-                                                                />
-                                                            </div>
-                                                        @endif
-                                                    </div>
-                                                @endforeach
-                                            </div>
-                                        </div>
-                                    </div>
-                                @elseif($rule['else']['type'] === 'component')
-                                    <div class="mt-4">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
-                                        <flux:select wire:model.live="rule.else.key">
-                                            @foreach($salaryComponents as $id => $component)
-                                                @php
-                                                    $title = $this->getComponentTitle($component);
-                                                @endphp
-                                                <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                            @endforeach
-                                        </flux:select>
-                                    </div>
-                                @else
-                                    <div class="mt-4">
-                                        <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
-                                        <flux:input 
-                                            type="number" 
-                                            step="0.01" 
-                                            wire:model.live="rule.else.value" 
-                                            placeholder="Enter value" 
-                                        />
-                                    </div>
-                                @endif
-                            </div>
-                        </div>
-                    @elseif($rule['type'] === 'component')
+                    </div>
+                </div>
+            @elseif($rule['type'] === 'component')
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>
                             <flux:select wire:model.live="rule.key">
@@ -648,33 +488,27 @@
                                         $title = $this->getComponentTitle($component);
                                     @endphp
                                     <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
-                                @endforeach
-                            </flux:select>
+                    @endforeach
+                </flux:select>
                         </div>
-                    @else
+            @elseif($rule['type'] === 'constant')
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Enter Value</label>
-                            <flux:input 
-                                type="number" 
-                                step="0.01" 
-                                wire:model.live="rule.value" 
-                                placeholder="Enter value" 
-                            />
+                            <flux:input type="number" step="0.01" wire:model.live="rule.value" placeholder="Enter value" />
                         </div>
-                    @endif
-                </div>
+            @endif
+        </div>
 
-                <!-- Right Side: Preview -->
-                <div class="border rounded-lg p-6 bg-white">
-                    <h4 class="text-lg font-medium mb-4">Rule Preview</h4>
-                    <pre class="whitespace-pre-wrap">{{ $this->getRulePreview() }}</pre>
+                <!-- Right Side: JSON Preview -->
+                <div class="border rounded-lg p-6 bg-gray-50">
+                    <flux:heading class="mb-4">Live JSON Preview</flux:heading>
+                    <pre class="bg-white p-4 rounded-lg overflow-auto max-h-[600px] text-sm">{{ json_encode($rule, JSON_PRETTY_PRINT) }}</pre>
                 </div>
             </div>
 
-            <div class="flex justify-end mt-6">
-                <flux:button wire:click="saveRule" variant="primary">
-                    Save Rule
-                </flux:button>
+            <div class="flex justify-end gap-4 mt-6">
+                <flux:button wire:click="$dispatch('close-modal', { id: 'mdl-calculation-rule' })">Cancel</flux:button>
+                <flux:button wire:click="saveRule">Save Rule</flux:button>
             </div>
         </div>
     </flux:modal>
@@ -695,7 +529,7 @@
                 <flux:table.row :key="$item->id">
                     @foreach($fieldConfig as $field => $cfg)
                         @if(in_array($field, $visibleFields))
-                            <flux:table.cell>
+                            <flux:table.cell class="table-cell-wrap">
                                 @switch($cfg['type'])
                                     @case('switch')
                                         @if($item->$field)
@@ -712,21 +546,19 @@
                                         @elseif($field === 'component_type')
                                             {{ $listsForFields['component_types'][$item->$field] ?? $item->$field }}
                                         @elseif($field === 'amount_type')
-                                            {{ $listsForFields['amount_types'][$item->$field] ?? $item->$field }}
+                                            <div class="flex items-center gap-2">
+                                                @if(in_array($item->amount_type, ['static_known', 'static_unknown']))
+                                                    {{ $listsForFields['amount_types'][$item->$field] ?? $item->$field }}
+                                                @else
+                                                    <flux:button variant="primary" size="sm" wire:click="openCalculationRule({{ $item->id }})">Configure</flux:button>
+                                                @endif
+                                            </div>
                                         @else
                                             {{ $item->$field }}
                                         @endif
                                         @break
                                     @case('textarea')
-                                        @if($field === 'calculation_json')
-                                            @if($item->$field)
-                                              <flux:button variant="primary" wire:click="openCalculationRule({{ $item->id }})">Configure</flux:button>
-                                            @else
-                                                <flux:badge color="gray">No Rule</flux:badge>
-                                            @endif
-                                        @else
-                                            {{ Str::limit($item->$field, 50) }}
-                                        @endif
+                                        
                                         @break
                                     @default
                                         {{ $item->$field }}

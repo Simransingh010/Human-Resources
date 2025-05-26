@@ -75,10 +75,10 @@
             <div class="flex flex-wrap items-center gap-4">
                 <flux:checkbox.group>
                     @foreach($filterFields as $field => $cfg)
-                        <flux:checkbox 
-                            :checked="in_array($field, $visibleFilterFields)" 
-                            label="{{ $cfg['label'] }}" 
-                            wire:click="toggleFilterColumn('{{ $field }}')" 
+                        <flux:checkbox
+                            :checked="in_array($field, $visibleFilterFields)"
+                            label="{{ $cfg['label'] }}"
+                            wire:click="toggleFilterColumn('{{ $field }}')"
                         />
                     @endforeach
                 </flux:checkbox.group>
@@ -95,10 +95,10 @@
             <div class="flex flex-wrap items-center gap-4">
                 <flux:checkbox.group>
                     @foreach($fieldConfig as $field => $cfg)
-                        <flux:checkbox 
-                            :checked="in_array($field, $visibleFields)" 
-                            label="{{ $cfg['label'] }}" 
-                            wire:click="toggleColumn('{{ $field }}')" 
+                        <flux:checkbox
+                            :checked="in_array($field, $visibleFields)"
+                            label="{{ $cfg['label'] }}"
+                            wire:click="toggleColumn('{{ $field }}')"
                         />
                     @endforeach
                 </flux:checkbox.group>
@@ -204,8 +204,8 @@
                                         @endif
                                         @break
                                     @case('select')
-                                        @if($field === 'salary_template_group_id')
-                                            {{ $listsForFields['template_groups'][$item->$field] ?? $item->$field }}
+                                        @if($field === 'salary_cycle_id')
+                                            {{ $listsForFields['salary_cycles'][$item->$field] ?? $item->$field }}
                                         @else
                                             {{ $item->$field }}
                                         @endif

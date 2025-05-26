@@ -20,6 +20,9 @@ class SalaryTemplatesComponents extends Component
     public $sortBy = 'sequence';
     public $sortDirection = 'asc';
     public $isEditing = false;
+    public $selectedComponents = [];
+    public $componentSearch = '';
+    public $filteredComponents = [];
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -52,6 +55,7 @@ class SalaryTemplatesComponents extends Component
     public function mount()
     {
         $this->initListsForFields();
+        $this->loadComponents();
 
         // Set default visible fields
         $this->visibleFields = ['salary_template_id', 'salary_component_id', 'salary_component_group_id', 'sequence'];
@@ -77,6 +81,56 @@ class SalaryTemplatesComponents extends Component
         $this->listsForFields['component_groups'] = SalaryComponentGroup::where('firm_id', Session::get('firm_id'))
             ->pluck('title', 'id')
             ->toArray();
+    }
+
+    protected function loadComponents()
+    {
+        $components = SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->get()
+            ->map(function ($component) {
+                return [
+                    'id' => $component->id,
+                    'title' => $component->title ?? 'Untitled Component',
+                    'description' => $component->description,
+                    'group' => $component->salary_component_group ? $component->salary_component_group->title : 'No Group'
+                ];
+            })
+            ->toArray();
+
+        $this->filteredComponents = $components;
+    }
+
+    public function updatedComponentSearch()
+    {
+        $this->filterComponents();
+    }
+
+    protected function filterComponents()
+    {
+        $searchTerm = strtolower($this->componentSearch);
+        
+        $this->filteredComponents = collect($this->filteredComponents)
+            ->filter(function ($component) use ($searchTerm) {
+                return empty($searchTerm) ||
+                    str_contains(strtolower($component['title']), $searchTerm) ||
+                    str_contains(strtolower($component['description'] ?? ''), $searchTerm) ||
+                    str_contains(strtolower($component['group']), $searchTerm);
+            })
+            ->values()
+            ->all();
+    }
+
+    public function selectAllComponents()
+    {
+        $this->selectedComponents = collect($this->filteredComponents)
+            ->pluck('id')
+            ->map(fn($id) => (string) $id)
+            ->toArray();
+    }
+
+    public function deselectAllComponents()
+    {
+        $this->selectedComponents = [];
     }
 
     public function applyFilters()
@@ -130,8 +184,9 @@ class SalaryTemplatesComponents extends Component
     protected function rules()
     {
         return [
+            'selectedComponents' => 'required|array|min:1',
+            'selectedComponents.*' => 'exists:salary_components,id',
             'formData.salary_template_id' => 'required|integer',
-            'formData.salary_component_id' => 'required|integer',
             'formData.salary_component_group_id' => 'nullable|integer',
             'formData.sequence' => 'required|integer|min:0',
         ];
@@ -141,35 +196,53 @@ class SalaryTemplatesComponents extends Component
     {
         $validatedData = $this->validate();
 
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
+        // Check for existing assignments
+        $existingAssignments = SalaryTemplatesComponent::where('firm_id', session('firm_id'))
+            ->whereIn('salary_component_id', $validatedData['selectedComponents'])
+            ->where('salary_template_id', $validatedData['formData']['salary_template_id'])
+            ->get();
 
-        $validatedData['formData']['firm_id'] = session('firm_id');
+        if ($existingAssignments->isNotEmpty()) {
+            $existingComponentIds = $existingAssignments->pluck('salary_component_id');
+            $existingComponents = SalaryComponent::whereIn('id', $existingComponentIds)
+                ->get()
+                ->pluck('title')
+                ->implode(', ');
 
-        if ($this->isEditing) {
-            $salaryTemplatesComponent = SalaryTemplatesComponent::findOrFail($this->formData['id']);
-            $salaryTemplatesComponent->update($validatedData['formData']);
-            $toastMsg = 'Salary template component updated successfully';
-        } else {
-            SalaryTemplatesComponent::create($validatedData['formData']);
-            $toastMsg = 'Salary template component added successfully';
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: "The following components are already assigned to this template: {$existingComponents}",
+            );
+            return;
+        }
+
+        // Create assignments for each selected component
+        foreach ($validatedData['selectedComponents'] as $index => $componentId) {
+            SalaryTemplatesComponent::create([
+                'firm_id' => session('firm_id'),
+                'salary_template_id' => $validatedData['formData']['salary_template_id'],
+                'salary_component_id' => $componentId,
+                'salary_component_group_id' => $validatedData['formData']['salary_component_group_id'],
+                'sequence' => $validatedData['formData']['sequence'] + $index,
+            ]);
         }
 
         $this->resetForm();
         $this->modal('mdl-salary-template-component')->close();
+
         Flux::toast(
             variant: 'success',
-            heading: 'Changes saved.',
-            text: $toastMsg,
+            heading: 'Success',
+            text: 'Components assigned successfully to the salary template.',
         );
     }
 
     public function resetForm()
     {
-        $this->reset(['formData']);
-        $this->formData['sequence'] = 0;
+        $this->reset(['formData', 'selectedComponents', 'componentSearch']);
         $this->isEditing = false;
+        $this->loadComponents();
     }
 
     public function edit($id)

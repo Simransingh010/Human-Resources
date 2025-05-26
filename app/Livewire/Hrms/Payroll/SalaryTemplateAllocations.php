@@ -34,6 +34,8 @@ class SalaryTemplateAllocations extends Component
     public $selectedTemplate = null;
     public $employeeSearch = '';
     public $templateComponents = [];
+    public $salaryCycles = [];
+    public $selectedSalaryCycleId = null;
 
     // New properties for direct allocation
     public $allocationType = '';
@@ -77,12 +79,13 @@ class SalaryTemplateAllocations extends Component
         $this->initListsForFields();
         $this->loadDepartmentsWithEmployees();
         $this->loadAvailableComponents();
+        $this->loadSalaryCycles();
 
         // Set default effective from date
         $this->effectiveFrom = now()->format('Y-m-d');
 
         // Set default visible fields
-        $this->visibleFields = ['title', 'modulecomponent', 'created_at', 'items_count'];
+        $this->visibleFields = ['title', 'modulecomponent', 'created_at',];
         $this->visibleFilterFields = ['title', 'modulecomponent'];
 
         // Initialize filters
@@ -107,7 +110,9 @@ class SalaryTemplateAllocations extends Component
     public function updatedFormDataTemplateId($value)
     {
         if ($value) {
-            $this->selectedTemplate = SalaryTemplate::with(['salary_templates_components.salary_component'])
+            $this->selectedTemplate = SalaryTemplate::with([
+                'salary_templates_components.salary_component'
+            ])
                 ->find($value);
 
             if (!$this->selectedTemplate) {
@@ -118,6 +123,9 @@ class SalaryTemplateAllocations extends Component
                 );
                 return;
             }
+
+            // Set the salary cycle ID from the template
+            $this->selectedSalaryCycleId = $this->selectedTemplate->salary_cycle_id;
 
             $this->templateComponents = $this->selectedTemplate->salary_templates_components;
             if ($this->templateComponents->isEmpty()) {
@@ -135,6 +143,7 @@ class SalaryTemplateAllocations extends Component
         } else {
             $this->selectedTemplate = null;
             $this->templateComponents = collect();
+            $this->selectedSalaryCycleId = null;
             $this->effectiveFrom = now()->format('Y-m-d');
             $this->effectiveTo = null;
         }
@@ -142,20 +151,28 @@ class SalaryTemplateAllocations extends Component
 
     protected function loadDepartmentsWithEmployees()
     {
-        $departments = Department::with([
+        // Get all salary execution groups with their employees
+        $executionGroups = \App\Models\Hrms\SalaryExecutionGroup::with([
             'employees' => function ($query) {
-                $query->where('is_inactive', false);
+                $query->where('is_inactive', false)
+                    ->whereNotExists(function ($subQuery) {
+                        $subQuery->select(\DB::raw(1))
+                            ->from('salary_components_employees')
+                            ->whereRaw('salary_components_employees.employee_id = employees.id')
+                            ->where('salary_components_employees.firm_id', Session::get('firm_id'))
+                            ->whereNull('salary_components_employees.deleted_at');
+                    });
             }
         ])
             ->where('firm_id', Session::get('firm_id'))
             ->where('is_inactive', false)
             ->get();
 
-        $this->departmentsWithEmployees = $departments->map(function ($department) {
+        $this->departmentsWithEmployees = $executionGroups->map(function ($group) {
             return [
-                'id' => $department->id,
-                'title' => $department->title,
-                'employees' => $department->employees->map(function ($employee) {
+                'id' => $group->id,
+                'title' => $group->title,
+                'employees' => $group->employees->map(function ($employee) {
                     return [
                         'id' => $employee->id,
                         'fname' => $employee->fname,
@@ -304,6 +321,7 @@ class SalaryTemplateAllocations extends Component
             return array_merge($baseRules, [
                 'selectedComponents' => 'required|array|min:1',
                 'selectedComponents.*' => 'exists:salary_components,id',
+                'selectedSalaryCycleId' => 'required|exists:salary_cycles,id',
                 'effectiveFrom' => 'required|date',
                 'effectiveTo' => 'required|date|after:effectiveFrom'
             ]);
@@ -428,6 +446,7 @@ class SalaryTemplateAllocations extends Component
             'firm_id' => Session::get('firm_id'),
             'employee_id' => $employeeId,
             'salary_template_id' => $this->selectedTemplate->id,
+            'salary_cycle_id' => $this->selectedTemplate->salary_cycle_id,
             'salary_component_id' => $templateComponent->salary_component_id,
             'salary_component_group_id' => $templateComponent->salary_component_group_id,
             'sequence' => $templateComponent->sequence,
@@ -461,9 +480,14 @@ class SalaryTemplateAllocations extends Component
             throw new \Exception("Invalid component data structure.");
         }
 
+        if (!$this->selectedSalaryCycleId) {
+            throw new \Exception("Salary cycle must be selected for direct allocation.");
+        }
+
         $componentData = [
             'firm_id' => Session::get('firm_id'),
             'employee_id' => $employeeId,
+            'salary_cycle_id' => $this->selectedSalaryCycleId,
             'salary_component_id' => $component['id'],
             'salary_component_group_id' => $component['salary_component_group_id'],
             'sequence' => $sequence,
@@ -659,5 +683,12 @@ class SalaryTemplateAllocations extends Component
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Payroll/blades/salary-template-allocations.blade.php'));
+    }
+
+    protected function loadSalaryCycles()
+    {
+        $this->salaryCycles = \App\Models\Hrms\SalaryCycle::where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', false)
+            ->get();
     }
 }

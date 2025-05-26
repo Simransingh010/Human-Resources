@@ -98,7 +98,7 @@
     </flux:modal>
 
     <!-- Add/Edit Salary Template Component Modal -->
-    <flux:modal name="mdl-salary-template-component" @cancel="resetForm">
+    <flux:modal name="mdl-salary-template-component" @cancel="resetForm" position="right" class="max-w-6xl" variant="flyout">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
@@ -110,36 +110,118 @@
                     </flux:subheading>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    @foreach($fieldConfig as $field => $cfg)
-                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-                            @switch($cfg['type'])
-                                @case('select')
-                                    <flux:select
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    >
-                                        <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                    @break
+                <flux:separator/>
 
-                                @default
-                                    <flux:input
-                                        type="{{ $cfg['type'] }}"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                            @endswitch
-                        </div>
-                    @endforeach
+                <!-- Template and Group Selection -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <flux:select
+                            label="Salary Template"
+                            wire:model.live="formData.salary_template_id"
+                        >
+                            <option value="">Select Salary Template</option>
+                            @foreach($listsForFields['templates'] as $val => $lab)
+                                <option value="{{ $val }}">{{ $lab }}</option>
+                            @endforeach
+                        </flux:select>
+                    </div>
+
+                    <div>
+                        <flux:select
+                            label="Component Group"
+                            wire:model.live="formData.salary_component_group_id"
+                        >
+                            <option value="">Select Component Group</option>
+                            @foreach($listsForFields['component_groups'] as $val => $lab)
+                                <option value="{{ $val }}">{{ $lab }}</option>
+                            @endforeach
+                        </flux:select>
+                    </div>
+
+                    <div>
+                        <flux:input
+                            type="number"
+                            label="Starting Sequence"
+                            wire:model.live="formData.sequence"
+                        />
+                    </div>
                 </div>
 
-                <div class="flex justify-end pt-4">
+                <!-- Component Selection Section -->
+                <div class="mt-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Select Components</label>
+                        <div class="flex space-x-2">
+                            <flux:button size="xs" variant="outline" wire:click="selectAllComponents">Select All</flux:button>
+                            <flux:button size="xs" variant="ghost" wire:click="deselectAllComponents">Deselect</flux:button>
+                        </div>
+                    </div>
+
+                    <!-- Component Search -->
+                    <div class="mb-4">
+                        <flux:input
+                            type="search"
+                            placeholder="Search components by name, description or group..."
+                            wire:model.live="componentSearch"
+                            class="w-full"
+                        >
+                            <x-slot:prefix>
+                                <flux:icon name="magnifying-glass" class="w-5 h-5 text-gray-400"/>
+                            </x-slot:prefix>
+                            @if($componentSearch)
+                                <x-slot:suffix>
+                                    <flux:button
+                                        wire:click="$set('componentSearch', '')"
+                                        variant="ghost"
+                                        size="xs"
+                                        icon="x-mark"
+                                        class="text-gray-400 hover:text-gray-600"
+                                    />
+                                </x-slot:suffix>
+                            @endif
+                        </flux:input>
+                    </div>
+
+                    <div class="space-y-4 overflow-y-auto max-h-[60vh] pr-2">
+                        <div class="relative">
+                            <div class="min-h-[200px] border border-gray-300 rounded-lg bg-white shadow-sm">
+                                @if(empty($filteredComponents))
+                                    <div class="flex items-center justify-center h-32 text-gray-500">
+                                        No components available
+                                    </div>
+                                @else
+                                    <div class="divide-y divide-gray-200">
+                                        @foreach($filteredComponents as $component)
+                                            <label class="flex items-center px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors duration-150">
+                                                <input 
+                                                    type="checkbox"
+                                                    class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                                    wire:model="selectedComponents"
+                                                    value="{{ is_array($component) ? ($component['id'] ?? '') : (is_object($component) ? ($component->id ?? '') : '') }}"
+                                                >
+                                                <div class="ml-3 flex-1">
+                                                    <div class="text-sm font-medium text-gray-900">
+                                                        {{ data_get($component, 'title', 'Untitled Component') }}
+                                                    </div>
+                                                  
+                                                    
+                                                </div>
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex justify-end space-x-2 pt-4">
+                    <flux:button x-on:click="$flux.modal('mdl-salary-template-component').close()">
+                        Cancel
+                    </flux:button>
                     <flux:button type="submit" variant="primary">
-                        Save
+                        Save Assignment
                     </flux:button>
                 </div>
             </div>

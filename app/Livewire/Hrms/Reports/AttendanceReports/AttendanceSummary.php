@@ -77,6 +77,6 @@ class AttendanceSummary extends Component
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Reports/AttendanceReports/blades/attendance-summary.blade.php'));
+        return view()->file(app_path('Livewire/Hrms/Reports/AttendanceReports/blades/payroll-reports.blade.php'));
     }
 }

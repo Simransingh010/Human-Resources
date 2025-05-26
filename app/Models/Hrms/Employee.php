@@ -93,8 +93,26 @@ class Employee extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function payroll_tracks()
+    {
+        return $this->hasMany(\App\Models\Hrms\PayrollComponentsEmployeesTrack::class, 'employee_id', 'id');
+    }
+
+
     public function emp_job_profile()
     {
         return $this->hasOne(EmployeeJobProfile::class, 'employee_id');
+    }
+
+    public function bank_account()
+    {
+        return $this->hasOne(EmployeeBankAccount::class, 'employee_id');
+    }
+
+    public function salary_execution_groups()
+    {
+        return $this->belongsToMany(SalaryExecutionGroup::class, 'employees_salary_execution_group', 'employee_id', 'salary_execution_group_id')
+            ->withPivot('id', 'firm_id')
+            ->withTimestamps();
     }
 }
