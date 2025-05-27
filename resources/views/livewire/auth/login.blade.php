@@ -59,6 +59,8 @@ new #[Layout('components.layouts.auth')] class extends Component {
         session(['defaultwire' => 'panel.dashboard']);
         session(['fy_start' => '2025-04-01']);
         session(['fy_end' => '2026-03-31']);
+        session(['roundoff_precision' => 0]);
+        session(['roundoff_mode' => PHP_ROUND_HALF_UP]); // PHP_ROUND_HALF_UP, PHP_ROUND_HALF_DOWN, PHP_ROUND_HALF_EVEN, PHP_ROUND_HALF_ODD
 
 
         $this->redirectIntended(default: route('dashboard', absolute: false), navigate: true);

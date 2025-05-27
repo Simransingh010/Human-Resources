@@ -240,9 +240,9 @@
                                     @case('week_off_pattern')
                                         <div class="space-y-2">
 
-                                            @if($displayText)
-                                                <div class="text-sm text-gray-600">{{ $displayText }}</div>
-                                            @endif
+{{--                                            @if($displayText)--}}
+{{--                                                <div class="text-sm text-gray-600">{{ $displayText }}</div>--}}
+{{--                                            @endif--}}
 
                                             <flux:button 
                                                 variant="outline"

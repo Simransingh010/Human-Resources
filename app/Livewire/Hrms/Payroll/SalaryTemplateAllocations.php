@@ -154,14 +154,19 @@ class SalaryTemplateAllocations extends Component
         // Get all salary execution groups with their employees
         $executionGroups = \App\Models\Hrms\SalaryExecutionGroup::with([
             'employees' => function ($query) {
-                $query->where('is_inactive', false)
-                    ->whereNotExists(function ($subQuery) {
+                $query->where('is_inactive', false);
+                
+                // Only exclude employees with template allocations if allocation type is 'template'
+                if ($this->allocationType === 'template') {
+                    $query->whereNotExists(function ($subQuery) {
                         $subQuery->select(\DB::raw(1))
                             ->from('salary_components_employees')
                             ->whereRaw('salary_components_employees.employee_id = employees.id')
                             ->where('salary_components_employees.firm_id', Session::get('firm_id'))
+                            ->whereNotNull('salary_components_employees.salary_template_id') // Only check template allocations
                             ->whereNull('salary_components_employees.deleted_at');
                     });
+                }
             }
         ])
             ->where('firm_id', Session::get('firm_id'))
@@ -301,6 +306,10 @@ class SalaryTemplateAllocations extends Component
         $this->selectedComponents = [];
         $this->effectiveFrom = now()->format('Y-m-d');
         $this->effectiveTo = null;
+        $this->selectedEmployees = []; // Reset selected employees
+        
+        // Reload departments with employees based on new allocation type
+        $this->loadDepartmentsWithEmployees();
     }
 
     protected function rules()
