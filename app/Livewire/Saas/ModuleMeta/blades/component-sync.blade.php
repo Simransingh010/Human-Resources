@@ -1,4 +1,4 @@
-<div class="space-y-6">
+<div><div class="space-y-6">
     <div>
         <flux:heading size="lg">{{ $module->name }} ({{ $module->code }})</flux:heading>
         <flux:text class="text-gray-500">Manage components for this module</flux:text>
@@ -38,4 +38,5 @@
             </flux:button>
         </div>
     </div>
+</div>
 </div>

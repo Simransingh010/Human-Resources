@@ -574,13 +574,8 @@ class SalaryComponents extends Component
                 break;
 
             case 'component':
-                // Debug information
-                if (!isset($rule['key'])) {
-                    throw new \Exception('Component key is missing. Rule: ' . json_encode($rule));
-                }
-
-                if (!array_key_exists($rule['key'], $this->salaryComponents)) {
-                    throw new \Exception('Invalid component key: ' . $rule['key'] . '. Available keys: ' . implode(', ', array_keys($this->salaryComponents)));
+                if (!isset($rule['key']) || !array_key_exists($rule['key'], $this->salaryComponents)) {
+                    throw new \Exception('Invalid or missing component key');
                 }
                 break;
 

@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Http\UploadedFile;
 use App\Models\Hrms\EmployeeRelation;
+use Spatie\MediaLibrary\MediaCollections\Models\Media;
 
 class OnboardController extends Controller
 {
@@ -275,11 +276,13 @@ class OnboardController extends Controller
             $managers = Employee::where('firm_id', $employee->firm_id)
                 ->where('is_inactive', false)
                 ->where('id', '!=', $employee->id) // Exclude the current employee
+                ->with('emp_job_profile') // Eager load the job profile relationship
                 ->get(['id', 'fname', 'lname'])
                 ->map(function($manager) {
                     return [
                         'id' => $manager->id,
                         'name' => trim($manager->fname . ' ' . $manager->lname),
+                        'employee_code' => $manager->emp_job_profile ? $manager->emp_job_profile->employee_code : null,
                     ];
                 });
 
@@ -1060,9 +1063,6 @@ class OnboardController extends Controller
      */
     public function saveEmployeeDoc(Request $request)
     {
-        // Initialize debug info array
-        $debugInfo = [];
-
         try {
             $user = $request->user();
             if (!$user) {
@@ -1095,121 +1095,33 @@ class OnboardController extends Controller
 
             DB::beginTransaction();
 
-            // Find existing document if ID is provided and belongs to the employee
             $employeeDoc = null;
             if (isset($validatedData['id'])) {
                 $employeeDoc = EmployeeDoc::where('employee_id', $employee->id)
                                            ->find($validatedData['id']);
-                // If document exists and belongs to this employee, remove ID from data for update
                 if ($employeeDoc) {
                     unset($validatedData['id']); // Don't try to update the ID
                 }
             }
 
-            // --- File Handling with Debugging ---\
-            $uploadedFile = null;
-            $fileInputName = null;
-
-            // Check for the primary file input name 'document_file' first
-            if ($request->hasFile('document_file')) {
-                $fileInputName = 'document_file';
-                $uploadedFile = $request->file('document_file');
-                $debugInfo['check_document_file_input'] = 'File found with name \'document_file\'.';
-            } else if ($request->hasFile('_file_')) { // Fallback check for '_file_'
-                $fileInputName = '_file_';
-                $uploadedFile = $request->file('_file_');
-                $debugInfo['check_file_input_fallback'] = 'No file found with name \'document_file\'. Checking fallback name \'_file_\'. File found.';
-            } else {
-                 $debugInfo['check_file_input_fallback'] = 'No file found with name \'document_file\'. Checking fallback name \'_file_\'. No file found.';
-            }
-
-            $debugInfo['uploaded_file_status'] = ($uploadedFile instanceof UploadedFile) ? 'File object obtained.' : 'No valid file object obtained.';
-
-            if ($uploadedFile instanceof UploadedFile && $uploadedFile->isValid()) {
-                 $debugInfo['file_valid'] = 'Uploaded file is valid.';
-
-                 // Generate a unique filename
-                 $filename = Str::uuid() . '.' . $uploadedFile->getClientOriginalExtension();
-                 $debugInfo['generated_filename'] = $filename;
-
-                 // Define the storage path within the 'public' disk
-                 $storagePath = 'documents/' . $employee->id; // Store per employee
-                 $debugInfo['storage_path'] = $storagePath;
-
-                 // Store the file
-                 try {
-                     $path = $uploadedFile->storeAs($storagePath, $filename, 'public');
-                     $debugInfo['store_result'] = $path ? 'File stored successfully at: ' . $path : 'File storage failed.';
-
-                     if ($path) {
-                         // Get the public URL
-                         $generatedUrl = Storage::disk('public')->url($path);
-                         $validatedData['doc_url'] = $generatedUrl; // Set doc_url in data to be saved
-                         $debugInfo['generated_url'] = 'Public URL generated: ' . $generatedUrl;
-                     } else {
-                          $validatedData['doc_url'] = null; // Ensure doc_url is null if storage failed
-                          $debugInfo['generated_url'] = 'Public URL not generated because storage failed.';
-                     }
-                 } catch (\Throwable $storageError) {
-                     $validatedData['doc_url'] = null;
-                     $debugInfo['storage_exception'] = 'Exception during file storage: ' . $storageError->getMessage();
-                 }
-
-                 // Optional: If updating and a previous file existed, you might want to delete the old one
-                 // if ($employeeDoc && $employeeDoc->doc_url) {
-                 //     $oldPath = str_replace(Storage::disk('public')->url('/'), '', $employeeDoc->doc_url);
-                 //     Storage::disk('public')->delete($oldPath);
-                 // }
-            } else if ($request->has('document_file') && !($uploadedFile instanceof UploadedFile)) {
-                // This block handles cases where 'document_file' exists but is not a valid uploaded file object
-                // (e.g., sending an empty string or null for 'document_file' as text instead of a file)
-                 $debugInfo['document_file_not_a_file'] = 'Input named \'document_file\' exists but is not a valid file upload.';
-                 // If you intend to allow clearing the URL by sending doc_url as null without a file:
-                 if (isset($validatedData['doc_url']) && $validatedData['doc_url'] === null && $employeeDoc) {
-                      $debugInfo['doc_url_explicitly_null'] = 'doc_url explicitly set to null in payload, clearing existing URL.';
-                     // Optional: delete the old file if setting URL to null
-                     // if ($employeeDoc->doc_url) {
-                     //     $oldPath = str_replace(Storage::disk('public')->url('/'), '', $employeeDoc->doc_url);
-                     //     Storage::disk('public')->delete($oldPath);
-                     // }
-                     $validatedData['doc_url'] = null; // Ensure it's null in validatedData
-                 } else {
-                      // If doc_url is provided but no file, and it's not null, prevent saving a string as URL
-                      unset($validatedData['doc_url']);
-                       $debugInfo['doc_url_string_ignored'] = 'doc_url string provided in payload but no file uploaded. Ignoring doc_url string.';
-                 }
-            } else { // No file upload detected via expected names
-                 $debugInfo['no_file_upload_detected'] = 'No file upload detected with names \'document_file\' or \'_file_\'.';
-                 // If you intend to allow clearing the URL by sending doc_url as null without a file:
-                  if (isset($validatedData['doc_url']) && $validatedData['doc_url'] === null && $employeeDoc) {
-                      $debugInfo['doc_url_explicitly_null'] = 'doc_url explicitly set to null in payload, clearing existing URL.';
-                      $validatedData['doc_url'] = null; // Ensure it's null in validatedData
-                  } else {
-                       // Remove doc_url from validatedData if no file and not explicitly null for update
-                       unset($validatedData['doc_url']);
-                       $debugInfo['doc_url_field_removed'] = 'doc_url field removed from data to save as no file was uploaded.';
-                  }
-                  $debugInfo['all_files_in_request'] = $request->allFiles(); // See if files came under other names
-            }
-            // --- End File Handling with Debugging ---\
-
-            // Ensure doc_url is not null if it was already set on an existing doc and no new file uploaded
-             if (!isset($validatedData['doc_url']) && $employeeDoc && $employeeDoc->doc_url) {
-                 $validatedData['doc_url'] = $employeeDoc->doc_url;
-                 $debugInfo['retained_old_doc_url'] = 'Retained existing doc_url from the database as no new file was uploaded.';
-             }
-
             if ($employeeDoc) {
-                // Update existing document
                 $employeeDoc->update($validatedData);
-                $debugInfo['database_action'] = 'Updating existing record with ID: ' . $employeeDoc->id;
             } else {
-                 // If no ID or ID was invalid/didn't belong to employee, create a new record
                 $employeeDoc = EmployeeDoc::create(array_merge($validatedData, [
                     'firm_id' => $employee->firm_id,
                     'employee_id' => $employee->id,
                 ]));
-                 $debugInfo['database_action'] = 'Created new record with ID: ' . $employeeDoc->id;
+            }
+
+            // Handle file upload using Spatie Media Library
+            if ($request->hasFile('document_file')) {
+                $media = $employeeDoc->addMediaFromRequest('document_file')
+                    ->toMediaCollection('documents');
+                
+                // Update the doc_url field with the media URL
+                $employeeDoc->update([
+                    'doc_url' => $media->getUrl()
+                ]);
             }
 
             DB::commit();
@@ -1217,7 +1129,11 @@ class OnboardController extends Controller
             // Fetch the saved document with its type for the response
             $savedDoc = EmployeeDoc::with('document_type')->find($employeeDoc->id);
 
-            // Prepare response data including debug info
+            // Get the document URL from media collection
+            $media = $savedDoc->getMedia('documents')->first();
+            $docUrl = $media ? $media->getUrl() : $savedDoc->doc_url;
+
+            // Prepare response data
             $responseData = [
                 'id' => $savedDoc->id,
                 'document_type_id' => $savedDoc->document_type_id,
@@ -1225,7 +1141,7 @@ class OnboardController extends Controller
                 'document_number' => $savedDoc->document_number,
                 'issued_date' => $savedDoc->issued_date ? $savedDoc->issued_date->toDateString() : null,
                 'expiry_date' => $savedDoc->expiry_date ? $savedDoc->expiry_date->toDateString() : null,
-                'doc_url' => $savedDoc->doc_url,
+                'doc_url' => $docUrl,
                 'is_inactive' => (bool) $savedDoc->is_inactive,
             ];
 
@@ -1237,26 +1153,19 @@ class OnboardController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-             DB::rollBack();
-             $debugInfo['exception'] = 'ValidationException';
-             $debugInfo['errors'] = $e->errors();
-             return response()->json([
-                 'message_type' => 'error',
-                 'message_display' => 'popup',
-                 'message' => 'Validation failed',
-                 'errors' => $e->errors(),
-                 '_debug_info' => $debugInfo // Include debug info in validation error response too
-             ], 422);
-        } catch (\Throwable $e) {
             DB::rollBack();
-            $debugInfo['exception'] = 'Throwable';
-            $debugInfo['error_message'] = $e->getMessage();
-            $debugInfo['error_trace'] = $e->getTraceAsString(); // Warning: Full trace is very verbose
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage(),
-                '_debug_info' => $debugInfo // Include debug info in server error response
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
             ], 500);
         }
     }

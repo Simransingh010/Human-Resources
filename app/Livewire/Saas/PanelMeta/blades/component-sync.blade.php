@@ -35,18 +35,18 @@
                                         <flux:checkbox.group class="space-y-1">
                                             @foreach ($components as $componentRec)
                                                 <div class="flex justify-start space-x-2 mb-2">
-                                                <flux:checkbox
-                                                    wire:model="selectedComponents"
-                                                    class="w-full truncate"
-                                                    label="{{ $componentRec['name'] }}"
-                                                    value="{{ $componentRec['id'] }}"
-                                                />
-                                                <flux:tooltip toggleable>
-                                                    <flux:button icon="information-circle" size="xs" variant="ghost" />
-                                                    <flux:tooltip.content class="max-w-[20rem] space-y-2">
-                                                        {{ $componentRec['wire'] }}
-                                                    </flux:tooltip.content>
-                                                </flux:tooltip>
+                                                    <flux:checkbox
+                                                            wire:model="selectedComponents"
+                                                            class="w-full truncate"
+                                                            label="{{ $componentRec['name'] }}"
+                                                            value="{{ $componentRec['id'] }}"
+                                                    />
+                                                    <flux:tooltip toggleable>
+                                                        <flux:button icon="information-circle" size="xs" variant="ghost" />
+                                                        <flux:tooltip.content class="max-w-[20rem] space-y-2">
+                                                            {{ $componentRec['wire'] }}
+                                                        </flux:tooltip.content>
+                                                    </flux:tooltip>
                                                 </div>
                                             @endforeach
                                         </flux:checkbox.group>

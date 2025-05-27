@@ -11,6 +11,8 @@ use App\Models\Settings\DocumentType;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Class EmployeeDoc
@@ -34,9 +36,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * @package App\Models\Hrms
  */
-class EmployeeDoc extends Model
+class EmployeeDoc extends Model implements HasMedia
 {
-	use SoftDeletes;
+	use SoftDeletes, InteractsWithMedia;
 	protected $table = 'employee_docs';
 
 	protected $casts = [

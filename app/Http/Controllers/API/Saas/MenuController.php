@@ -21,7 +21,7 @@ class MenuController extends Controller
         // Validate the request: firm_id and panel_id are required.
         $request->validate([
             'firm_id'  => 'required|integer|exists:firms,id',
-            'panel_id' => 'required|integer|exists:panels,id',
+            'panel_idf' => 'required|integer|exists:panels,id',
         ]);
 
         $firmId = $request->input('firm_id');
