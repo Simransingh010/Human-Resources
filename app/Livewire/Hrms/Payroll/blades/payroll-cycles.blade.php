@@ -120,7 +120,9 @@
                                 elseif($step->step_code_main == 'static_unknown') {
                                     $icon = 'currency-rupee';
                                 }
-
+                                elseif($step->step_code_main == 'override_amounts') {
+                                    $icon = 'currency-rupee';
+                                }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
                                 <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
@@ -186,6 +188,25 @@
                                             Manually Entry
                                         </flux:button>
                                     @endif
+                                        @if($step->step_code_main == 'override_amounts')
+                                            <flux:tooltip content="Mark Complete">
+                                                <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
+                                                             wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
+                                                </flux:button>
+                                            </flux:tooltip>
+                                            <flux:tooltip content="View Logs">
+                                                <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
+                                                             wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
+                                                </flux:button>
+                                            </flux:tooltip>
+                                            <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
+                                                         wire:click="overrideAmountsStep({{ $payrollSlotDetails->id }})">
+                                                Override Amounts
+                                            </flux:button>
+                                        @endif
+
+
+
 
                                     @if($step->step_code_main == 'tds_calculation')
 
@@ -374,7 +395,13 @@
                                                                :wire:key="'set-head-amount-manually-'.$selectedSlotId"/>
         @endif
     </flux:modal>
-
+{{--    override amounts modal--}}
+<flux:modal name="override-amounts" title="Override Amounts" class="max-w-7xl">
+    @if($selectedSlotId)
+        <livewire:hrms.payroll.override-amounts :payroll-slot-id="$selectedSlotId"
+            :wire:key="'override-amounts-'.$selectedSlotId" />
+    @endif
+</flux:modal>
     <!-- Add Employee Tax Components Modal -->
     <flux:modal name="employee-tax-components" title="Employee Tax Components" class="max-w-6xl">
         @if($selectedSlotId)

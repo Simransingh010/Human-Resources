@@ -66,7 +66,18 @@
             @foreach($this->list as $record)
                 <flux:table.row :key="$record->employee_id">
                     <flux:table.cell class="table-cell-wrap sticky left-0 bg-white z-10">
-                        {{ $record->fname }}
+                        <div class="space-y-1">
+                            <div class="font-medium">
+                                {{ $record->fname }} {{ $record->mname ? $record->mname . ' ' : '' }}{{ $record->lname }}
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                <div>Employee Code: {{ $record->employee_code }}</div>
+                                <div>Email: {{ $record->email }}</div>
+                                <div>Phone: {{ $record->phone }}</div>
+                                <div>Department: {{ $record->department_title }}</div>
+                                <div>Designation: {{ $record->designation_title }}</div>
+                            </div>
+                        </div>
                     </flux:table.cell>
                     <flux:table.cell class="table-cell-wrap sticky left-[200px] bg-white z-10">
                         @if($this->hasCalculatedComponents($record->employee_id))

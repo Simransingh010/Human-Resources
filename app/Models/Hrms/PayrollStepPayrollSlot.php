@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class PayrollStepPayrollSlot
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $payroll_slot_id
@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Firm $firm
  * @property PayrollSlot $payroll_slot
  * @property PayrollStep $payroll_step
@@ -42,6 +42,13 @@ class PayrollStepPayrollSlot extends Model
 		'payroll_slot_id' => 'int',
 		'payroll_step_id' => 'int'
 	];
+
+    public const  PAYROLL_STEP_STATUS = [
+        'NS'=> 'Not Started',
+        'IP' => 'In Progress',
+        'CM' => 'Completed',
+        'SK' => 'Skipped',
+    ];
 
 	protected $fillable = [
 		'firm_id',

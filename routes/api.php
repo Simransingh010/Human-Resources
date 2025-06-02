@@ -9,6 +9,7 @@ use App\Http\Controllers\API\Saas\SystemInfoController;
 use App\Http\Controllers\API\Hrms\Attendance\AttendanceController;
 use App\Http\Controllers\API\Hrms\Leave\LeaveController;
 use App\Http\Controllers\API\Hrms\Onboard\OnboardController;
+use App\Http\Controllers\API\Hrms\Payroll\PayrollController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/loginmobile', [AuthController::class, 'loginmobile']);
@@ -38,10 +39,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/hrms/employees/job-profile', [OnboardController::class, 'getEmployeeJobProfile']);
     Route::post('/hrms/employees/post-job-profile', [OnboardController::class, 'saveEmployeeJobProfile']);
     Route::post('/hrms/employees/post-personal-details', [OnboardController::class, 'saveEmployeePersonalDetail']);
+//    Route::post('/hrms/employees/post-personal-details-one', [OnboardController::class, 'saveEmployeePersonalDetailsNew']);
+    
     Route::post('/hrms/employees/post-bank-account', [OnboardController::class, 'saveEmployeeBankAccount']);
     Route::get('/hrms/employees/personal-details', [OnboardController::class, 'getEmployeePersonalDetail']);
+//    Route::get('/hrms/employees/personal-details-one', [OnboardController::class, 'getEmployeePersonalDetailNew']);
     Route::get('/hrms/employees/bank-account', [OnboardController::class, 'getEmployeeBankAccount']);
     Route::get('/hrms/employees/contacts', [OnboardController::class, 'getEmployeeContacts']);
+    Route::post('/hrms/employees/post-contacts', [OnboardController::class, 'saveEmployeeContacts']);
+    Route::post('/hrms/employees/delete-contact', [OnboardController::class, 'deleteEmployeeContact']);
     Route::get('/hrms/contact-types', [OnboardController::class, 'getContactTypes']);
     Route::get('/hrms/departments', [OnboardController::class, 'getDepartments']);
     Route::get('/hrms/designations', [OnboardController::class, 'getDesignations']);
@@ -49,10 +55,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/hrms/reporting-managers', [OnboardController::class, 'getReportingManagers']);
     Route::get('/hrms/job-locations', [OnboardController::class, 'getJobLocations']);
 
-    Route::post('/hrms/employees/post-contacts', [OnboardController::class, 'saveEmployeeContacts']);
-
     Route::get('/hrms/employees/docs', [OnboardController::class, 'getEmployeeDocs']);
     Route::post('/hrms/employees/post-doc', [OnboardController::class, 'saveEmployeeDoc']);
+    Route::post('/hrms/employees/delete-doc', [OnboardController::class, 'deleteEmployeeDoc']);
+//    Route::post('/hrms/employees/post-delete-doc', [OnboardController::class, 'postDeleteEmployeeDoc']);
 
     Route::get('/hrms/document-types', [OnboardController::class, 'getDocumentTypes']);
 
@@ -60,5 +66,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/hrms/employees/employee-relations', [OnboardController::class, 'getEmployeeRelations']);
     Route::post('/hrms/employees/post-employee-relation', [OnboardController::class, 'saveEmployeeRelation']);
+    Route::post('/hrms/employees/delete-employee-relation', [OnboardController::class, 'deleteEmployeeRelation']);
+    Route::get('/hrms/employees/profile-completion', [OnboardController::class, 'getProfileCompletion']);
+
+    // Payroll related routes
+    Route::get('/hrms/employees/holidays', [PayrollController::class, 'getEmployeeHolidays']);
+    Route::get('/hrms/employees/salary-structure', [PayrollController::class, 'getEmployeeSalaryStructure']);
+    Route::get('/hrms/employees/payroll-slots', [PayrollController::class, 'getEmployeePayrollSlots']);
+    Route::get('/hrms/employees/payroll-components', [PayrollController::class, 'getEmployeePayrollComponents']);
 
 });
+ 

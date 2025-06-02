@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $dob
  * @property string|null $qualification
  * @property bool $is_inactive
+ * @property bool $is_nominee
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
@@ -40,7 +41,8 @@ class EmployeeRelation extends Model
 		'firm_id' => 'int',
 		'employee_id' => 'int',
 		'dob' => 'datetime',
-		'is_inactive' => 'bool'
+		'is_inactive' => 'bool',
+		'is_nominee' => 'bool'
 	];
 
 	protected $fillable = [
@@ -51,10 +53,13 @@ class EmployeeRelation extends Model
 		'occupation',
 		'dob',
 		'qualification',
-		'is_inactive'
+		'is_inactive',
+		'is_nominee'
+        //is_nominee
 	];
 
 	public const RELATION_SELECT = [
+        'self' => 'Self',
         'Spouse' => 'Spouse',
         'Child' => 'Child',
         'Parent' => 'Parent',

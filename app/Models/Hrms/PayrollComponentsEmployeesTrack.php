@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Class PayrollComponentsEmployeesTrack
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $payroll_slot_id
@@ -38,7 +38,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int|null $salary_cycle_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * 
+ *
  * @property SalaryAdvance|null $salary_advance
  * @property SalaryArrear|null $salary_arrear
  * @property SalaryComponentGroup $salary_component_group
@@ -69,7 +69,6 @@ class PayrollComponentsEmployeesTrack extends Model
 		'sequence' => 'int',
 		'taxable' => 'bool',
 		'calculation_json' => 'json',
-
 		'salary_period_from' => 'datetime',
 		'salary_period_to' => 'datetime',
 		'user_id' => 'int',
@@ -103,7 +102,9 @@ class PayrollComponentsEmployeesTrack extends Model
 		'amount_paid',
 		'salary_advance_id',
 		'salary_arrear_id',
-		'salary_cycle_id'
+		'salary_cycle_id',
+        'remarks',
+        'entry_type'
 	];
 
 	public function salary_advance()

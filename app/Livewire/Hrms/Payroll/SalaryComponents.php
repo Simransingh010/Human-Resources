@@ -24,7 +24,14 @@ class SalaryComponents extends Component
     public $rule = [
         'type' => 'operation',
         'operator' => '+',
-        'operands' => []
+        'operands' => [],
+        'if' => [
+            'left' => ['type' => 'component', 'key' => null],
+            'operator' => '==',
+            'right' => ['type' => 'constant', 'value' => 0]
+        ],
+        'then' => ['type' => 'constant', 'value' => 0],
+        'else' => ['type' => 'constant', 'value' => 0]
     ];
     public $currentPath = '';
 
@@ -138,6 +145,52 @@ class SalaryComponents extends Component
             // Fallback for unexpected types
             return [];
         })->toArray();
+    }
+
+    public function updatedRuleType()
+    {
+        switch ($this->rule['type']) {
+            case 'conditional':
+                $this->rule = [
+                    'type' => 'conditional',
+                    'if' => [
+                        'left' => ['type' => 'component', 'key' => null],
+                        'operator' => '==',
+                        'right' => ['type' => 'constant', 'value' => 0]
+                    ],
+                    'then' => ['type' => 'constant', 'value' => 0],
+                    'else' => ['type' => 'constant', 'value' => 0]
+                ];
+                break;
+            case 'operation':
+                $this->rule = [
+                    'type' => 'operation',
+                    'operator' => '+',
+                    'operands' => []
+                ];
+                break;
+            case 'component':
+                $this->rule = [
+                    'type' => 'component',
+                    'key' => null
+                ];
+                break;
+            case 'constant':
+                $this->rule = [
+                    'type' => 'constant',
+                    'value' => 0
+                ];
+                break;
+        }
+    }
+
+    protected function resetRule()
+    {
+        $this->rule = [
+            'type' => 'operation',
+            'operator' => '+',
+            'operands' => []
+        ];
     }
 
     /**
@@ -333,15 +386,6 @@ class SalaryComponents extends Component
             heading: 'Record Deleted.',
             text: 'Salary component has been deleted successfully',
         );
-    }
-
-    protected function resetRule()
-    {
-        $this->rule = [
-            'type' => 'operation',
-            'operator' => '+',
-            'operands' => []
-        ];
     }
 
     public function addOperand()
@@ -558,6 +602,31 @@ class SalaryComponents extends Component
         }
 
         switch ($rule['type']) {
+            case 'conditional':
+                if (!isset($rule['if']) || !isset($rule['then']) || !isset($rule['else'])) {
+                    throw new \Exception('Conditional rule requires if, then, and else sections');
+                }
+                
+                // Validate IF condition
+                if (!isset($rule['if']['left']) || !isset($rule['if']['operator']) || !isset($rule['if']['right'])) {
+                    throw new \Exception('IF condition requires left operand, operator, and right operand');
+                }
+                
+                // Validate left operand
+                if ($rule['if']['left']['type'] === 'component' && !$this->isValidComponentKey($rule['if']['left']['key'])) {
+                    throw new \Exception('Invalid component key in IF left operand');
+                }
+                
+                // Validate right operand
+                if ($rule['if']['right']['type'] === 'component' && !$this->isValidComponentKey($rule['if']['right']['key'])) {
+                    throw new \Exception('Invalid component key in IF right operand');
+                }
+                
+                // Validate THEN and ELSE sections
+                $this->validateRule($rule['then'], $depth + 1);
+                $this->validateRule($rule['else'], $depth + 1);
+                break;
+
             case 'operation':
                 if (!isset($rule['operator'])) {
                     throw new \Exception('Operation requires an operator');
@@ -596,7 +665,7 @@ class SalaryComponents extends Component
     {
         switch ($rule['type']) {
             case 'conditional':
-                $if = $this->formatRule($rule['if']);
+                $if = $this->formatCondition($rule['if']);
                 $then = $this->formatRule($rule['then']);
                 $else = $this->formatRule($rule['else']);
                 return "IF {$if} THEN {$then} ELSE {$else}";
@@ -615,6 +684,19 @@ class SalaryComponents extends Component
             case 'constant':
                 return (string) $rule['value'];
         }
+    }
+
+    protected function formatCondition($condition)
+    {
+        $left = $condition['left']['type'] === 'component' 
+            ? '[' . $condition['left']['key'] . ']'
+            : (string) $condition['left']['value'];
+            
+        $right = $condition['right']['type'] === 'component'
+            ? '[' . $condition['right']['key'] . ']'
+            : (string) $condition['right']['value'];
+            
+        return "{$left} {$condition['operator']} {$right}";
     }
 
     public function saveRule()
@@ -643,11 +725,9 @@ class SalaryComponents extends Component
         }
     }
 
-    public function renderNestedOperation($path, $operation)
+    public function renderNestedOperation($path, $operation, $salaryComponents)
     {
         $html = '<div class="nested-operation-container ml-4 p-4 border-l-2 border-blue-200">';
-
-        // Operator Selection
         $html .= '<div class="mb-4">';
         $html .= '<label class="block text-sm font-medium text-gray-700 mb-2">Operator for Nested Operation</label>';
         $html .= '<flux:select wire:model.live="rule.' . $path . '.operator">';
@@ -657,20 +737,13 @@ class SalaryComponents extends Component
         $html .= '<flux:select.option value="/">Divide (÷)</flux:select.option>';
         $html .= '</flux:select>';
         $html .= '</div>';
-
-        // Nested Operands
         $html .= '<div class="space-y-4">';
         $html .= '<div class="flex justify-between items-center">';
         $html .= '<label class="block text-sm font-medium text-gray-700">Nested Operands</label>';
-        $html .= '<flux:button size="sm" wire:click="addOperand(\'' . $path . '\')" class="text-sm">';
-        $html .= 'Add Nested Operand';
-        $html .= '</flux:button>';
+        $html .= '<flux:button size="sm" wire:click="addOperand(\'' . $path . '\')" class="text-sm">Add Nested Operand</flux:button>';
         $html .= '</div>';
-
         foreach ($operation['operands'] ?? [] as $i => $operand) {
             $html .= '<div class="relative p-4 border rounded-lg bg-white shadow-sm">';
-
-            // Type Selection
             $html .= '<div class="flex items-center gap-4 mb-4">';
             $html .= '<div class="flex-1">';
             $html .= '<flux:select wire:model.live="rule.' . $path . '.operands.' . $i . '.type">';
@@ -679,24 +752,18 @@ class SalaryComponents extends Component
             $html .= '<flux:select.option value="operation">Nested Operation</flux:select.option>';
             $html .= '</flux:select>';
             $html .= '</div>';
-            $html .= '<flux:button wire:click="removeOperand(\'' . $path . '\', ' . $i . ')" class="text-red-500">';
-            $html .= 'Remove';
-            $html .= '</flux:button>';
+            $html .= '<flux:button wire:click="removeOperand(\'' . $path . '\', ' . $i . ')" class="text-red-500">Remove</flux:button>';
             $html .= '</div>';
-
-            // Content based on type
             if ($operand['type'] === 'operation') {
-                $html .= $this->renderNestedOperation($path . '.operands.' . $i, $operand);
+                $html .= $this->renderNestedOperation($path . '.operands.' . $i, $operand, $salaryComponents);
             } elseif ($operand['type'] === 'component') {
                 $html .= '<div class="ml-4">';
                 $html .= '<label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>';
                 $html .= '<flux:select wire:model.live="rule.' . $path . '.operands.' . $i . '.key">';
-
-                foreach ($this->salaryComponents as $id => $component) {
-                    $title = $this->getComponentTitle($component);
+                foreach ($salaryComponents as $id => $component) {
+                    $title = is_array($component) ? ($component['title'] ?? '') : (is_object($component) ? ($component->title ?? '') : '');
                     $html .= '<flux:select.option value="' . htmlspecialchars($id) . '">' . htmlspecialchars($title) . '</flux:select.option>';
                 }
-
                 $html .= '</flux:select>';
                 $html .= '</div>';
             } else {
@@ -705,13 +772,10 @@ class SalaryComponents extends Component
                 $html .= '<flux:input type="number" step="0.01" wire:model.live="rule.' . $path . '.operands.' . $i . '.value" placeholder="Enter value" />';
                 $html .= '</div>';
             }
-
             $html .= '</div>';
         }
-
         $html .= '</div>';
         $html .= '</div>';
-
         return $html;
     }
 

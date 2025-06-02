@@ -43,6 +43,13 @@ class PayrollStep extends Model
         'is_inactive' => 'bool'
     ];
 
+    public const STEP_CODE_MAIN_STATUS = [
+        'fetch_attendance'=> 'Fetch Attendance',
+        'lop_attendance' => 'LOP Adjustment',
+        'static_unknown' => 'Set Head Amounts Manually',
+        'tds_calculation' => 'TDS',
+    ];
+
     protected $fillable = [
         'firm_id',
         'step_code_main',

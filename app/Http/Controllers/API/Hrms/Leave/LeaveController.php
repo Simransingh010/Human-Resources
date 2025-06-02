@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API\Hrms\Leave;
 
 use App\Http\Controllers\Controller;
+use App\Models\NotificationQueue;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Hrms\EmpLeaveBalance;  // ← make sure this path matches your model
@@ -212,15 +214,15 @@ class LeaveController extends Controller
             }
 
             // 3) Create a single approval record from that rule
-            EmpLeaveRequestApproval::create([
-                'emp_leave_request_id' => $lr->id,
-                'approval_level'       => $rule->approval_level,
-                'approver_id'          => $rule->approver_id ?? 0,
-                'status'               => 'applied',
-                'remarks'              => null,
-                'acted_at'             => null,
-                'firm_id'              => $firmId,
-            ]);
+//            EmpLeaveRequestApproval::create([
+//                'emp_leave_request_id' => $lr->id,
+//                'approval_level'       => $rule->approval_level,
+//                'approver_id'          => $rule->approver_id ?? 0,
+//                'status'               => 'applied',
+//                'remarks'              => null,
+//                'acted_at'             => null,
+//                'firm_id'              => $firmId,
+//            ]);
 
             // 4) Log the “created” event
             LeaveRequestEvent::create([
@@ -245,6 +247,50 @@ class LeaveController extends Controller
             ], 422);
         }
 
+        //
+        // ──────────────── STAGE NOTIFICATIONS ─────────────────
+        //
+
+        $now = now();
+
+        // Payload for applicant
+        $applicantPayload = [
+            'firm_id' => $firmId,
+            'subject' => 'Your leave request is submitted',
+            'message' => "You have applied for leave from {$from->toDateString()} to {$to->toDateString()}.",
+        ];
+
+        NotificationQueue::create([
+            'firm_id'         => $firmId,
+            'notifiable_type'=> User::class,
+            'notifiable_id'  => $user->id,
+            'channel'        => 'mail',
+            'data'           => json_encode($applicantPayload),
+            'status'         => 'pending',
+            'created_at'     => $now,
+            'updated_at'     => $now,
+        ]);
+
+        // Payload for approver
+        $approverUser = User::find($rule->approver_id);
+        if ($approverUser) {
+            $approverPayload = [
+                'firm_id' => $firmId,
+                'subject' => 'New leave request pending your approval',
+                'message' => "{$employee->fname} {$employee->lname} has requested leave ({$from->toDateString()} → {$to->toDateString()}).",
+            ];
+
+            NotificationQueue::create([
+                'firm_id'         => $firmId,
+                'notifiable_type'=> User::class,
+                'notifiable_id'  => $approverUser->id,
+                'channel'        => 'mail',
+                'data'           => json_encode($approverPayload),
+                'status'         => 'pending',
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ]);
+        }
         return response()->json([
             'message_type'    => 'success',
             'message_display' => 'popup',

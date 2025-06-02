@@ -109,6 +109,11 @@ class Employee extends Model
         return $this->hasOne(EmployeeBankAccount::class, 'employee_id');
     }
 
+    public function emp_personal_detail()
+    {
+        return $this->hasOne(\App\Models\Hrms\EmployeePersonalDetail::class, 'employee_id');
+    }
+
     public function salary_execution_groups()
     {
         return $this->belongsToMany(SalaryExecutionGroup::class, 'employees_salary_execution_group', 'employee_id', 'salary_execution_group_id')

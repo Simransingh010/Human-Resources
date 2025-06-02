@@ -23,6 +23,7 @@ class WorkShiftsAlgos extends Component
     use WithPagination;
 
     public $selectedAlgoId = null;
+    public $selectedWorkShiftId = null;
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
@@ -132,8 +133,10 @@ class WorkShiftsAlgos extends Component
     public array $visibleFilterFields = [];
     public array $listsForFields = [];
 
-    public function mount()
+    public function mount($selectedWorkShiftId)
     {
+        $this->selectedWorkShiftId = WorkShift::findOrFail($selectedWorkShiftId)->id;
+//        dd($this->selectedWorkShiftId);
         $this->resetPage();
         $this->refreshStatuses();
         $this->getWorkShiftsForSelect();
@@ -203,6 +206,7 @@ class WorkShiftsAlgos extends Component
     {
         return WorkShiftsAlgo::query()
             ->where('firm_id', session('firm_id'))
+            ->where('work_shift_id', $this->selectedWorkShiftId)
             ->when($this->filters['search_shift'], function ($query) {
                 $query->whereHas('work_shift', function ($q) {
                     $q->where('shift_title', 'like', '%' . $this->filters['search_shift'] . '%');
@@ -706,12 +710,12 @@ class WorkShiftsAlgos extends Component
                             ->whereMonth('start_date', $date->month)
                             ->whereDay('start_date', $date->day)
                             ->where(function ($subQ) use ($date) {
-                            $subQ->whereNull('end_date')
-                                ->orWhere(function ($endQ) use ($date) {
-                                    $endQ->whereMonth('end_date', $date->month)
-                                        ->whereDay('end_date', '>=', $date->day);
-                                });
-                        });
+                                $subQ->whereNull('end_date')
+                                    ->orWhere(function ($endQ) use ($date) {
+                                        $endQ->whereMonth('end_date', $date->month)
+                                            ->whereDay('end_date', '>=', $date->day);
+                                    });
+                            });
                     });
                 })
                 ->where('is_inactive', false)

@@ -70,7 +70,11 @@ class EmployeeJobProfile extends Model
 		'doe',
 		'uanno',
 		'esicno',
-		'joblocation_id'
+		'joblocation_id',
+		'pran_number',
+		'paylevel',
+		'rf_id',
+		'biometric_emp_code'
 	];
 
 	public function department()

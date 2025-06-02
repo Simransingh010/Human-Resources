@@ -73,6 +73,8 @@ class SalaryTemplateAllocations extends Component
         'template_id' => null,
     ];
 
+    public $selectedEmployeeId = null;
+
     public function mount()
     {
         $this->batchItems = collect();
@@ -626,7 +628,7 @@ class SalaryTemplateAllocations extends Component
             // Load batch items with their relationships
             $this->batchItems = BatchItem::where('batch_id', $batchId)
                 ->where('model_type', SalaryComponentsEmployee::class)
-                ->with(['salaryComponentEmployee.employee', 'salaryComponentEmployee.salary_component', 'salaryComponentEmployee.salary_template'])
+                ->with(['salaryComponentEmployee', 'salaryComponentEmployee.employee', 'salaryComponentEmployee.salary_component', 'salaryComponentEmployee.salary_template'])
                 ->get();
 
             if ($this->batchItems->isEmpty()) {
@@ -657,6 +659,10 @@ class SalaryTemplateAllocations extends Component
         return $this->batchItems
             ->when($this->batchItemSearch, function ($items) {
                 return $items->filter(function ($item) {
+                    if (!$item->salaryComponentEmployee || !$item->salaryComponentEmployee->employee) {
+                        return false;
+                    }
+                    
                     $searchTerm = strtolower($this->batchItemSearch);
                     $employeeName = strtolower(
                         $item->salaryComponentEmployee->employee->fname . ' ' .
@@ -670,12 +676,20 @@ class SalaryTemplateAllocations extends Component
             })
             ->when($this->effectiveFromFilter, function ($items) {
                 return $items->filter(function ($item) {
+                    if (!$item->salaryComponentEmployee) {
+                        return false;
+                    }
+                    
                     return Carbon::parse($item->salaryComponentEmployee->effective_from)
                         ->greaterThanOrEqual(Carbon::parse($this->effectiveFromFilter));
                 });
             })
             ->when($this->effectiveToFilter, function ($items) {
                 return $items->filter(function ($item) {
+                    if (!$item->salaryComponentEmployee) {
+                        return false;
+                    }
+                    
                     return Carbon::parse($item->salaryComponentEmployee->effective_to)
                         ->lessThanOrEqual(Carbon::parse($this->effectiveToFilter));
                 });
@@ -699,5 +713,77 @@ class SalaryTemplateAllocations extends Component
         $this->salaryCycles = \App\Models\Hrms\SalaryCycle::where('firm_id', Session::get('firm_id'))
             ->where('is_inactive', false)
             ->get();
+    }
+
+    public function rollbackEmployeeAllocation($employeeId)
+    {
+        try {
+            if (!$this->selectedBatchId || !$employeeId) {
+                throw new \Exception("Invalid batch or employee ID.");
+            }
+
+            DB::transaction(function () use ($employeeId) {
+                // Find all batch items for this employee in the current batch
+                $batchItems = BatchItem::where('batch_id', $this->selectedBatchId)
+                    ->where('model_type', SalaryComponentsEmployee::class)
+                    ->with('salaryComponentEmployee')
+                    ->whereHas('salaryComponentEmployee', function($query) use ($employeeId) {
+                        $query->where('employee_id', $employeeId);
+                    })
+                    ->get();
+
+                if ($batchItems->isEmpty()) {
+                    throw new \Exception("No allocation items found for this employee.");
+                }
+
+                // Delete each component associated with this employee in the batch
+                foreach ($batchItems as $item) {
+                    if ($component = $item->salaryComponentEmployee) {
+                        $component->forceDelete();
+                    }
+                    
+                    // Delete the batch item
+                    $item->forceDelete();
+                }
+                
+                // Get employee name for the success message
+                $employee = Employee::find($employeeId);
+                $employeeName = $employee ? $employee->fname . ' ' . $employee->lname : 'Employee';
+                
+                // Reload batch items to refresh the view
+                $this->batchItems = BatchItem::where('batch_id', $this->selectedBatchId)
+                    ->where('model_type', SalaryComponentsEmployee::class)
+                    ->with(['salaryComponentEmployee', 'salaryComponentEmployee.employee', 'salaryComponentEmployee.salary_component', 'salaryComponentEmployee.salary_template'])
+                    ->get();
+                
+                // Check if the batch is now empty
+                $batchId = $this->selectedBatchId;
+                $batch = Batch::find($batchId);
+                $remainingItemsCount = $batch ? $batch->items()->count() : 0;
+                
+                // If there are no more items in the batch, close the modal and potentially delete the batch
+                if ($this->batchItems->isEmpty()) {
+                    $this->showItemsModal = false;
+                    
+                    // If no batch items remain, delete the batch itself
+                    if ($remainingItemsCount === 0 && $batch) {
+                        $batch->forceDelete();
+                    }
+                    
+                    $this->selectedBatchId = null;
+                }
+                
+                Flux::toast(
+                    heading: 'Success',
+                    text: 'Allocation for ' . $employeeName . ' rolled back successfully.',
+                );
+            });
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to rollback allocation: ' . $e->getMessage(),
+            );
+        }
     }
 }

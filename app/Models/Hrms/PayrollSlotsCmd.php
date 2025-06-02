@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * Class PayrollSlotsCmd
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $payroll_slot_id
@@ -23,7 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int|null $user_id
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
- * 
+ *
  * @property Firm $firm
  * @property PayrollSlot $payroll_slot
  * @property User|null $user
@@ -59,7 +59,8 @@ class PayrollSlotsCmd extends Model
         'HT' => 'Halted',
         'SP' => 'Suspended',
         'CM' => 'Completed',
-        "IP" =>"In Progress"
+        "IP" =>"In Progress",
+        'RS' => 'Re-Started',
     ];
 
 	public function firm()

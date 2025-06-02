@@ -11,6 +11,7 @@ use App\Models\Hrms\EmployeeTaxRegime;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\EmployeesSalaryExecutionGroup;
 use App\Models\Hrms\PayrollSlot;
+use App\Models\Hrms\SalaryExecutionGroup;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
@@ -45,6 +46,7 @@ class BulkEmployeeSalaryComponents extends Component
     public array $filterFields = [
         'department_id' => ['label' => 'Department', 'type' => 'select', 'listKey' => 'departments'],
         'designation_id' => ['label' => 'Designation', 'type' => 'select', 'listKey' => 'designations'],
+        'salary_execution_group_id' => ['label' => 'Salary Execution Group', 'type' => 'select', 'listKey' => 'executionGroups'],
         'search' => ['label' => 'Search', 'type' => 'text'],
     ];
 
@@ -58,7 +60,7 @@ class BulkEmployeeSalaryComponents extends Component
         $this->loadComponents();
 
         // Set default visible filter fields
-        $this->visibleFilterFields = ['department_id', 'designation_id', 'search'];
+        $this->visibleFilterFields = ['department_id', 'designation_id', 'salary_execution_group_id', 'search'];
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
@@ -74,6 +76,12 @@ class BulkEmployeeSalaryComponents extends Component
 
         // Get designations for dropdown
         $this->listsForFields['designations'] = Designation::where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', false)
+            ->pluck('title', 'id')
+            ->toArray();
+
+        // Get salary execution groups for dropdown
+        $this->listsForFields['executionGroups'] = SalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
             ->where('is_inactive', false)
             ->pluck('title', 'id')
             ->toArray();
@@ -243,11 +251,21 @@ class BulkEmployeeSalaryComponents extends Component
             ->select([
                 'salary_components_employees.employee_id',
                 'employees.fname',
+                'employees.mname',
                 'employees.lname',
-                'employees.email'
+                'employees.email',
+                'employees.phone',
+                'employees.gender',
+                'employee_job_profiles.employee_code',
+                'employee_job_profiles.department_id',
+                'employee_job_profiles.designation_id',
+                'departments.title as department_title',
+                'designations.title as designation_title'
             ])
             ->join('employees', 'employees.id', '=', 'salary_components_employees.employee_id')
             ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
+            ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
+            ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
             ->where('salary_components_employees.firm_id', Session::get('firm_id'))
             ->where(function ($query) {
                 $query->whereNull('salary_components_employees.effective_to')
@@ -258,17 +276,36 @@ class BulkEmployeeSalaryComponents extends Component
                 $query->where('employee_job_profiles.department_id', $value))
             ->when($this->filters['designation_id'], fn($query, $value) =>
                 $query->where('employee_job_profiles.designation_id', $value))
+            ->when($this->filters['salary_execution_group_id'], function($query, $value) {
+                $query->whereExists(function ($subquery) use ($value) {
+                    $subquery->select('id')
+                        ->from('employees_salary_execution_group')
+                        ->whereColumn('employee_id', 'employees.id')
+                        ->where('salary_execution_group_id', $value)
+                        ->where('firm_id', Session::get('firm_id'));
+                });
+            })
             ->when($this->filters['search'], fn($query, $value) =>
                 $query->where(function ($q) use ($value) {
                     $q->where('employees.fname', 'like', "%{$value}%")
                         ->orWhere('employees.lname', 'like', "%{$value}%")
-                        ->orWhere('employees.email', 'like', "%{$value}%");
+                        ->orWhere('employees.email', 'like', "%{$value}%")
+                        ->orWhere('employees.phone', 'like', "%{$value}%")
+                        ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
                 }))
             ->groupBy([
                 'salary_components_employees.employee_id',
                 'employees.fname',
+                'employees.mname',
                 'employees.lname',
-                'employees.email'
+                'employees.email',
+                'employees.phone',
+                'employees.gender',
+                'employee_job_profiles.employee_code',
+                'employee_job_profiles.department_id',
+                'employee_job_profiles.designation_id',
+                'departments.title',
+                'designations.title'
             ])
             ->orderBy($this->sortBy, $this->sortDirection);
 
@@ -400,8 +437,11 @@ class BulkEmployeeSalaryComponents extends Component
     public function syncCalculations($employeeId)
     {
         try {
+//        dd("Syncing calculations for employee ID: {$employeeId}");
             // Get the employee
             $employee = Employee::findOrFail($employeeId);
+
+
 
             // Get calculated components
             $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
@@ -412,7 +452,7 @@ class BulkEmployeeSalaryComponents extends Component
                 })
                 ->with('salary_component')
                 ->get()
-                ->map(function ($employeeComponent) {
+                ->map(function ($employeeComponent) use ($employeeId) {// we used "use ($employeeId)" to pass the employeeId to the function because there was error for some users "undefined variable $employeeId"
                     if (empty($employeeComponent->calculation_json)) {
                         throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
                     }
@@ -424,6 +464,7 @@ class BulkEmployeeSalaryComponents extends Component
                 });
 
 //            dd($calculatedComponents);
+//            dd("Syncing calculations for employee ID: {$employeeId}");
 
 
 
@@ -541,21 +582,22 @@ class BulkEmployeeSalaryComponents extends Component
 
     protected function calculateTax($employeeId)
     {
+        // 1. Get employee's tax regime
+        $employeeTaxRegime = EmployeeTaxRegime::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->where(function ($query) {
+                $query->whereNull('effective_to')
+                    ->orWhere('effective_to', '>', now());
+            })
+            ->with('tax_regime.tax_brackets')
+            ->first();
+
+        if (!$employeeTaxRegime) {
+            // Instead of throwing an exception, just log or skip tax calculation
+            \Log::info("Skipping tax calculation: No active tax regime for employee ID {$employeeId}");
+            return; // Exit function without throwing error
+        }
         try {
-            // 1. Get employee's tax regime
-            $employeeTaxRegime = EmployeeTaxRegime::where('employee_id', $employeeId)
-                ->where('firm_id', Session::get('firm_id'))
-                ->where(function ($query) {
-                    $query->whereNull('effective_to')
-                        ->orWhere('effective_to', '>', now());
-                })
-                ->with('tax_regime.tax_brackets')
-                ->first();
-
-            if (!$employeeTaxRegime) {
-                throw new \Exception("No active tax regime found for employee");
-            }
-
             // 2. Get total earnings for the month
             $salaryCycleEarnings = SalaryComponentsEmployee::where('employee_id', $employeeId)
                 ->where('firm_id', Session::get('firm_id'))

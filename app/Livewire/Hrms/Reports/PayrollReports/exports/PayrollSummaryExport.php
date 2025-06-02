@@ -5,6 +5,7 @@ namespace App\Livewire\Hrms\Reports\PayrollReports\Exports;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\SalaryComponent;
 use App\Models\Hrms\Employee;
+use App\Models\Saas\Firm;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -23,6 +24,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
     protected $deductions;
     protected $allComponents;
     protected $data;
+    protected $firmName;
 
     public function __construct($filters)
     {
@@ -32,18 +34,40 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
         $this->end   = Carbon::parse($filters['date_range']['end'])->endOfDay();
 
         $firmId = $filters['firm_id'] ?? session('firm_id');
+        
+        // Get firm name for the report heading
+        $firm = Firm::find($firmId);
+        $this->firmName = $firm ? $firm->name : '';
 
-        // Fetch all heads for the firm
-        $this->allComponents = SalaryComponent::where('firm_id', $firmId)
-            ->get();
+        // First, collect the data to determine which components are actually used
+        $this->data = $this->fetchEmployees($firmId);
+        
+        // Extract unique component IDs from the payroll tracks
+        $componentIds = [];
+        foreach ($this->data as $employee) {
+            if ($employee->payroll_tracks) {
+                foreach ($employee->payroll_tracks as $track) {
+                    $componentIds[$track->salary_component_id] = true;
+                }
+            }
+        }
+        
+        // Only fetch the components that are actually used by the selected employees
+        if (!empty($componentIds)) {
+            $this->allComponents = SalaryComponent::whereIn('id', array_keys($componentIds))
+                ->where('firm_id', $firmId)
+                ->get();
+        } else {
+            $this->allComponents = collect([]);
+        }
+        
         $this->earnings = $this->allComponents->where('nature', 'earning')->values();
         $this->deductions = $this->allComponents->where('nature', 'deduction')->values();
-//        dd($this->earnings, $this->deductions);
     }
 
-    public function collection()
+    // Helper method to fetch employees
+    private function fetchEmployees($firmId)
     {
-        $firmId = $this->filters['firm_id'] ?? session('firm_id');
         $query = Employee::with([
             'emp_job_profile.department',
             'payroll_tracks' => function ($q) {
@@ -63,7 +87,12 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
             $query->whereIn('id', $this->filters['employee_id']);
         }
 
-        return $this->data = $query->get();
+        return $query->get();
+    }
+
+    public function collection()
+    {
+        return $this->data;
     }
 
     // Only the FINAL header row should go here!
@@ -74,7 +103,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
             'S.No',
             'Employee Code',
             'Employee Name',
-            'Department',
+            'Department',p
             'Designation'
         ];
 
@@ -162,7 +191,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
 
                 // Set titles (row 1 and 2)
                 $sheet->mergeCells("A1:{$lastCol}1");
-                $sheet->setCellValue("A1", "INDIAN INSTITUTE OF MANAGEMENT SIRMAUR");
+                $sheet->setCellValue("A1", $this->firmName);
                 $sheet->getStyle("A1")->getFont()->setSize(26)->setBold(true);
                 $sheet->getStyle("A1")->getAlignment()->setHorizontal('center');
 

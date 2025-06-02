@@ -445,7 +445,7 @@ class AttendanceController extends Controller
             ->orderby('work_date')
             ->get();
 
-// Add 'selfie_url' to each punch using Spatie Media Library
+        // Add 'selfie_url' to each punch using Spatie Media Library
         $attendances->map(function ($attendance) {
             $attendance->weekday = \Carbon\Carbon::parse($attendance->work_date)->format('D');
             $attendance->punches = $attendance->punches->map(function ($punch) {
@@ -456,11 +456,57 @@ class AttendanceController extends Controller
 
             return $attendance;
         });
+        
+        // Calculate status counts for the period
+        $statusCounts = [];
+        
+        // Define statuses that should always be included
+        $alwaysIncludeStatuses = ['P', 'A', 'LM', 'NM'];
+        
+        // Initialize counts for statuses that should always be included
+        foreach ($alwaysIncludeStatuses as $code) {
+            if (isset(EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$code])) {
+                $statusCounts[$code] = [
+                    'code' => $code,
+                    'label' => EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$code],
+                    'count' => 0
+                ];
+            }
+        }
+        
+        // Count occurrences of each status
+        foreach ($attendances as $attendance) {
+            $status = $attendance->attendance_status_main ?? 'A'; // Default to Absent if null
+            
+            // If this is the first occurrence of this status and it's not in alwaysIncludeStatuses, initialize it
+            if (!isset($statusCounts[$status]) && isset(EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$status])) {
+                $statusCounts[$status] = [
+                    'code' => $status,
+                    'label' => EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$status],
+                    'count' => 0
+                ];
+            }
+            
+            // Increment the count if the status exists in our tracking array
+            if (isset($statusCounts[$status])) {
+                $statusCounts[$status]['count']++;
+            }
+        }
+        
+        // Filter status counts to only include those with count > 0 or in alwaysIncludeStatuses
+        $filteredStatusCounts = array_filter($statusCounts, function($item) use ($alwaysIncludeStatuses) {
+            return $item['count'] > 0 || in_array($item['code'], $alwaysIncludeStatuses);
+        });
+        
+        // Convert to array for JSON response
+        $statusCountsArray = array_values($filteredStatusCounts);
+        
         return response()->json([
             'message_type' => 'success',
             'message_display' => 'flash',
             'message' => 'Attendance List Fetched',
             'attednances' => $attendances,
+            'status_counts' => $statusCountsArray
         ], 201);
     }
 

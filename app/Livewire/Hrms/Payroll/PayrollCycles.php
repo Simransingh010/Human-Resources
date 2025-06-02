@@ -48,11 +48,6 @@ class PayrollCycles extends Component
         $this->loadExecutionGroups($value);
     }
 
-    //    public function updatedSelectedGroupId($value)
-//    {
-//        $this->loadPayrollSlots($value);
-//    }
-
     protected function loadExecutionGroups($cycleId)
     {
         $query = SalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
@@ -82,13 +77,17 @@ class PayrollCycles extends Component
 
             // Store each step in PayrollStepPayrollSlot
             foreach ($payrollSteps as $payrollStep) {
-                PayrollStepPayrollSlot::create([
-                    'firm_id' => Session::get('firm_id'),
-                    'payroll_slot_id' => $slot_id,
-                    'payroll_step_id' => $payrollStep->id,
-                    'step_code_main' => $payrollStep->step_code_main,
-                    'payroll_step_status' => 'NS' // Not Started
-                ]);
+                PayrollStepPayrollSlot::updateOrCreate(
+                    [
+                        'firm_id' => Session::get('firm_id'),
+                        'payroll_slot_id' => $slot_id,
+                        'payroll_step_id' => $payrollStep->id,
+                    ],
+                    [
+                        'step_code_main' => $payrollStep->step_code_main,
+                        'payroll_step_status' => 'NS',
+                    ]
+                );
             }
 
             // Create initial command log
@@ -332,6 +331,15 @@ class PayrollCycles extends Component
                     if ($component->component_type === 'tds' || $component->amount_type==='static_unknown' ||  $component->amount_type==='calculated_unknown' ) {
                         continue; // Skip tax components for now
                     }
+                    elseif (PayrollComponentsEmployeesTrack::where('firm_id', Session::get('firm_id'))
+                            ->where('payroll_slot_id', $slot_id)
+                            ->where('employee_id', $employeeId)
+                            ->where('salary_component_id', $component->salary_component_id)
+                            ->where('entry_type', 'override')
+                            ->exists())
+                    {
+                        continue; // Skip if already exists
+                    }
 
                     // Calculate per day amount
                     $perDayAmount = $component->amount / $cycleDays;
@@ -345,6 +353,9 @@ class PayrollCycles extends Component
 //                    if($employeeId == 1244 ) {
 //                        dd($component, $perDayAmount, $deductionAmount, $amountPayable);
 //                    }
+
+                    $precision = (int) session('roundoff_precision', 0);
+                    $mode = (int) session('roundoff_mode', PHP_ROUND_HALF_UP);
 
                     // Create or update PayrollComponentsEmployeesTrack
                     PayrollComponentsEmployeesTrack::updateOrCreate(
@@ -367,8 +378,8 @@ class PayrollCycles extends Component
                             'salary_period_from' => $payrollSlot->from_date,
                             'salary_period_to' => $payrollSlot->to_date,
                             'user_id' => Session::get('user_id'),
-                            'amount_full' => $component->amount,
-                            'amount_payable' => $amountPayable,
+                            'amount_full' => round($component->amount, $precision, $mode),
+                            'amount_payable' => round($amountPayable, $precision, $mode),
                             'amount_paid' => 0,
                             'salary_advance_id' => null,
                             'salary_arrear_id' => null,
@@ -387,6 +398,24 @@ class PayrollCycles extends Component
 
     protected function calculateAndCreateTaxComponent($employeeId, $slot_id, $cycle_id, $payrollSlot,$payroll_slots_cmd_id)
     {
+        // 1. Get employee's tax regime
+        $employeeTaxRegime = EmployeeTaxRegime::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->where(function ($query) {
+                $query->whereNull('effective_to')
+                    ->orWhere('effective_to', '>', now());
+            })
+            ->with('tax_regime.tax_brackets')
+            ->first();
+
+        if (!$employeeTaxRegime) {
+            // Instead of throwing an exception, just log or skip tax calculation
+            \Log::info("Skipping tax calculation: No active tax regime for employee ID {$employeeId}");
+            return; // Exit function without throwing error
+        }
+
+
+
         try {
             // Get TDS component first - we'll need it for both calculations
             $tdsComponent = SalaryComponent::where('firm_id', Session::get('firm_id'))
@@ -398,19 +427,7 @@ class PayrollCycles extends Component
                 throw new \Exception("TDS component not found");
             }
 
-            // 1. Get employee's tax regime
-            $employeeTaxRegime = EmployeeTaxRegime::where('employee_id', $employeeId)
-                ->where('firm_id', Session::get('firm_id'))
-                ->where(function ($query) {
-                    $query->whereNull('effective_to')
-                        ->orWhere('effective_to', '>', now());
-                })
-                ->with('tax_regime.tax_brackets')
-                ->first();
 
-            if (!$employeeTaxRegime) {
-                throw new \Exception("No active tax regime found for employee");
-            }
 
             // 2. Get total earnings for the month from salary components
             $salaryCycleEarnings = SalaryComponentsEmployee::where('employee_id', $employeeId)
@@ -795,6 +812,12 @@ class PayrollCycles extends Component
     {
         $this->selectedSlotId = $slotId;
         $this->modal('set-head-amount-manually')->show();
+    }
+
+    public function overrideAmountsStep($slotId)
+    {
+        $this->selectedSlotId = $slotId;
+        $this->modal('override-amounts')->show();
     }
 
     public function employeeTaxComponentsStep($stepId, $slotId)

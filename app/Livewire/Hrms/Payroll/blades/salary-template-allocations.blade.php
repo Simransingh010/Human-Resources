@@ -473,6 +473,7 @@
                         <flux:table.column>Template</flux:table.column>
                         <flux:table.column>Effective Period</flux:table.column>
                         <flux:table.column>Operation</flux:table.column>
+                        <flux:table.column>Actions</flux:table.column>
                     </flux:table.columns>
 
                     <flux:table.rows>
@@ -508,10 +509,45 @@
                                         {{ ucfirst($firstItem->operation) }}
                                     </flux:badge>
                                 </flux:table.cell>
+                                <flux:table.cell>
+                                    <flux:modal.trigger name="rollback-employee-{{ $employeeId }}">
+                                        <flux:button 
+                                            variant="danger" 
+                                            size="xs" 
+                                            icon="arrow-uturn-left"
+                                            title="Rollback allocation for this employee"
+                                        />
+                                    </flux:modal.trigger>
+
+                                    <!-- Individual Employee Rollback Confirmation Modal -->
+                                    <flux:modal name="rollback-employee-{{ $employeeId }}" class="min-w-[22rem]">
+                                        <div class="space-y-6">
+                                            <div>
+                                                <flux:heading size="lg">Rollback Employee Allocation?</flux:heading>
+                                                <flux:text class="mt-2">
+                                                    <p>You're about to rollback the allocation for <span class="font-bold">{{ $employee->fname }} {{ $employee->lname }}</span>.</p>
+                                                    <p>This action cannot be undone.</p>
+                                                    <p class="mt-2 text-red-500">Note: This will permanently delete all salary components for this employee in this batch.</p>
+                                                </flux:text>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <flux:spacer/>
+                                                <flux:modal.close>
+                                                    <flux:button variant="ghost">Cancel</flux:button>
+                                                </flux:modal.close>
+                                                <flux:button 
+                                                    variant="danger" 
+                                                    icon="arrow-uturn-left" 
+                                                    wire:click="rollbackEmployeeAllocation({{ $employeeId }})"
+                                                />
+                                            </div>
+                                        </div>
+                                    </flux:modal>
+                                </flux:table.cell>
                             </flux:table.row>
                         @empty
                             <flux:table.row>
-                                <flux:table.cell colspan="5" class="text-center py-4 text-gray-500">
+                                <flux:table.cell colspan="6" class="text-center py-4 text-gray-500">
                                     @if($batchItemSearch || $effectiveFromFilter || $effectiveToFilter)
                                         No records match the selected filters
                                     @else

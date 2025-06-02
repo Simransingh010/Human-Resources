@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class PayrollSlot
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int|null $salary_cycle_id
@@ -25,7 +25,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property SalaryCycle|null $salary_cycle
  * @property Firm $firm
  * @property SalaryExecutionGroup|null $salary_execution_group
@@ -67,6 +67,7 @@ class PayrollSlot extends Model
 		'HT' => 'Halted',
 		'SP' => 'Suspended',
 		'CM' => 'Completed',
+        'RS' => 'Re-Started',
 	];
 
 	public function salary_cycle()

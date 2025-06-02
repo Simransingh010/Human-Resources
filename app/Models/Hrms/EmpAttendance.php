@@ -60,8 +60,7 @@ class EmpAttendance extends Model
 		'ideal_working_hours',
 		'actual_worked_hours',
 		'final_day_weightage',
-		'attend_remarks'
-
+		'attend_remarks',
 	];
 
     public const ATTENDANCE_STATUS_MAIN_SELECT = [
@@ -76,6 +75,9 @@ class EmpAttendance extends Model
         'H'   => 'Holiday',
         'W'   => 'Week Off',
         'S'   => 'Suspended',
+        'POW' => 'Persent on Week Off',
+        'LM'  => 'Late Marked',
+        'NM'  => 'Not Marked',
 
     ];
     public function getAttendanceStatusMainLabelAttribute($value)

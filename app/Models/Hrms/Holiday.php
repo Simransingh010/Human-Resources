@@ -63,7 +63,6 @@ class Holiday extends Model
         'S' => 'Suspended',
     ];
 
-   
 
     protected function serializeDate(\DateTimeInterface $date)
     {

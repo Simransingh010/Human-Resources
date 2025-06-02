@@ -28,6 +28,209 @@ use Spatie\MediaLibrary\MediaCollections\Models\Media;
 class OnboardController extends Controller
 {
     /**
+     * Calculate the profile completion percentage
+     * Each section contributes equally (1/6 of 100%)
+     */
+    private function calculateProfileCompletion($employee_id)
+    {
+        // Define the tables to check
+        $tables = [
+            'employee_personal_details',
+            'employee_job_profiles',
+            'employee_bank_accounts',
+            'employee_contacts',
+            'employee_docs',
+            'employee_relations'
+        ];
+        
+        $totalSections = count($tables);
+        $completedSections = 0;
+        
+        // Use a single query for each table check
+        foreach ($tables as $table) {
+            if (DB::table($table)->where('employee_id', $employee_id)->exists()) {
+                $completedSections++;
+            }
+        }
+        
+        $sectionWeight = 100 / $totalSections;
+        
+        return [
+            'percentage' => round($completedSections * $sectionWeight),
+            'completed_sections' => $completedSections,
+            'total_sections' => $totalSections
+        ];
+    }
+    
+    /**
+     * Get detailed profile completion status
+     * Returns percentage and status of each section
+     */
+    private function getDetailedProfileCompletion($employee_id)
+    {
+        // Define all sections with their initial status
+        $sections = [
+            'personal_details' => [
+                'name' => 'Personal Details',
+                'completed' => false,
+                'key' => 'personal_details',
+                'order' => 1
+            ],
+            'job_profile' => [
+                'name' => 'Job Profile',
+                'completed' => false,
+                'key' => 'job_profile',
+                'order' => 2
+            ],
+            'bank_account' => [
+                'name' => 'Bank Account Details',
+                'completed' => false,
+                'key' => 'bank_account',
+                'order' => 3
+            ],
+            'contacts' => [
+                'name' => 'Contacts',
+                'completed' => false,
+                'key' => 'contacts',
+                'order' => 4
+            ],
+            'documents' => [
+                'name' => 'Documents',
+                'completed' => false,
+                'key' => 'documents',
+                'order' => 5
+            ],
+            'relations' => [
+                'name' => 'Employee Relations',
+                'completed' => false,
+                'key' => 'relations',
+                'order' => 6
+            ]
+        ];
+        
+        // Use a single query to check for personal details
+        $personalDetails = DB::table('employee_personal_details')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($personalDetails) {
+            $sections['personal_details']['completed'] = true;
+        }
+        
+        // Use a single query to check for job profile
+        $jobProfile = DB::table('employee_job_profiles')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($jobProfile) {
+            $sections['job_profile']['completed'] = true;
+        }
+        
+        // Use a single query to check for bank account
+        $bankAccount = DB::table('employee_bank_accounts')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($bankAccount) {
+            $sections['bank_account']['completed'] = true;
+        }
+        
+        // Use a single query to check for contacts
+        $contacts = DB::table('employee_contacts')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($contacts) {
+            $sections['contacts']['completed'] = true;
+        }
+        
+        // Use a single query to check for documents
+        $documents = DB::table('employee_docs')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($documents) {
+            $sections['documents']['completed'] = true;
+        }
+        
+        // Use a single query to check for relations
+        $relations = DB::table('employee_relations')
+            ->where('employee_id', $employee_id)
+            ->exists();
+        if ($relations) {
+            $sections['relations']['completed'] = true;
+        }
+        
+        // Calculate overall percentage
+        $completedSections = 0;
+        foreach ($sections as $section) {
+            if ($section['completed']) {
+                $completedSections++;
+            }
+        }
+        
+        $totalSections = count($sections);
+        $sectionWeight = 100 / $totalSections;
+        $percentage = round($completedSections * $sectionWeight);
+        
+        // Find the next incomplete section
+        $nextIncompleteSection = null;
+        foreach ($sections as $key => $section) {
+            if (!$section['completed']) {
+                $nextIncompleteSection = $key;
+                break;
+            }
+        }
+        
+        return [
+            'percentage' => $percentage,
+            'completed_sections' => $completedSections,
+            'total_sections' => $totalSections,
+            'sections' => $sections,
+            'next_section' => $nextIncompleteSection
+        ];
+    }
+
+    /**
+     * GET /api/hrms/profile-completion
+     * Get profile completion status with detailed section information
+     */
+    public function getProfileCompletion(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Get detailed profile completion status
+            $profileCompletion = $this->getDetailedProfileCompletion($employee->id);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Profile completion status fetched successfully',
+                'data' => $profileCompletion
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * GET /api/hrms/employees/{employee}/job-profile
      * Get job profile information for an employee
      */
@@ -102,11 +305,15 @@ class OnboardController extends Controller
             'esic_number' => $jobProfile->esicno
         ];
 
+        // Calculate profile completion
+        $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
         return response()->json([
             'message_type' => 'success',
             'message_display' => 'none',
             'message' => 'Employee job profile fetched successfully',
-            'data' => $data
+            'data' => $data,
+            'profile_completion' => $profileCompletion
         ], 200);
     }
 
@@ -272,6 +479,70 @@ class OnboardController extends Controller
                 ], 404);
             }
 
+            // Special condition for firm_id = 2
+            if ($employee->firm_id == 2) {
+                $managers = Employee::whereIn('id', [229, 232])
+                    ->where('is_inactive', false)
+                    ->with('emp_job_profile')
+                    ->get(['id', 'fname', 'lname'])
+                    ->map(function($manager) {
+                        return [
+                            'id' => $manager->id,
+                            'name' => trim($manager->fname . ' ' . $manager->lname),
+                            'employee_code' => $manager->emp_job_profile ? $manager->emp_job_profile->employee_code : null,
+                        ];
+                    });
+            } else {
+                // General condition
+                $managers = Employee::where('firm_id', $employee->firm_id)
+                    ->where('is_inactive', false)
+                    ->where('id', '!=', $employee->id)
+                    ->with('emp_job_profile')
+                    ->get(['id', 'fname', 'lname'])
+                    ->map(function($manager) {
+                        return [
+                            'id' => $manager->id,
+                            'name' => trim($manager->fname . ' ' . $manager->lname),
+                            'employee_code' => $manager->emp_job_profile ? $manager->emp_job_profile->employee_code : null,
+                        ];
+                    });
+            }
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Reporting managers fetched successfully',
+                'data' => $managers
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getReportingManagersold(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
             // Fetch employees to be potential managers
             $managers = Employee::where('firm_id', $employee->firm_id)
                 ->where('is_inactive', false)
@@ -405,11 +676,15 @@ class OnboardController extends Controller
 
             DB::commit();
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
                 'message' => 'Employee job profile saved successfully',
-                'data' => array_merge(['id' => $jobProfile->id], $validated) // Return ID and validated input data
+                'data' => array_merge(['id' => $jobProfile->id], $validated), // Return ID and validated input data
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -434,6 +709,86 @@ class OnboardController extends Controller
      * POST /api/hrms/employees/personal-details
      * Save or update employee personal details
      */
+//    public function saveEmployeePersonalDetail(Request $request)
+//    {
+//        try {
+//            $user = $request->user();
+//            if (!$user) {
+//                return response()->json([
+//                    'message_type' => 'error',
+//                    'message_display' => 'flash',
+//                    'message' => 'Unauthenticated'
+//                ], 401);
+//            }
+//
+//            $employee = $user->employee;
+//            if (!$employee) {
+//                return response()->json([
+//                    'message_type' => 'error',
+//                    'message_display' => 'flash',
+//                    'message' => 'Employee profile not found'
+//                ], 404);
+//            }
+//
+//            // Validate the incoming request data
+//            $validated = $request->validate([
+//                'dob'            => 'nullable|date',
+//                'marital_status' => 'nullable|string|max:255',
+//                'doa'            => 'nullable|date|after_or_equal:dob',
+//                'nationality'    => 'nullable|string|max:255',
+//                'fathername'     => 'nullable|string|max:255',
+//                'mothername'     => 'nullable|string|max:255',
+//                'adharno'        => 'nullable|string|max:255',
+//                'panno'          => 'nullable|string|max:255',
+//            ]);
+//
+//            DB::beginTransaction();
+//
+//            // Find or create the employee personal detail record
+//            $personalDetail = EmployeePersonalDetail::where('employee_id', $employee->id)->first();
+//
+//            if ($personalDetail) {
+//                // Update existing record
+//                $personalDetail->update($validated);
+//            } else {
+//                // Create new record
+//                $personalDetail = EmployeePersonalDetail::create(array_merge($validated, [
+//                    'firm_id' => $employee->firm_id,
+//                    'employee_id' => $employee->id,
+//                ]));
+//            }
+//
+//            DB::commit();
+//
+//            return response()->json([
+//                'message_type' => 'success',
+//                'message_display' => 'popup',
+//                'message' => 'Employee personal details saved successfully',
+//                'data' => array_merge(['id' => $personalDetail->id], $validated) // Return ID and validated input data
+//            ], 200);
+//
+//        } catch (\Illuminate\Validation\ValidationException $e) {
+//            DB::rollBack();
+//            return response()->json([
+//                'message_type' => 'error',
+//                'message_display' => 'popup',
+//                'message' => 'Validation failed',
+//                'errors' => $e->errors()
+//            ], 422);
+//        } catch (\Throwable $e) {
+//            DB::rollBack();
+//            return response()->json([
+//                'message_type' => 'error',
+//                'message_display' => 'popup',
+//                'message' => 'Server error: ' . $e->getMessage()
+//            ], 500);
+//        }
+//    }
+
+    /**
+     * POST /api/hrms/employees/save-personal-details-one
+     * Save or update employee basic details and personal details
+     */
     public function saveEmployeePersonalDetail(Request $request)
     {
         try {
@@ -455,8 +810,30 @@ class OnboardController extends Controller
                 ], 404);
             }
 
-            // Validate the incoming request data
-            $validated = $request->validate([
+            // Validate the incoming request data for employee details
+            $employeeValidated = $request->validate([
+                'fname' => 'nullable|string|max:255',
+                'mname' => 'nullable|string|max:255',
+                'lname' => 'nullable|string|max:255',
+                'gender' => 'nullable|string|max:255',
+                'email' => [
+                    'nullable',
+                    'email',
+                    'max:255',
+                    \Illuminate\Validation\Rule::unique('users', 'email')->ignore($user->id),
+                    \Illuminate\Validation\Rule::unique('employees', 'email')->ignore($employee->id),
+                ],
+                'phone' => [
+                    'nullable',
+                    'string',
+                    'max:20',
+                    \Illuminate\Validation\Rule::unique('users', 'phone')->ignore($user->id),
+                    \Illuminate\Validation\Rule::unique('employees', 'phone')->ignore($employee->id),
+                ],
+            ]);
+
+            // Validate the incoming request data for personal details
+            $personalValidated = $request->validate([
                 'dob'            => 'nullable|date',
                 'marital_status' => 'nullable|string|max:255',
                 'doa'            => 'nullable|date|after_or_equal:dob',
@@ -465,35 +842,134 @@ class OnboardController extends Controller
                 'mothername'     => 'nullable|string|max:255',
                 'adharno'        => 'nullable|string|max:255',
                 'panno'          => 'nullable|string|max:255',
+                'employee_image' => 'nullable|file|mimes:jpg,jpeg,png|max:5120', // Max 5MB, only images
             ]);
 
             DB::beginTransaction();
+
+            // Update employee basic details
+            $employee->update($employeeValidated);
+
+            // Update corresponding user record if email or phone is changed
+            $userUpdates = [];
+            if (isset($employeeValidated['email'])) {
+                $userUpdates['email'] = $employeeValidated['email'];
+            }
+            if (isset($employeeValidated['phone'])) {
+                $userUpdates['phone'] = $employeeValidated['phone'];
+            }
+            
+            // If name components are provided, update user's name
+            if (isset($employeeValidated['fname']) || isset($employeeValidated['lname'])) {
+                $fullName = trim(
+                    ($employeeValidated['fname'] ?? $employee->fname) . ' ' . 
+                    (isset($employeeValidated['mname']) ? $employeeValidated['mname'] . ' ' : '') . 
+                    ($employeeValidated['lname'] ?? $employee->lname)
+                );
+                $userUpdates['name'] = $fullName;
+            }
+            
+            // Only update if there are changes
+            if (!empty($userUpdates)) {
+                $user->update($userUpdates);
+            }
 
             // Find or create the employee personal detail record
             $personalDetail = EmployeePersonalDetail::where('employee_id', $employee->id)->first();
 
             if ($personalDetail) {
                 // Update existing record
-                $personalDetail->update($validated);
+                $personalDetail->update($personalValidated);
             } else {
                 // Create new record
-                $personalDetail = EmployeePersonalDetail::create(array_merge($validated, [
+                $personalDetail = EmployeePersonalDetail::create(array_merge($personalValidated, [
                     'firm_id' => $employee->firm_id,
                     'employee_id' => $employee->id,
                 ]));
             }
 
+            // Handle image upload using Spatie Media Library
+            if ($request->hasFile('employee_image')) {
+                // Delete existing image if any
+                $personalDetail->clearMediaCollection('employee_images');
+                
+                // Add new image without storing URL in database field
+                $personalDetail->addMediaFromRequest('employee_image')
+                    ->toMediaCollection('employee_images');
+                
+                // Remove the update to employee_image field
+            }
+
             DB::commit();
+
+            // Format the response data
+            $employeeData = [
+                'id' => $employee->id,
+                'fname' => $employee->fname,
+                'mname' => $employee->mname,
+                'lname' => $employee->lname,
+                'gender' => $employee->gender,
+                'email' => $employee->email,
+                'phone' => $employee->phone,
+                'is_inactive' => (bool) $employee->is_inactive
+            ];
+
+            // Get the image URL only from media collection
+            $media = $personalDetail->getMedia('employee_images')->first();
+            $imageUrl = $media ? $media->getUrl() : null;
+
+            $personalData = [
+                'id' => $personalDetail->id,
+                'dob' => $personalDetail->dob ? $personalDetail->dob->toDateString() : null,
+                'marital_status' => $personalDetail->marital_status,
+                'doa' => $personalDetail->doa ? $personalDetail->doa->toDateString() : null,
+                'nationality' => $personalDetail->nationality,
+                'fathername' => $personalDetail->fathername,
+                'mothername' => $personalDetail->mothername,
+                'adharno' => $personalDetail->adharno,
+                'panno' => $personalDetail->panno,
+                'employee_image' => $imageUrl,
+            ];
+
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
 
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
-                'message' => 'Employee personal details saved successfully',
-                'data' => array_merge(['id' => $personalDetail->id], $validated) // Return ID and validated input data
+                'message' => 'Employee details saved successfully',
+                'data' => [
+                    'employee' => $employeeData,
+                    'personal_details' => $personalData
+                ],
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
+            
+            // Check if the error is related to email or phone uniqueness
+            $errors = $e->errors();
+            if (isset($errors['email']) && isset($errors['phone'])) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Both email and phone number are already in use.'
+                ], 422);
+            } else if (isset($errors['email'])) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'This email address is already in use by another user.'
+                ], 422);
+            } else if (isset($errors['phone'])) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'This phone number is already in use by another user.'
+                ], 422);
+            }
+            
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
@@ -574,11 +1050,15 @@ class OnboardController extends Controller
 
             DB::commit();
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
                 'message' => 'Employee bank account details saved successfully',
-                'data' => array_merge(['id' => $bankAccount->id], $validated) // Return ID and validated input data
+                'data' => array_merge(['id' => $bankAccount->id], $validated), // Return ID and validated input data
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -637,6 +1117,7 @@ class OnboardController extends Controller
 
             // Assuming EmployeeContactDetail model has common contact fields
             $data = [
+                
                 'present_address' => $contactDetail->present_address ?? null,
                 'permanent_address' => $contactDetail->permanent_address ?? null,
                 'mobile_phone' => $contactDetail->mobile_phone ?? null,
@@ -646,11 +1127,15 @@ class OnboardController extends Controller
                 // Add other contact fields as per your EmployeeContactDetail model
             ];
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => 'Employee contact details fetched successfully',
-                'data' => $data
+                'data' => $data,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -666,7 +1151,7 @@ class OnboardController extends Controller
      * GET /api/hrms/employees/personal-details
      * Get employee personal details
      */
-    public function getEmployeePersonalDetail(Request $request)
+    public function getEmployeePersonalDetailOld(Request $request)
     {
         try {
             $user = $request->user();
@@ -709,6 +1194,8 @@ class OnboardController extends Controller
                 'mothername' => $personalDetail->mothername,
                 'adharno' => $personalDetail->adharno,
                 'panno' => $personalDetail->panno,
+                'employee_image' => $personalDetail->getMedia('employee_images')->first() ? 
+                                   $personalDetail->getMedia('employee_images')->first()->getUrl() : null,
             ];
 
             return response()->json([
@@ -716,6 +1203,92 @@ class OnboardController extends Controller
                 'message_display' => 'none',
                 'message' => 'Employee personal details fetched successfully',
                 'data' => $data
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/hrms/employees/personal-details-one
+     * Get employee basic details and personal details separately
+     */
+    public function getEmployeePersonalDetail(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Format employee basic details
+            $employeeData = [
+                'id' => $employee->id,
+                'fname' => $employee->fname,
+                'mname' => $employee->mname,
+                'lname' => $employee->lname,
+                'gender' => $employee->gender,
+                'email' => $employee->email,
+                'phone' => $employee->phone,
+                'is_inactive' => (bool) $employee->is_inactive
+            ];
+
+            // Fetch employee personal details
+            $personalDetail = EmployeePersonalDetail::where('employee_id', $employee->id)->first();
+
+            if (!$personalDetail) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Personal details not found for this employee'
+                ], 404);
+            }
+
+            // Format personal details
+            $personalData = [
+                'id' => $personalDetail->id,
+                'dob' => $personalDetail->dob ? $personalDetail->dob->toDateString() : null,
+                'marital_status' => $personalDetail->marital_status,
+                'doa' => $personalDetail->doa ? $personalDetail->doa->toDateString() : null,
+                'nationality' => $personalDetail->nationality,
+                'fathername' => $personalDetail->fathername,
+                'mothername' => $personalDetail->mothername,
+                'adharno' => $personalDetail->adharno,
+                'panno' => $personalDetail->panno,
+                'employee_image' => $personalDetail->getMedia('employee_images')->first() ? 
+                                   $personalDetail->getMedia('employee_images')->first()->getUrl() : null,
+            ];
+
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Employee details fetched successfully',
+                'data' => [
+                    'employee' => $employeeData,
+                    'personal_details' => $personalData
+                ],
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -777,11 +1350,15 @@ class OnboardController extends Controller
                 ];
             });
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => 'Employee bank account details fetched successfully',
-                'data' => $data
+                'data' => $data,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -792,6 +1369,32 @@ class OnboardController extends Controller
             ], 500);
         }
     }
+    /**
+     * GET /api/hrms/contact-types
+     * Get the list of available contact types
+     */
+    public function getContactTypes()
+    {
+        try {
+            // Return the static contact types array from the model
+            $contactTypes = EmployeeContact::CONTACT_TYPE_SELECT;
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Contact types fetched successfully',
+                'data' => $contactTypes
+            ], 200);
+
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
 
     /**
      * GET /api/hrms/employees/contacts
@@ -838,6 +1441,7 @@ class OnboardController extends Controller
             $formattedContacts = $contacts->map(function($contact) {
                  return [
                     'id' => $contact->id,
+                     'is_nominee' => (bool) $contact->is_nominee,
                     'contact_type' => $contact->contact_type,
                     'contact_type_label' => $contact->contact_type_label,
                     'contact_value' => $contact->contact_value,
@@ -848,11 +1452,15 @@ class OnboardController extends Controller
                  ];
              });
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => count($contacts) . ' contact details fetched successfully',
-                'data' => $formattedContacts
+                'data' => $formattedContacts,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -864,32 +1472,7 @@ class OnboardController extends Controller
         }
     }
 
-    /**
-     * GET /api/hrms/contact-types
-     * Get the list of available contact types
-     */
-    public function getContactTypes()
-    {
-        try {
-            // Return the static contact types array from the model
-            $contactTypes = EmployeeContact::CONTACT_TYPE_SELECT;
-
-            return response()->json([
-                'message_type' => 'success',
-                'message_display' => 'none',
-                'message' => 'Contact types fetched successfully',
-                'data' => $contactTypes
-            ], 200);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message_type' => 'error',
-                'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
+    
     /**
      * POST /api/hrms/employees/post-contacts
      * Save or update employee contact details (single record)
@@ -960,11 +1543,25 @@ class OnboardController extends Controller
 
             DB::commit();
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
                 'message' => 'Contact details saved successfully',
-                'data' => ['id' => $contact->id] // Return ID of the saved contact
+                'data' => [
+                    'id' => $contact->id,
+                    'is_nominee' => (bool) $contact->is_nominee,
+                    'contact_type' => $contact->contact_type,
+                    'contact_type_label' => $contact->contact_type_label,
+                    'contact_value' => $contact->contact_value,
+                    'contact_person' => $contact->contact_person,
+                    'relation' => $contact->relation,
+                    'is_primary' => (bool) $contact->is_primary,
+                    'is_for_emergency' => (bool) $contact->is_for_emergency,
+                ],
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1040,11 +1637,15 @@ class OnboardController extends Controller
                  ];
              });
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => count($employeeDocs) . ' document details fetched successfully',
-                'data' => $data
+                'data' => $data,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -1145,11 +1746,15 @@ class OnboardController extends Controller
                 'is_inactive' => (bool) $savedDoc->is_inactive,
             ];
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
                 'message' => 'Document details saved successfully',
-                'data' => $responseData
+                'data' => $responseData,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1291,17 +1896,22 @@ class OnboardController extends Controller
                     'relation_label' => $relation->relation_label ?? null,
                     'person_name' => $relation->person_name,
                     'occupation' => $relation->occupation,
+                    'is_nominee' => (bool) $relation->is_nominee,
                     'dob' => $relation->dob ? $relation->dob->toDateString() : null,
                     'qualification' => $relation->qualification,
                     'is_inactive' => (bool) $relation->is_inactive,
                  ];
              });
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => count($employeeRelations) . ' relation details fetched successfully',
-                'data' => $data
+                'data' => $data,
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Throwable $e) {
@@ -1347,6 +1957,7 @@ class OnboardController extends Controller
                 'dob' => 'nullable|date',
                 'qualification' => 'nullable|string|max:255',
                 'is_inactive' => 'nullable|boolean',
+                'is_nominee' => 'nullable|boolean',
             ]);
 
             DB::beginTransaction();
@@ -1376,17 +1987,34 @@ class OnboardController extends Controller
                  if (!isset($dataToCreate['is_inactive'])) {
                      $dataToCreate['is_inactive'] = false;
                  }
+                 if (!isset($dataToCreate['is_nominee'])) {
+                     $dataToCreate['is_nominee'] = false;
+                 }
 
                  $employeeRelation = EmployeeRelation::create($dataToCreate);
             }
 
             DB::commit();
 
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'popup',
                 'message' => 'Employee relation details saved successfully',
-                'data' => ['id' => $employeeRelation->id] // Return ID of the saved relation
+                'data' => [
+                    'id' => $employeeRelation->id,
+                    'relation' => $employeeRelation->relation,
+                    'relation_label' => $employeeRelation->relation_label ?? null,
+                    'person_name' => $employeeRelation->person_name,
+                    'occupation' => $employeeRelation->occupation,
+                    'is_nominee' => (bool) $employeeRelation->is_nominee,
+                    'dob' => $employeeRelation->dob ? $employeeRelation->dob->toDateString() : null,
+                    'qualification' => $employeeRelation->qualification,
+                    'is_inactive' => (bool) $employeeRelation->is_inactive,
+                ],
+                'profile_completion' => $profileCompletion
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -1397,6 +2025,273 @@ class OnboardController extends Controller
                  'message' => 'Validation failed',
                  'errors' => $e->errors()
              ], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/hrms/employees/delete-relation
+     * Permanently delete an employee relation record via POST request
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function deleteEmployeeRelation(Request $request)
+    {
+        try {
+            // Validate the request to ensure relation_id is present
+            $validatedData = $request->validate([
+                'relation_id' => 'required|integer|exists:employee_relations,id',
+            ]);
+
+            $relationId = $validatedData['relation_id'];
+            
+            // Get authenticated user
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Check if employee exists
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Find the relation and verify it belongs to this employee
+            $relation = EmployeeRelation::where('employee_id', $employee->id)
+                                   ->where('id', $relationId)
+                                   ->first();
+
+            if (!$relation) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Relation not found or you do not have permission to delete it'
+                ], 404);
+            }
+
+            // Start transaction for safety
+            DB::beginTransaction();
+            
+            // Delete the relation record
+            $relation->delete();
+            
+            DB::commit();
+
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'popup',
+                'message' => 'Relation deleted successfully',
+                'data' => [
+                    'id' => (int)$relationId
+                ],
+                'profile_completion' => $profileCompletion
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * POST /api/hrms/employees/post-delete-doc
+     * Permanently delete an employee document record via POST request
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function deleteEmployeeDoc(Request $request)
+    {
+        try {
+            // Validate the request to ensure document_id is present
+            $validatedData = $request->validate([
+                'document_id' => 'required|integer|exists:employee_docs,id',
+            ]);
+
+            $documentId = $validatedData['document_id'];
+            
+            // Get authenticated user
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Check if employee exists
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Find the document and verify it belongs to this employee
+            $document = EmployeeDoc::where('employee_id', $employee->id)
+                                   ->where('id', $documentId)
+                                   ->first();
+
+            if (!$document) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Document not found or you do not have permission to delete it'
+                ], 404);
+            }
+
+            // Start transaction for safety
+            DB::beginTransaction();
+            
+            // Delete media files associated with the document
+            $document->clearMediaCollection('documents');
+            
+            // Delete the document record
+            $document->delete();
+            
+            DB::commit();
+
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'popup',
+                'message' => 'Document deleted successfully',
+                'data' => [
+                    'id' => (int)$documentId
+                ],
+                'profile_completion' => $profileCompletion
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/hrms/employees/delete-contact
+     * Permanently delete an employee contact record via POST request
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function deleteEmployeeContact(Request $request)
+    {
+        try {
+            // Validate the request to ensure contact_id is present
+            $validatedData = $request->validate([
+                'contact_id' => 'required|integer|exists:employee_contacts,id',
+            ]);
+
+            $contactId = $validatedData['contact_id'];
+            
+            // Get authenticated user
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Check if employee exists
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee profile not found'
+                ], 404);
+            }
+
+            // Find the contact and verify it belongs to this employee
+            $contact = EmployeeContact::where('employee_id', $employee->id)
+                                   ->where('id', $contactId)
+                                   ->first();
+
+            if (!$contact) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Contact not found or you do not have permission to delete it'
+                ], 404);
+            }
+
+            // Start transaction for safety
+            DB::beginTransaction();
+            
+            // Delete the contact record
+            $contact->delete();
+            
+            DB::commit();
+
+            // Calculate profile completion
+            $profileCompletion = $this->calculateProfileCompletion($employee->id);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'popup',
+                'message' => 'Contact deleted successfully',
+                'data' => [
+                    'id' => (int)$contactId
+                ],
+                'profile_completion' => $profileCompletion
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json([

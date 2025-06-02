@@ -9,6 +9,8 @@ namespace App\Models\Hrms;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Class EmployeePersonalDetail
@@ -24,6 +26,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $mothername
  * @property string|null $adharno
  * @property string|null $panno
+ * @property string|null $employee_image
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
@@ -33,9 +36,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * @package App\Models\Hrms
  */
-class EmployeePersonalDetail extends Model
+class EmployeePersonalDetail extends Model implements HasMedia
 {
-	use SoftDeletes;
+	use SoftDeletes, InteractsWithMedia;
 	protected $table = 'employee_personal_details';
 
 	protected $casts = [
@@ -55,7 +58,8 @@ class EmployeePersonalDetail extends Model
 		'fathername',
 		'mothername',
 		'adharno',
-		'panno'
+		'panno',
+		'employee_image'
 	];
 
 	public function employee()

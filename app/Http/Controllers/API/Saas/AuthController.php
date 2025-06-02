@@ -24,29 +24,52 @@ class AuthController extends Controller
             'password' => 'required'
         ]);
 
-        // Retrieve the user by email.
-        $user = User::where('email', $request->email)->first();
+        try {
+            // Retrieve the user by email.
+            $user = User::where('email', $request->email)
+                        ->with('employee.emp_personal_detail') // Eager load employee and personal details
+                        ->first();
 
-        // If the user doesn't exist or the password is incorrect, return an error.
-        if (!$user || !Hash::check($request->password, $user->password)) {
+            // If the user doesn't exist or the password is incorrect, return an error.
+            if (!$user || !Hash::check($request->password, $user->password)) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Invalid credentials',
+                    'message_type' => 'success',  // success, warning, error, info
+                    'message_display' => 'popup',  // flash,none,popup
+                ], 401);
+            }
+
+            // Generate a personal access token for the user.
+            $token = $user->createToken('api-token')->plainTextToken;
+
+            // Return the token in the response.
+            return response()->json([
+                'access_token' => $token,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'is_inactive' => (bool) $user->is_inactive,
+                    'employee_image' => $user->employee && $user->employee->emp_personal_detail
+                                    ? $user->employee->emp_personal_detail->employee_image
+                                    : null,
+                ],
+                'token_type' => 'Bearer'
+            ]);
+
+        } catch (\Throwable $e) {
+            // Log the error or handle it as needed
+            // \Log::error('Login failed: ' . $e->getMessage());
+
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Invalid credentials',
-                'message_type' => 'success',  // success, warning, error, info
-                'message_display' => 'popup',  // flash,none,popup
-            ], 401);
+                'message' => 'Server error: ' . $e->getMessage()
+            ], 500);
         }
-
-        // Generate a personal access token for the user.
-        $token = $user->createToken('api-token')->plainTextToken;
-
-        // Return the token in the response.
-        return response()->json([
-            'access_token' => $token,
-            'user' => $user,
-            'token_type' => 'Bearer'
-        ]);
     }
 
     public function loginmobile(Request $request)
@@ -56,7 +79,9 @@ class AuthController extends Controller
             'otp' => 'required',
         ]);
 
-        $user = User::where('phone', $request->phone)->first();
+        $user = User::where('phone', $request->phone)
+                    ->with('employee.emp_personal_detail') // Eager load employee and personal details
+                    ->first();
 
         if (!$user) {
             return response()->json([
@@ -64,7 +89,6 @@ class AuthController extends Controller
                 'message_display' => 'popup',  // flash,none,popup
                 'message' => 'Your number is not registered with any Registered User, Please enter only registered number and try again!'
             ], 404);
-
         }
 
         // **OTP Login**
@@ -91,16 +115,23 @@ class AuthController extends Controller
 
             return response()->json([
                 'access_token' => $token,
-                'user' => $user,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'is_inactive' => (bool) $user->is_inactive,
+                    'employee_image' => $user->employee && $user->employee->emp_personal_detail
+                                    ? $user->employee->emp_personal_detail->employee_image
+                                    : null,
+                ],
                 'token_type' => 'Bearer',
                 'message_type' => 'success',  // success, warning, error, info
                 'message_display' => 'popup',  // flash,none,popup
                 'message' => 'Login successful via OTP'
             ]);
         }
-
     }
-
 
     public function sendOtp(Request $request)
     {
@@ -152,7 +183,6 @@ class AuthController extends Controller
                 'message' => 'Failed to send OTP'
             ]);
         }
-
     }
 
     public function addDeviceToken(Request $request)
