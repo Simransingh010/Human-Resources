@@ -37,6 +37,7 @@ class EmpSalaryTracks extends Component
     public $totalDeductions = 0;
     public $netSalary = 0;
     public $netSalaryInWords = '';
+    public $rawComponents = null;
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -194,14 +195,16 @@ class EmpSalaryTracks extends Component
                     ->where('salary_period_to', $toDate);
             }
 
-            $components = $query->with(['salary_component'])->get();
+            $this->rawComponents = $query->with(['salary_component'])->get();
+
+           dd($this->rawComponents->toArray());
 
             $this->salaryComponents = [];
             $this->totalEarnings = 0;
             $this->totalDeductions = 0;
 
             // Group components by nature (earnings/deductions)
-            foreach ($components as $component) {
+            foreach ($this->rawComponents as $component) {
                 $componentData = [
                     'title' => $component->salary_component->title,
                     'amount' => $component->amount_payable,
@@ -226,6 +229,9 @@ class EmpSalaryTracks extends Component
                 ['title', 'asc']
             ])->values()->all();
 
+
+
+
             $this->netSalary = $this->totalEarnings - $this->totalDeductions;
             $this->netSalaryInWords = $this->numberToWords($this->netSalary);
             $this->showSalarySlipModal = true;
@@ -248,6 +254,7 @@ class EmpSalaryTracks extends Component
         $this->totalDeductions = 0;
         $this->netSalary = 0;
         $this->netSalaryInWords = '';
+        $this->rawComponents = null;
     }
 
     protected function numberToWords($number)

@@ -437,11 +437,8 @@ class BulkEmployeeSalaryComponents extends Component
     public function syncCalculations($employeeId)
     {
         try {
-//        dd("Syncing calculations for employee ID: {$employeeId}");
             // Get the employee
             $employee = Employee::findOrFail($employeeId);
-
-
 
             // Get calculated components
             $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
@@ -452,7 +449,7 @@ class BulkEmployeeSalaryComponents extends Component
                 })
                 ->with('salary_component')
                 ->get()
-                ->map(function ($employeeComponent) use ($employeeId) {// we used "use ($employeeId)" to pass the employeeId to the function because there was error for some users "undefined variable $employeeId"
+                ->map(function ($employeeComponent) use ($employeeId) {
                     if (empty($employeeComponent->calculation_json)) {
                         throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
                     }
@@ -463,19 +460,12 @@ class BulkEmployeeSalaryComponents extends Component
                     ];
                 });
 
-//            dd($calculatedComponents);
-//            dd("Syncing calculations for employee ID: {$employeeId}");
-
-
-
-
             // Build dependency graph
             $graph = $this->buildDependencyGraph($calculatedComponents);
 
             // Get calculation order
             try {
                 $calculationOrder = $this->getCalculationOrder($graph);
-//dd($calculationOrder);
             } catch (\Exception $e) {
                 throw new \Exception("Error in calculation dependencies: " . $e->getMessage());
             }
@@ -532,6 +522,194 @@ class BulkEmployeeSalaryComponents extends Component
                 variant: 'error',
                 heading: 'Error',
                 text: $e->getMessage()
+            );
+        }
+    }
+
+    public function syncAllCalculations()
+    {
+        try {
+            // Get the base query without pagination
+            $query = SalaryComponentsEmployee::query()
+                ->select([
+                    'salary_components_employees.employee_id',
+                    'employees.fname',
+                    'employees.mname',
+                    'employees.lname',
+                    'employees.email',
+                    'employees.phone',
+                    'employees.gender',
+                    'employee_job_profiles.employee_code',
+                    'employee_job_profiles.department_id',
+                    'employee_job_profiles.designation_id',
+                    'departments.title as department_title',
+                    'designations.title as designation_title'
+                ])
+                ->join('employees', 'employees.id', '=', 'salary_components_employees.employee_id')
+                ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
+                ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
+                ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
+                ->where('salary_components_employees.firm_id', Session::get('firm_id'))
+                ->where(function ($query) {
+                    $query->whereNull('salary_components_employees.effective_to')
+                        ->orWhere('salary_components_employees.effective_to', '>', now());
+                })
+                ->where('employees.is_inactive', false)
+                ->when($this->filters['department_id'], fn($query, $value) =>
+                    $query->where('employee_job_profiles.department_id', $value))
+                ->when($this->filters['designation_id'], fn($query, $value) =>
+                    $query->where('employee_job_profiles.designation_id', $value))
+                ->when($this->filters['salary_execution_group_id'], function($query, $value) {
+                    $query->whereExists(function ($subquery) use ($value) {
+                        $subquery->select('id')
+                            ->from('employees_salary_execution_group')
+                            ->whereColumn('employee_id', 'employees.id')
+                            ->where('salary_execution_group_id', $value)
+                            ->where('firm_id', Session::get('firm_id'));
+                    });
+                })
+                ->when($this->filters['search'], fn($query, $value) =>
+                    $query->where(function ($q) use ($value) {
+                        $q->where('employees.fname', 'like', "%{$value}%")
+                            ->orWhere('employees.lname', 'like', "%{$value}%")
+                            ->orWhere('employees.email', 'like', "%{$value}%")
+                            ->orWhere('employees.phone', 'like', "%{$value}%")
+                            ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
+                    }))
+                ->groupBy([
+                    'salary_components_employees.employee_id',
+                    'employees.fname',
+                    'employees.mname',
+                    'employees.lname',
+                    'employees.email',
+                    'employees.phone',
+                    'employees.gender',
+                    'employee_job_profiles.employee_code',
+                    'employee_job_profiles.department_id',
+                    'employee_job_profiles.designation_id',
+                    'departments.title',
+                    'designations.title'
+                ])
+                ->orderBy($this->sortBy, $this->sortDirection);
+
+            // Get all employee IDs from the query
+            $employeeIds = $query->pluck('employee_id')->toArray();
+            $totalEmployees = count($employeeIds);
+            
+            $successCount = 0;
+            $errorCount = 0;
+            $errorMessages = [];
+
+            Flux::toast(
+                variant: 'info',
+                heading: 'Starting Sync',
+                text: "Starting calculations for {$totalEmployees} employees..."
+            );
+
+            foreach ($employeeIds as $employeeId) {
+                try {
+                    // Get the employee
+                    $employee = Employee::findOrFail($employeeId);
+
+                    // Get calculated components
+                    $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                        ->where('firm_id', Session::get('firm_id'))
+                        ->whereHas('salary_component', function ($query) {
+                            $query->where('amount_type', 'calculated_known')
+                                  ->where('component_type', '!=', 'tds');
+                        })
+                        ->with('salary_component')
+                        ->get()
+                        ->map(function ($employeeComponent) use ($employeeId) {
+                            if (empty($employeeComponent->calculation_json)) {
+                                throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
+                            }
+                            return [
+                                'id' => $employeeComponent->salary_component->id,
+                                'title' => $employeeComponent->salary_component->title,
+                                'calculation_json' => $employeeComponent->calculation_json
+                            ];
+                        });
+
+                    // Build dependency graph
+                    $graph = $this->buildDependencyGraph($calculatedComponents);
+
+                    // Get calculation order
+                    $calculationOrder = $this->getCalculationOrder($graph);
+
+                    // Get initial component values
+                    $componentValues = $this->getComponentValuesForEmployee($employeeId);
+
+                    // Calculate components in order
+                    foreach ($calculationOrder as $componentId) {
+                        $component = $graph[$componentId]['component'];
+
+                        if (empty($component['calculation_json'])) {
+                            throw new \Exception("No calculation formula defined for component {$component['title']}");
+                        }
+
+                        // Calculate value using all previously calculated values
+                        $calculatedValue = $this->executeCalculation($component['calculation_json'], $componentValues);
+
+                        // Update the component value in database
+                        SalaryComponentsEmployee::where('employee_id', $employeeId)
+                            ->where('salary_component_id', $componentId)
+                            ->where('firm_id', Session::get('firm_id'))
+                            ->update([
+                                'amount' => $calculatedValue
+                            ]);
+
+                        // Update component values for next calculations
+                        $componentValues[$componentId] = $calculatedValue;
+                        $componentValues[$component['title']] = $calculatedValue;
+
+                        // Mark as calculated in graph
+                        $graph[$componentId]['calculated'] = true;
+                    }
+
+                    // After calculating other components, calculate tax
+                    $this->calculateTax($employeeId);
+                    $successCount++;
+
+                    // Show progress toast every 10 employees
+                    if ($successCount % 10 === 0) {
+                        Flux::toast(
+                            variant: 'info',
+                            heading: 'Progress Update',
+                            text: "Processed {$successCount} of {$totalEmployees} employees..."
+                        );
+                    }
+
+                } catch (\Exception $e) {
+                    $errorCount++;
+                    $errorMessages[] = "Employee ID {$employeeId}: " . $e->getMessage();
+                }
+            }
+
+            // Reload employee components for all employees
+            $this->loadEmployeeComponents($employeeIds);
+
+            // Show summary toast
+            if ($errorCount === 0) {
+                Flux::toast(
+                    variant: 'success',
+                    heading: 'All Calculations Updated',
+                    text: "Successfully updated calculations for {$successCount} employees"
+                );
+            } else {
+                Flux::toast(
+                    variant: 'warning',
+                    heading: 'Partial Success',
+                    text: "Updated {$successCount} employees, failed for {$errorCount} employees. Check logs for details."
+                );
+                \Log::error("Bulk sync errors: " . implode("\n", $errorMessages));
+            }
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: "Failed to sync calculations: " . $e->getMessage()
             );
         }
     }

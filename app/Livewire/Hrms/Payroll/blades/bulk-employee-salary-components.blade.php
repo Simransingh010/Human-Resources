@@ -4,6 +4,20 @@
             <flux:heading size="lg">Bulk Employee Salary Components</flux:heading>
             <flux:subheading>Manage salary components for multiple employees</flux:subheading>
         </div>
+        <div>
+            <flux:button
+                wire:click="syncAllCalculations"
+                wire:loading.attr="disabled"
+                wire:target="syncAllCalculations"
+            >
+                <span wire:loading.remove wire:target="syncAllCalculations">
+                    Sync All Calculations
+                </span>
+                <span wire:loading wire:target="syncAllCalculations">
+                    Syncing...
+                </span>
+            </flux:button>
+        </div>
     </div>
 
     <!-- Filters -->

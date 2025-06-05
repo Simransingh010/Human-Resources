@@ -131,103 +131,117 @@
 
     <!-- Salary Slip Modal -->
     <flux:modal wire:model="showSalarySlipModal" class="max-w-3xl">
-        <div class="p-4">
-            <div class="flex justify-between">
-            <h2 class="text-xl font-bold mb-4">Salary Slip</h2>
-                <img class="ms-5"
-                     src="https://www.iimsirmaur.ac.in/themes/sirmaur/images/logo.png"
-                     alt="IIM Logo"
-                     class="h-20 w-auto"
-                />
+        <div class="bg-white">
+            <!-- Header with Logo -->
+            <div class="text-center mb-6">
+                <img src="https://www.iimsirmaur.ac.in/themes/sirmaur/images/logo.png" 
+                     alt="IIM Logo" 
+                     class="mx-auto h-16 w-auto mb-4"/>
+                @if($rawComponents && $rawComponents->count() > 0)
+                    <h2 class="text-xl font-bold">PAYSLIP FOR THE MONTH OF {{ strtoupper(date('F Y', strtotime($rawComponents->first()->salary_period_from))) }}</h2>
+                @else
+                    <h2 class="text-xl font-bold">PAYSLIP</h2>
+                @endif
             </div>
+
             @if($selectedEmployee)
-                <!-- Employee Details -->
-                <div class="mb-6 border-b pb-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <p><strong>Employee Name:</strong> {{ $selectedEmployee->fname }} {{ $selectedEmployee->lname }}</p>
-                            <p><strong>Employee Code:</strong> {{ $selectedEmployee->id }}</p>
-                            <p><strong>Department:</strong> {{ optional($selectedEmployee->emp_job_profile)->department?->title }}</p>
-                        </div>
-                        <div>
-                            <p><strong>Designation:</strong> {{ optional($selectedEmployee->emp_job_profile)->designation?->title }}</p>
-                            <p><strong>Bank Account:</strong> {{ $selectedEmployee->bank_account -> bankaccount?? 'N/A' }}</p>
-                            <p><strong>PAN:</strong> {{ $selectedEmployee->pan ?? 'N/A' }}</p>
-                        </div>
-                    </div>
-                </div>
+                <!-- Single Table Structure -->
+                <table class="w-full border border-black">
+                    <!-- Employee Details Section -->
+                    <tr>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">EMPLOYEE CODE </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->id }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">DATE OF JOINING </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->joining_date }}</td>
+                    </tr>
+                    <tr>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">NAME </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->fname }} {{ $selectedEmployee->lname }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">MONTH </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $rawComponents && $rawComponents->count() > 0 ? date('M-y', strtotime($rawComponents->first()->salary_period_from)) : '' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">DEPARTMENT </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->department?->title }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">BANK ACCOUNT NO. </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->bank_account->bankaccount ?? 'N/A' }}</td>
 
-                <!-- Salary Components (Earnings | Deductions) -->
-                <div class="flex flex-col md:flex-row gap-8">
-                    <!-- Earnings -->
-                    <div class="flex-1 bg-gray-50 rounded-lg p-4 shadow-sm">
-                        <h3 class="font-bold mb-3 border-b pb-2">Earnings</h3>
-                        <div class="space-y-2">
-                            @php $anyEarning = false; @endphp
-                            @foreach($salaryComponents as $component)
-                                @if($component['nature'] === 'earning')
-                                    @php $anyEarning = true; @endphp
-                                    <div class="flex justify-between">
-                                        <span>{{ $component['title'] }}</span>
-                                        <span>{{ number_format($component['amount'], 2) }}</span>
-                                    </div>
-                                @endif
-                            @endforeach
-                            @if(!$anyEarning)
-                                <div class="text-gray-400 text-sm">No earnings</div>
-                            @endif
-                            <div class="border-t pt-2 font-bold">
-                                <div class="flex justify-between">
-                                    <span>Total Earnings</span>
-                                    <span>{{ number_format($totalEarnings, 2) }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                    </tr>
+                    <tr>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">DESIGNATION </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->designation?->title }}</td>
 
-                    <!-- Deductions -->
-                    <div class="flex-1 bg-gray-50 rounded-lg p-4 shadow-sm">
-                        <h3 class="font-bold mb-3 border-b pb-2">Deductions</h3>
-                        <div class="space-y-2">
-                            @php $anyDeduction = false; @endphp
-                            @foreach($salaryComponents as $component)
-                                @if($component['nature'] === 'deduction')
-                                    @php $anyDeduction = true; @endphp
-                                    <div class="flex justify-between">
-                                        <span>{{ $component['title'] }}</span>
-                                        <span>{{ number_format($component['amount'], 2) }}</span>
-                                    </div>
-                                @endif
-                            @endforeach
-                            @if(!$anyDeduction)
-                                <div class="text-gray-400 text-sm">No deductions</div>
-                            @endif
-                            <div class="border-t pt-2 font-bold">
-                                <div class="flex justify-between">
-                                    <span>Total Deductions</span>
-                                    <span>{{ number_format($totalDeductions, 2) }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PAY LEVEL</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->pay_level ?? 'N/A' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PAN NUMBER </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->pan ?? 'N/A' }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PRAN NUMBER </td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->pran ?? 'N/A' }}</td>
+                    </tr>
 
-                <!-- Net Salary -->
-                <div class="mt-8 border-t pt-4">
-                    <div class="flex flex-col md:flex-row justify-between items-center font-bold text-lg">
-                        <span>Net Salary</span>
-                        <span class="text-green-600">{{ number_format($netSalary, 2) }}</span>
-                    </div>
-                    @if($netSalaryInWords)
-                        <p class="text-sm mt-2 italic text-gray-600">Amount in words: {{ $netSalaryInWords }}</p>
-                    @endif
-                    <p class="mt-2 font-bold">Note: This is a Computer generated salary slip, hence dose not require signature.</p>
+                    <!-- Salary Components Headers -->
+                    <tr>
+                        <th class="p-1 border border-black pb-1 pt-1 bg-white text-left font-semibold">EARNINGS</th>
+                        <th class="p-1 border border-black pb-1 pt-1 bg-white text-right font-semibold">AMOUNT (in Rs.)</th>
+                        <th class="p-1 border border-black pb-1 pt-1 bg-white text-left font-semibold">DEDUCTIONS</th>
+                        <th class="p-1 border border-black pb-1 pt-1 bg-white text-right font-semibold">AMOUNT (in Rs.)</th>
+                    </tr>
 
-                </div>
+                    <!-- Salary Components Data -->
+                    @php 
+                        $salaryComponentsCollection = collect($salaryComponents);
+                        $maxRows = max(
+                            $salaryComponentsCollection->where('nature', 'earning')->count(), 
+                            $salaryComponentsCollection->where('nature', 'deduction')->count()
+                        );
+                        $earnings = $salaryComponentsCollection->where('nature', 'earning')->values();
+                        $deductions = $salaryComponentsCollection->where('nature', 'deduction')->values();
+                    @endphp
+
+                    @for($i = 0; $i < $maxRows; $i++)
+                        <tr>
+                            <td class="p-1 border border-black pb-1 pt-1 bg-white">
+                                {{ isset($earnings[$i]) ? strtoupper($earnings[$i]['title']) : '' }}
+                            </td>
+                            <td class="p-1 border border-black pb-1 pt-1 bg-white text-right">
+                                {{ isset($earnings[$i]) ? number_format($earnings[$i]['amount'], 0) : '' }}
+                            </td>
+                            <td class="p-1 border border-black pb-1 pt-1 bg-white">
+                                {{ isset($deductions[$i]) ? strtoupper($deductions[$i]['title']) : '' }}
+                            </td>
+                            <td class="p-1 border border-black pb-1 pt-1 bg-white text-right">
+                                {{ isset($deductions[$i]) ? number_format($deductions[$i]['amount'], 0) : '' }}
+                            </td>
+                        </tr>
+                    @endfor
+
+                    <!-- Totals -->
+                    <tr>
+                        <td class="p-1 border border-black pb-1 pt-1 bg-white font-bold">GROSS SALARY</td>
+                        <td class="p-1 border border-black pb-1 pt-1 bg-white text-right font-bold">{{ number_format($totalEarnings, 0) }}</td>
+                        <td class="p-1 border border-black pb-1 pt-1 bg-white font-bold">TOTAL DEDUCTIONS</td>
+                        <td class="p-1 border border-black pb-1 pt-1 bg-white text-right font-bold">{{ number_format($totalDeductions, 0) }}</td>
+                    </tr>
+
+                    <!-- Net Salary -->
+                    <tr>
+                        <td colspan="2" class="p-1 border border-black pb-1 pt-1 bg-white font-bold">NET SALARY</td>
+                        <td colspan="2" class="p-1 border border-black pb-1 pt-1 bg-white text-right font-bold">{{ number_format($netSalary, 0) }}</td>
+                    </tr>
+
+                    <!-- Note -->
+                    <tr>
+                        <td colspan="4" class="p-1 border border-black pb-1 pt-1 bg-white text-sm">
+                            Note:-This is a computer generated salary slip, hence does not require signature.
+                        </td>
+                    </tr>
+                </table>
 
                 <!-- Action Buttons -->
                 <div class="mt-6 flex justify-end space-x-3">
-                    <flux:button variant="primary" icon="document-arrow-down">Download PDF</flux:button>
+{{--                    <flux:button wire:click="downloadPDF" variant="primary" icon="document-arrow-down">Download PDF</flux:button>--}}
                     <flux:button wire:click="closeSalarySlipModal">Close</flux:button>
                 </div>
             @endif

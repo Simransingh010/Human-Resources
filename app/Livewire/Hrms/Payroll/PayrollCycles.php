@@ -37,6 +37,16 @@ class PayrollCycles extends Component
     public $payrollSteps = [];
     public $selectedEmployees = [];
     public $stepLogs;
+    public $lockConfirmation = '';
+
+    protected $rules = [
+        'lockConfirmation' => 'required|in:LOCK'
+    ];
+
+    protected $messages = [
+        'lockConfirmation.required' => 'Please type LOCK to confirm.',
+        'lockConfirmation.in' => 'Please type LOCK in capital letters exactly.'
+    ];
 
     public function mount()
     {
@@ -47,6 +57,11 @@ class PayrollCycles extends Component
     {
         $this->loadExecutionGroups($value);
     }
+
+    //    public function updatedSelectedGroupId($value)
+//    {
+//        $this->loadPayrollSlots($value);
+//    }
 
     protected function loadExecutionGroups($cycleId)
     {
@@ -304,16 +319,59 @@ class PayrollCycles extends Component
                         });
                     })
                     ->get();
-//                if($employeeId == 1244){dd($salaryComponents);}if ($employeeId == 1244) {
-//                    $debug = $salaryComponents->map(function($component) {
-//                        return [
-//                            'name' => optional($component->salary_component)->title, // or $component->salary_component->title if relation loaded
-//                            'amount' => $component->amount,
-//                            'calculation_json' => $component->calculation_json,
-//                        ];
-//                    });
-//                    dd($debug);
-//                }
+
+                // Get static unknown components that are assigned to this employee
+                $staticUnknownComponents = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
+                    ->where('employee_id', $employeeId)
+                    ->where('amount_type', 'static_unknown')
+                    ->where(function ($query) use ($payrollSlot) {
+                        $query->where(function ($q) use ($payrollSlot) {
+                            $q->where('effective_from', '<=', $payrollSlot->to_date)
+                                ->where(function ($q2) use ($payrollSlot) {
+                                    $q2->whereNull('effective_to')
+                                        ->orWhere('effective_to', '>=', $payrollSlot->from_date);
+                                });
+                        });
+                    })
+                    ->with('salary_component')
+                    ->get();
+
+                // Check and create zero entries for static unknown components that don't exist for this employee
+                foreach ($staticUnknownComponents as $staticComponent) {
+                    $exists = PayrollComponentsEmployeesTrack::where('firm_id', Session::get('firm_id'))
+                        ->where('payroll_slot_id', $slot_id)
+                        ->where('employee_id', $employeeId)
+                        ->where('salary_component_id', $staticComponent->salary_component_id)
+                        ->exists();
+
+                    if (!$exists) {
+                        // Create zero entry for this static unknown component
+                        PayrollComponentsEmployeesTrack::create([
+                            'firm_id' => Session::get('firm_id'),
+                            'payroll_slot_id' => $slot_id,
+                            'payroll_slots_cmd_id' => $payroll_slots_cmd_id,
+                            'employee_id' => $employeeId,
+                            'salary_template_id' => $staticComponent->salary_template_id,
+                            'salary_component_group_id' => $staticComponent->salary_component_group_id,
+                            'salary_component_id' => $staticComponent->salary_component_id,
+                            'sequence' => $staticComponent->sequence,
+                            'nature' => $staticComponent->nature,
+                            'component_type' => $staticComponent->component_type,
+                            'amount_type' => 'static_unknown',
+                            'taxable' => $staticComponent->taxable,
+                            'calculation_json' => $staticComponent->calculation_json,
+                            'salary_period_from' => $payrollSlot->from_date,
+                            'salary_period_to' => $payrollSlot->to_date,
+                            'user_id' => Session::get('user_id'),
+                            'amount_full' => 0,
+                            'amount_payable' => 0,
+                            'amount_paid' => 0,
+                            'salary_advance_id' => null,
+                            'salary_arrear_id' => null,
+                            'salary_cycle_id' => $cycle_id
+                        ]);
+                    }
+                }
 
                 // Get employee's salary days
                 $salaryDays = EmployeesSalaryDay::where('firm_id', Session::get('firm_id'))
@@ -349,10 +407,6 @@ class PayrollCycles extends Component
 
                     // Calculate final payable amount
                     $amountPayable = $component->amount - $deductionAmount;
-
-//                    if($employeeId == 1244 ) {
-//                        dd($component, $perDayAmount, $deductionAmount, $amountPayable);
-//                    }
 
                     $precision = (int) session('roundoff_precision', 0);
                     $mode = (int) session('roundoff_mode', PHP_ROUND_HALF_UP);
@@ -638,7 +692,55 @@ class PayrollCycles extends Component
 
     public function resetForm()
     {
+        $this->lockConfirmation = '';
+    }
 
+    public function lockPayroll($slot_id)
+    {
+        try {
+            $this->validate();
+
+            // Create lock command log
+            PayrollSlotsCmd::create([
+                'firm_id' => Session::get('firm_id'),
+                'payroll_slot_id' => $slot_id,
+                'user_id' => auth()->user()->id,
+                'run_payroll_remarks' => json_encode([
+                    'remark' => 'Payroll Locked',
+                    'action' => 'LOCK'
+                ]),
+                'payroll_slot_status' => 'L',
+            ]);
+
+            // Update payroll slot status to locked
+            PayrollSlot::where('id', $slot_id)
+                ->update(['payroll_slot_status' => 'L']);
+
+            // Reset the confirmation
+            $this->lockConfirmation = '';
+
+            // Refresh slot details
+            $this->loadSlotDetails($slot_id);
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Success',
+                text: 'Payroll has been locked successfully',
+            );
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->validator->errors()->first(),
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to lock payroll: ' . $e->getMessage(),
+            );
+        }
     }
 
     public function render()

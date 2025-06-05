@@ -11,14 +11,22 @@ use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\SalaryComponentsEmployee;
 use Livewire\Component;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Flux;
 
 class SetHeadAmountManually extends Component
 {
     public $salcomponentEmployees;
     public $salcomponents;
-
     public $entries = []; // [employee_id][component_id] = amount
+    public $componentRemarks = []; // [employee_id][component_id] = remarks
+    public $currentEmployee;
+    public $allRemarks;
+    
     public $payrollSlotId;
     public $salary_execution_group_id;
     public $slot;
@@ -55,10 +63,11 @@ class SetHeadAmountManually extends Component
         foreach ($this->salcomponentEmployees as $salcomponentEmployee) {
             foreach ($this->salcomponents as $salcomponent) {
                 $this->entries[$salcomponentEmployee->id][$salcomponent->id] = '';
+                $this->componentRemarks[$salcomponentEmployee->id][$salcomponent->id] = '';
             }
         }
 
-        // Load previously saved entries from payroll_components_employees_tracks
+        // Load previously saved entries and remarks from payroll_components_employees_tracks
         $savedEntries = PayrollComponentsEmployeesTrack::where('payroll_slot_id', $this->slot->id)
             ->whereIn('employee_id', $employeeIds)
             ->whereIn('salary_component_id', $this->salcomponents->pluck('id'))
@@ -66,6 +75,7 @@ class SetHeadAmountManually extends Component
 
         foreach ($savedEntries as $entry) {
             $this->entries[$entry->employee_id][$entry->salary_component_id] = $entry->amount_full;
+            $this->componentRemarks[$entry->employee_id][$entry->salary_component_id] = $entry->remarks;
         }
 
         // Create Slot Command Log (if not already created)
@@ -79,8 +89,6 @@ class SetHeadAmountManually extends Component
         $this->payroll_slots_cmd_id = $payroll_slots_cmd_rec->id;
     }
 
-
-
     public function saveSingleEntry($employeeId, $componentId, $value)
     {
         $this->entries[$employeeId][$componentId] = $value;
@@ -88,37 +96,61 @@ class SetHeadAmountManually extends Component
         $salcomponentEmployeesDet = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
             ->where('salary_component_id', $componentId)
             ->where('employee_id', $employeeId)
-            ->first(); // Later.. From date and End Date also need to be check in future as there may be  same components allocated  at different period
+            ->first();
 
+        PayrollComponentsEmployeesTrack::updateOrCreate(
+            [
+                'payroll_slot_id' => $this->slot->id,
+                'employee_id' => $employeeId,
+                'salary_component_id' => $componentId,
+                'salary_period_from' => $this->slot->from_date,
+                'salary_period_to' => $this->slot->to_date,
+            ],
+            [
+                'payroll_slots_cmd_id' => $this->payroll_slots_cmd_id,
+                'salary_template_id' => $salcomponentEmployeesDet->salary_template_id,
+                'salary_component_group_id' => $salcomponentEmployeesDet->salary_component_group_id,
+                'amount_full' => $amount,
+                'amount_payable' => $amount,
+                'amount_paid' => 0,
+                'firm_id' => $this->slot->firm_id,
+                'nature' => $salcomponentEmployeesDet->nature,
+                'component_type' => $salcomponentEmployeesDet->component_type,
+                'amount_type' => $salcomponentEmployeesDet->amount_type,
+                'sequence' => $salcomponentEmployeesDet->sequence,
+                'taxable' => $salcomponentEmployeesDet->taxable,
+                'calculation_json' => $salcomponentEmployeesDet->calculation_json,
+                'salary_advance_id' => NULL,
+                'salary_arrear_id' => NULL,
+                'user_id' => auth()->user()->id,
+                'salary_cycle_id' => $this->slot->salary_cycle_id,
+                'remarks' => $this->componentRemarks[$employeeId][$componentId] ?? null
+            ]
+        );
+    }
 
-            PayrollComponentsEmployeesTrack::updateOrCreate(
-                [
-                    'payroll_slot_id' => $this->slot->id,
-                    'employee_id' => $employeeId,
-                    'salary_component_id' => $componentId,
-                    'salary_period_from' => $this->slot->from_date,
-                    'salary_period_to' => $this->slot->to_date,
-                ],
-                [
-                    'payroll_slots_cmd_id' => $this->payroll_slots_cmd_id,
-                    'salary_template_id' => $salcomponentEmployeesDet->salary_template_id,
-                    'salary_component_group_id' => $salcomponentEmployeesDet->salary_component_group_id,
-                    'amount_full' => $amount,
-                    'amount_payable' => $amount,
-                    'amount_paid' => 0,
-                    'firm_id' => $this->slot->firm_id,
-                    'nature' => $salcomponentEmployeesDet->nature,
-                    'component_type' => $salcomponentEmployeesDet->component_type,
-                    'amount_type' => $salcomponentEmployeesDet->amount_type,
-                    'sequence' => $salcomponentEmployeesDet->sequence,
-                    'taxable' => $salcomponentEmployeesDet->taxable,
-                    'calculation_json' => $salcomponentEmployeesDet->calculation_json,
-                    'salary_advance_id' => NULL,
-                    'salary_arrear_id' => NULL,
-                    'user_id' => auth()->user()->id,
-                    'salary_cycle_id' => $this->slot->salary_cycle_id
-                ]);
+    public function saveRemarks($employeeId, $componentId)
+    {
+        $track = PayrollComponentsEmployeesTrack::where([
+            'payroll_slot_id' => $this->slot->id,
+            'employee_id' => $employeeId,
+            'salary_component_id' => $componentId,
+        ])->first();
 
+        if ($track) {
+            $track->update([
+                'remarks' => $this->componentRemarks[$employeeId][$componentId]
+            ]);
+        }
+
+        $this->dispatchBrowserEvent('close-modal', ['name' => "mdl-remarks-{$employeeId}-{$componentId}"]);
+    }
+
+    public function viewAllRemarks($employeeId)
+    {
+        $this->currentEmployee = $this->salcomponentEmployees->firstWhere('id', $employeeId);
+        $this->allRemarks = $this->componentRemarks[$employeeId] ?? [];
+        $this->dispatchBrowserEvent('open-modal', ['name' => 'mdl-view-all-remarks']);
     }
 
     public function save()
@@ -126,24 +158,14 @@ class SetHeadAmountManually extends Component
         foreach ($this->entries as $employeeId => $componentAmounts) {
             foreach ($componentAmounts as $componentId => $amount) {
                 if ($amount !== '') {
-                    PayrollComponentsEmployeesTrack::updateOrCreate(
-                        [
-
-                        ],
-                        [
-
-                        ]
-                    );
+                    $this->saveSingleEntry($employeeId, $componentId, $amount);
                 }
             }
         }
-
-
     }
 
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Payroll/blades/set-head-amount-manually.blade.php'));
-
     }
 }
