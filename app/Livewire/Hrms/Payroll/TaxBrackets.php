@@ -26,6 +26,7 @@ class TaxBrackets extends Component
         'income_from' => ['label' => 'Income From', 'type' => 'number'],
         'income_to' => ['label' => 'Income To', 'type' => 'number'],
         'rate' => ['label' => 'Rate (%)', 'type' => 'number'],
+        'apply_breakdown_rate' => ['label' => 'Apply Breakdown Rate', 'type' => 'select', 'listKey' => 'apply_breakdown_rates'],
     ];
 
     // Filter fields configuration
@@ -48,6 +49,7 @@ class TaxBrackets extends Component
         'income_from' => null,
         'income_to' => null,
         'rate' => null,
+        'apply_breakdown_rate' => '',
     ];
 
     public function mount()
@@ -55,7 +57,7 @@ class TaxBrackets extends Component
         $this->initListsForFields();
 
         // Set default visible fields
-        $this->visibleFields = ['regime_id', 'type', 'income_from', 'income_to', 'rate'];
+        $this->visibleFields = ['regime_id', 'type', 'income_from', 'income_to', 'rate', 'apply_breakdown_rate'];
         $this->visibleFilterFields = ['regime_id', 'type', 'income_from'];
 
         // Initialize filters
@@ -70,6 +72,7 @@ class TaxBrackets extends Component
             'income_from' => null,
             'income_to' => null,
             'rate' => null,
+            'apply_breakdown_rate' => '',
         ];
     }
 
@@ -87,6 +90,9 @@ class TaxBrackets extends Component
             'SURCHARGE' => 'SURCHARGE',
             'SLAB' => 'SLAB',
         ];
+
+        // Apply breakdown rate options
+        $this->listsForFields['apply_breakdown_rates'] = TaxBracket::APPLY_BREAKDOWN_RATE;
     }
 
     public function applyFilters()
@@ -146,7 +152,8 @@ class TaxBrackets extends Component
             'formData.type' => 'required|string|in:CESS,SURCHARGE,SLAB',
             'formData.income_from' => 'required|numeric|min:0',
             'formData.income_to' => 'nullable|numeric|gt:formData.income_from',
-            'formData.rate' => 'required|numeric|min:0|max:100'
+            'formData.rate' => 'required|numeric|min:0|max:100',
+            'formData.apply_breakdown_rate' => 'required|string|in:yes,no'
         ];
     }
 
@@ -188,6 +195,7 @@ class TaxBrackets extends Component
             'income_from' => null,
             'income_to' => null,
             'rate' => null,
+            'apply_breakdown_rate' => '',
         ];
         $this->isEditing = false;
     }

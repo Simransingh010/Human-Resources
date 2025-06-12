@@ -123,6 +123,12 @@
                                 elseif($step->step_code_main == 'override_amounts') {
                                     $icon = 'currency-rupee';
                                 }
+                                elseif($step->step_code_main == 'salary_holds') {
+                                    $icon = 'lock-closed';
+                                }
+                                elseif($step->step_code_main == 'salary_advances') {
+                                    $icon = 'banknotes';
+                                }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
                                 <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
@@ -205,8 +211,21 @@
                                             </flux:button>
                                         @endif
 
+                                    @if($step->step_code_main == 'salary_holds')
+                                        <flux:tooltip content="View Holds">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryHolds({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
 
-
+                                    @if($step->step_code_main == 'salary_advances')
+                                        <flux:tooltip content="View Advances">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryAdvances({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
 
                                     @if($step->step_code_main == 'tds_calculation')
 
@@ -320,6 +339,12 @@
                                 elseif($step->step_code_main == 'override_amounts') {
                                     $icon = 'currency-rupee';
                                 }
+                                elseif($step->step_code_main == 'salary_holds') {
+                                    $icon = 'lock-closed';
+                                }
+                                elseif($step->step_code_main == 'salary_advances') {
+                                    $icon = 'banknotes';
+                                }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
                                 <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
@@ -402,8 +427,21 @@
                                             </flux:button>
                                         @endif
 
+                                    @if($step->step_code_main == 'salary_holds')
+                                        <flux:tooltip content="View Holds">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryHolds({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
 
-
+                                    @if($step->step_code_main == 'salary_advances')
+                                        <flux:tooltip content="View Advances">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryAdvances({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
 
                                     @if($step->step_code_main == 'tds_calculation')
 
@@ -612,4 +650,20 @@
             </div>
         </form>
     </flux:modal>
+    <!-- Add Salary Holds Modal -->
+    <flux:modal name="salary-holds" title="Salary Holds" class="max-w-6xl">
+        @if($selectedSlotId)
+            <livewire:hrms.payroll.salary-holds :payroll-slot-id="$selectedSlotId"
+                                               :wire:key="'salary-holds-'.$selectedSlotId"/>
+        @endif
+    </flux:modal>
+
+    <!-- Add Salary Advances Modal -->
+    <flux:modal name="salary-advances" title="Salary Advances" class="max-w-6xl">
+        @if($selectedSlotId)
+            <livewire:hrms.payroll.salary-advances-step :payroll-slot-id="$selectedSlotId"
+                                                      :wire:key="'salary-advances-step-'.$selectedSlotId"/>
+        @endif
+    </flux:modal>
+
 </div>

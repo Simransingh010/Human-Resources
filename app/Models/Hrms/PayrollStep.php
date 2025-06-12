@@ -48,6 +48,8 @@ class PayrollStep extends Model
         'lop_attendance' => 'LOP Adjustment',
         'static_unknown' => 'Set Head Amounts Manually',
         'tds_calculation' => 'TDS',
+        'salary_holds' => 'Salary Holds',
+        'salary_advances' => 'Salary Advances',
     ];
 
     protected $fillable = [

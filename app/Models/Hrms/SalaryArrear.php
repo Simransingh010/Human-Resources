@@ -66,7 +66,9 @@ class SalaryArrear extends Model
 		'installments' => 'int',
 		'installment_amount' => 'float',
 		'is_inactive' => 'bool',
-		'disburse_wef_payroll_slot_id' => 'int'
+		'disburse_wef_payroll_slot_id' => 'int',
+		'additional_rule' => 'string',
+		'remarks' => 'string'
 	];
 
 	protected $fillable = [

@@ -2,7 +2,7 @@
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <flux:modal.trigger name="mdl-tax-bracket" class="flex justify-end">
+        <flux:modal.trigger name="mdl-salary-hold" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
                 New
             </flux:button>
@@ -33,16 +33,6 @@
                                     @endforeach
                                 </flux:select>
                                 @break
-
-                            @case('number')
-                                <flux:input
-                                    type="number"
-                                    placeholder="Min {{ $cfg['label'] }}"
-                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
-                                    wire:change="applyFilters"
-                                />
-                                @break
-
                             @default
                                 <flux:input
                                     placeholder="Search {{ $cfg['label'] }}"
@@ -106,64 +96,53 @@
         </div>
     </flux:modal>
 
-    <!-- Add/Edit Tax Bracket Modal -->
-    <flux:modal name="mdl-tax-bracket" @cancel="resetForm">
-        <form wire:submit.prevent="store">
+    <!-- Add Salary Hold Modal -->
+    <flux:modal name="mdl-salary-hold" @cancel="closeHoldModal">
+        <form wire:submit.prevent="holdSalary">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">
-                        @if($isEditing) Edit Tax Bracket @else Add Tax Bracket @endif
-                    </flux:heading>
-                    <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif tax bracket details.
-                    </flux:subheading>
+                    <flux:heading size="lg">Create Salary Hold</flux:heading>
+                    <flux:subheading>Select employee, payroll period, and add remarks to hold salary.</flux:subheading>
                 </div>
-
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                    @foreach($fieldConfig as $field => $cfg)
-
-
-                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-
-                            @switch($cfg['type'])
-                                @case('number')
-
-                                    <flux:input
-                                            type="number"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model="formData.{{ $field }}"
-
-                                    />
-                                    @break
-
-                                @case('select')
-                                    <flux:select
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model="formData.{{ $field }}"
-                                    >
-                                        <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                    @break
-
-
-                                @default
-                                    <flux:input
-                                        type="{{ $cfg['type'] }}"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model="formData.{{ $field }}"
-                                    />
-                            @endswitch
-                        </div>
-                    @endforeach
+                    <div>
+                        <flux:select
+                            label="Employee"
+                            wire:model.live="selectedEmployee"
+                        >
+                            <option value="">Select Employee</option>
+                            @foreach($listsForFields['employees'] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </flux:select>
+                        @error('selectedEmployee') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:select
+                            variant="listbox"
+                            multiple
+                            label="Payroll Period"
+                            placeholder="Choose payroll periods..."
+                            wire:model.live="selectedPayrollSlots"
+                        >
+                            @foreach($listsForFields['payrollSlots'] as $id => $period)
+                                <flux:select.option value="{{ $id }}">{{ $period }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                        @error('selectedPayrollSlots') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="col-span-2">
+                        <flux:textarea
+                            label="Remarks"
+                            wire:model.live="remarks"
+                            rows="3"
+                        />
+                        @error('remarks') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
                 </div>
-
                 <div class="flex justify-end pt-4">
                     <flux:button type="submit" variant="primary">
-                        Save
+                        Create Hold
                     </flux:button>
                 </div>
             </div>
@@ -182,65 +161,29 @@
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach($this->list as $item)
-                <flux:table.row :key="$item->id">
+            @foreach($this->list as $hold)
+                <flux:table.row :key="$hold->id">
                     @foreach($fieldConfig as $field => $cfg)
                         @if(in_array($field, $visibleFields))
-                            <flux:table.cell>
+                            <flux:table.cell class="table-cell-wrap">
                                 @switch($field)
-                                    @case('regime_id')
-                                        {{ $listsForFields['tax_regimes'][$item->$field] ?? $item->$field }}
+                                    @case('employee_name')
+                                        {{ $hold->employee->fname }} {{ $hold->employee->lname }}
                                         @break
-                                    @case('type')
-                                        {{ $listsForFields['bracket_types'][$item->$field] ?? $item->$field }}
+                                    @case('payroll_period')
+                                        {{ $hold->payrollSlot->from_date->format('jS F Y') }} to {{ $hold->payrollSlot->to_date->format('jS F Y') }}
                                         @break
-                                    @case('rate')
-                                        {{ number_format($item->$field, 2) }}%
-                                        @break
-                                    @case('apply_breakdown_rate')
-                                        {{ $listsForFields['apply_breakdown_rates'][$item->$field] ?? $item->$field }}
-                                        @break
-                                    @case('income_from')
-                                    @case('income_to')
-                                        {{ number_format($item->$field, 2) }}
+                                    @case('created_at')
+                                        {{ $hold->created_at->format('jS F Y H:i:s') }}
                                         @break
                                     @default
-                                        {{ $item->$field }}
+                                        {{ $hold->$field }}
                                 @endswitch
                             </flux:table.cell>
                         @endif
                     @endforeach
                     <flux:table.cell>
-                        <div class="flex space-x-2">
-                            <flux:button
-                                variant="primary"
-                                size="sm"
-                                icon="pencil"
-                                wire:click="edit({{ $item->id }})"
-                            />
-                            <flux:modal.trigger name="delete-{{ $item->id }}">
-                                <flux:button variant="danger" size="sm" icon="trash"/>
-                            </flux:modal.trigger>
-                        </div>
-
-                        <!-- Delete Confirmation Modal -->
-                        <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
-                            <div class="space-y-6">
-                                <div>
-                                    <flux:heading size="lg">Delete Tax Bracket?</flux:heading>
-                                    <flux:text class="mt-2">
-                                        <p>You're about to delete this tax bracket. This action cannot be undone.</p>
-                                    </flux:text>
-                                </div>
-                                <div class="flex gap-2">
-                                    <flux:spacer/>
-                                    <flux:modal.close>
-                                        <flux:button variant="ghost">Cancel</flux:button>
-                                    </flux:modal.close>
-                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
-                                </div>
-                            </div>
-                        </flux:modal>
+                        <flux:button variant="danger" size="sm" icon="trash" wire:click="removeHold({{ $hold->id }})" tooltip="Remove Hold" />
                     </flux:table.cell>
                 </flux:table.row>
             @endforeach

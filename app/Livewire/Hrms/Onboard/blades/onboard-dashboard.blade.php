@@ -411,60 +411,73 @@ use Carbon\Carbon;
                     </flux:badge>
                 </div>
 
-                <div class="mt-4 pt-4 space-y-4 border-t border-gray-200 dark:border-gray-700/50">
-                    <!-- Employees Without Attendance Policy -->
-                    <div class="space-y-2">
-                        <flux:text class="text-sm font-medium text-gray-600 dark:text-gray-400">
-                            Without Attendance Policy ({{ $this->employeesWithoutAttendancePolicy()->count() }})
-                        </flux:text>
-                        @foreach($this->employeesWithoutAttendancePolicy() as $employee)
-                            <div
-                                class="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
-                                <div class="flex items-center space-x-3">
-                                    @if($employee->emp_personal_detail && $employee->emp_personal_detail->getFirstMediaUrl('employee_image'))
-                                        <img src="{{ $employee->emp_personal_detail->getFirstMediaUrl('employee_image') }}"
-                                            alt="{{ $employee->fname }} {{ $employee->lname }}"
-                                            class="w-6 h-6 rounded-full object-cover" />
-                                    @else
-                                        <flux:icon name="user" class="w-6 h-6 text-gray-500" />
-                                    @endif
-                                    <flux:text class="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                        {{ $employee->fname }} {{ $employee->lname }}
-                                    </flux:text>
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700/50 overflow-y-auto"
+                    style="height: 400px;">
+                    <flux:accordion transition  class="w-full space-y-2">
+                        <flux:accordion.item expanded>
+                            <flux:accordion.heading>
+                                <div class="flex justify-between items-center w-full">
+                                    <span>Without Attendance Policy
+                                        ({{ $this->employeesWithoutAttendancePolicy()->count() }})</span>
                                 </div>
-                                <flux:badge size="sm" color="red" class="text-xs">
-                                    No Policy
-                                </flux:badge>
-                            </div>
-                        @endforeach
-                    </div>
-
-                    <!-- Employees Without Work Shift -->
-                    <div class="space-y-2">
-                        <flux:text class="text-sm font-medium text-gray-600 dark:text-gray-400">
-                            Without Work Shift ({{ $this->employeesWithoutWorkShift()->count() }})
-                        </flux:text>
-                        @foreach($this->employeesWithoutWorkShift() as $employee)
-                            <div
-                                class="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
-                                <div class="flex items-center space-x-3">
-                                    @if($employee->emp_personal_detail && $employee->emp_personal_detail->getFirstMediaUrl('employee_image'))
-                                        <img src="{{ $employee->emp_personal_detail->getFirstMediaUrl('employee_image') }}"
-                                            alt="{{ $employee->fname }} {{ $employee->lname }}"
-                                            class="w-6 h-6 rounded-full object-cover" />
-                                    @else
-                                        <flux:icon name="user" class="w-6 h-6 text-gray-500" />
-                                    @endif
-                                    <flux:text class="text-sm font-medium text-gray-800 dark:text-gray-200">
-                                        {{ $employee->fname }} {{ $employee->lname }}
-                                    </flux:text>
+                            </flux:accordion.heading>
+                            <flux:accordion.content class="pl-2">
+                                <div class="space-y-2">
+                                    @foreach($this->employeesWithoutAttendancePolicy() as $employee)
+                                        <div
+                                            class="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
+                                            <div class="flex items-center space-x-3">
+                                                @if($employee->emp_personal_detail && $employee->emp_personal_detail->getFirstMediaUrl('employee_image'))
+                                                    <img src="{{ $employee->emp_personal_detail->getFirstMediaUrl('employee_image') }}"
+                                                        alt="{{ $employee->fname }} {{ $employee->lname }}"
+                                                        class="w-6 h-6 rounded-full object-cover" />
+                                                @else
+                                                    <flux:icon name="user" class="w-6 h-6 text-gray-500" />
+                                                @endif
+                                                <flux:text class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                                                    {{ $employee->fname }} {{ $employee->lname }}
+                                                </flux:text>
+                                            </div>
+                                            <flux:badge size="sm" color="red" class="text-xs">
+                                                No Policy
+                                            </flux:badge>
+                                        </div>
+                                    @endforeach
                                 </div>
-                                <flux:badge size="sm" color="red" class="text-xs">
-                                    No Shift
-                                </flux:badge>
-                            </div>
-                        @endforeach
-                    </div>
+                            </flux:accordion.content>
+                        </flux:accordion.item >
+                        <flux:accordion.item>
+                            <flux:accordion.heading>
+                                <div class="flex justify-between items-center w-full">
+                                    <span>Without Work Shift ({{ $this->employeesWithoutWorkShift()->count() }})</span>
+                                </div>
+                            </flux:accordion.heading>
+                            <flux:accordion.content class="pl-2">
+                                <div class="space-y-2">
+                                    @foreach($this->employeesWithoutWorkShift() as $employee)
+                                        <div
+                                            class="flex items-center justify-between p-2 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-200 dark:border-gray-600">
+                                            <div class="flex items-center space-x-3">
+                                                @if($employee->emp_personal_detail && $employee->emp_personal_detail->getFirstMediaUrl('employee_image'))
+                                                    <img src="{{ $employee->emp_personal_detail->getFirstMediaUrl('employee_image') }}"
+                                                        alt="{{ $employee->fname }} {{ $employee->lname }}"
+                                                        class="w-6 h-6 rounded-full object-cover" />
+                                                @else
+                                                    <flux:icon name="user" class="w-6 h-6 text-gray-500" />
+                                                @endif
+                                                <flux:text class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                                                    {{ $employee->fname }} {{ $employee->lname }}
+                                                </flux:text>
+                                            </div>
+                                            <flux:badge size="sm" color="red" class="text-xs">
+                                                No Shift
+                                            </flux:badge>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </flux:accordion.content>
+                        </flux:accordion.item>
+                    </flux:accordion>
                 </div>
             </div>
         </flux:card>

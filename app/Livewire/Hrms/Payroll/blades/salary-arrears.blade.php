@@ -3,7 +3,7 @@
     <div class="flex justify-between">
         @livewire('panel.component-heading')
         <flux:modal.trigger name="mdl-salary-arrear" class="flex justify-end">
-            <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
+            <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md" wire:click="openArrearModal">
                 New
             </flux:button>
         </flux:modal.trigger>
@@ -106,72 +106,141 @@
         </div>
     </flux:modal>
 
-    <!-- Add/Edit Salary Arrear Modal -->
-    <flux:modal name="mdl-salary-arrear" @cancel="resetForm">
-        <form wire:submit.prevent="store">
+    <!-- Add Salary Arrear Modal -->
+    <flux:modal name="mdl-salary-arrear" @cancel="closeArrearModal">
+        <form wire:submit.prevent="saveArrear">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing) Edit Salary Arrear @else Add Salary Arrear @endif
+                        @if($isEditing) Edit Salary Arrear @else Create Salary Arrear @endif
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif salary arrear details.
+                        @if($isEditing) Update the details and save changes. @else Fill in the details to create a new salary arrear. @endif
                     </flux:subheading>
                 </div>
-
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    @foreach($fieldConfig as $field => $cfg)
-                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-                            @switch($cfg['type'])
-                                @case('select')
-                                    <flux:select
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    >
-                                        <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                    @break
-
-                                @case('switch')
-                                    <flux:switch
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                                    @break
-
-                                @case('textarea')
-                                    <flux:textarea
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                        rows="3"
-                                    />
-                                    @break
-
-                                @case('date')
-                                    <flux:date-picker
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                        selectable-header
-                                    />
-                                    @break
-
-                                @default
-                                    <flux:input
-                                        type="{{ $cfg['type'] }}"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                    />
-                            @endswitch
-                        </div>
-                    @endforeach
+                    <div>
+                        <flux:select
+                            label="Employee"
+                            wire:model.live="selectedEmployee"
+                        >
+                            <option value="">Select Employee</option>
+                            @foreach($listsForFields['employees'] as $id => $name)
+                                <option value="{{ $id }}">{{ $name }}</option>
+                            @endforeach
+                        </flux:select>
+                        @error('selectedEmployee') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:select
+                            label="Component"
+                            wire:model.live="salary_component_id"
+                        >
+                            <option value="">Select Component</option>
+                            @foreach($listsForFields['components'] as $id => $title)
+                                <option value="{{ $id }}">{{ $title }}</option>
+                            @endforeach
+                        </flux:select>
+                        @error('salary_component_id') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:date-picker
+                            label="Effective From"
+                            wire:model.live="effective_from"
+                            selectable-header
+                            placeholder="Select effective from date"
+                        />
+                        @error('effective_from') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:date-picker
+                            label="Effective To"
+                            wire:model.live="effective_to"
+                            selectable-header
+                            placeholder="Select effective to date"
+                        />
+                        @error('effective_to') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:input
+                            type="number"
+                            label="Total Amount"
+                            wire:model.live="total_amount"
+                        />
+                        @error('total_amount') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:input
+                            type="number"
+                            label="Paid Amount"
+                            wire:model.live="paid_amount"
+                        />
+                        @error('paid_amount') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:input
+                            type="number"
+                            label="Installments"
+                            wire:model.live="installments"
+                        />
+                        @error('installments') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:input
+                            type="number"
+                            label="Installment Amount"
+                            :value="$installment_amount"
+                            readonly
+                            disabled
+                        />
+                        @if($installment_amount === null)
+                            <span class="text-gray-400 text-xs">Enter total amount and installments to calculate</span>
+                        @endif
+                    </div>
+                    <div>
+                        <flux:select
+                            label="Status"
+                            wire:model.live="arrear_status"
+                        >
+                            <option value="">Select Status</option>
+                            @foreach($listsForFields['statuses'] as $val => $label)
+                                <option value="{{ $val }}">{{ $label }}</option>
+                            @endforeach
+                        </flux:select>
+                        @error('arrear_status') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div>
+                        <flux:select
+                            label="Disburse WEF Payroll Slot"
+                            wire:model.live="disburse_wef_payroll_slot_id"
+                        >
+                            <option value="">Select Payroll Slot</option>
+                            @foreach($listsForFields['payrollSlots'] as $id => $period)
+                                <option value="{{ $id }}">{{ $period }}</option>
+                            @endforeach
+                        </flux:select>
+                        @error('disburse_wef_payroll_slot_id') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="col-span-2">
+                        <flux:textarea
+                            label="Additional Rule"
+                            wire:model.live="additional_rule"
+                            rows="2"
+                        />
+                        @error('additional_rule') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
+                    <div class="col-span-2">
+                        <flux:textarea
+                            label="Remarks"
+                            wire:model.live="remarks"
+                            rows="3"
+                        />
+                        @error('remarks') <span class="text-danger">{{ $message }}</span> @enderror
+                    </div>
                 </div>
-
                 <div class="flex justify-end pt-4">
                     <flux:button type="submit" variant="primary">
-                        Save
+                        @if($isEditing) Save Changes @else Create Arrear @endif
                     </flux:button>
                 </div>
             </div>
@@ -183,81 +252,47 @@
         <flux:table.columns>
             @foreach($fieldConfig as $field => $cfg)
                 @if(in_array($field, $visibleFields))
-                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
+                    <flux:table.column class="table-cell-wrap">{{ $cfg['label'] }}</flux:table.column>
                 @endif
             @endforeach
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
-
         <flux:table.rows>
-            @foreach($this->list as $item)
-                <flux:table.row :key="$item->id">
+            @foreach($this->list as $arrear)
+                <flux:table.row :key="$arrear->id" class="table-cell-wrap">
                     @foreach($fieldConfig as $field => $cfg)
                         @if(in_array($field, $visibleFields))
-                            <flux:table.cell>
-                                @switch($cfg['type'])
-                                    @case('switch')
-                                        @if($item->$field)
-                                            <flux:badge color="green">Yes</flux:badge>
-                                        @else
-                                            <flux:badge color="gray">No</flux:badge>
-                                        @endif
+                            <flux:table.cell class="table-cell-wrap">
+                                @switch($field)
+                                    @case('employee_name')
+                                        {{ $arrear->employee->fname }} {{ $arrear->employee->lname }}
                                         @break
-                                    @case('select')
-                                        @if($field === 'employee_id')
-                                            {{ $listsForFields['employees'][$item->$field] ?? $item->$field }}
-                                        @elseif($field === 'salary_component_id')
-                                            {{ $listsForFields['salary_components'][$item->$field] ?? $item->$field }}
-                                        @elseif($field === 'arrear_status')
-                                            {{ $listsForFields['arrear_statuses'][$item->$field] ?? $item->$field }}
-                                        @else
-                                            {{ $item->$field }}
-                                        @endif
+                                    @case('salary_component_id')
+                                        {{ $arrear->salary_component->title ?? '' }}
                                         @break
-                                    @case('date')
-                                        {{ $item->$field ? date('jS F Y', strtotime($item->$field)) : '' }}
+                                    @case('effective_from')
+                                        {{ $arrear->effective_from ? $arrear->effective_from->format('jS F Y') : '' }}
                                         @break
-                                    @case('number')
-                                        {{ number_format($item->$field, 2) }}
+                                    @case('effective_to')
+                                        {{ $arrear->effective_to ? $arrear->effective_to->format('jS F Y') : '' }}
+                                        @break
+                                    @case('disburse_wef_payroll_slot_id')
+                                        {{ $listsForFields['payrollSlots'][$arrear->disburse_wef_payroll_slot_id] ?? '' }}
+                                        @break
+                                    @case('created_at')
+                                        {{ $arrear->created_at->format('jS F Y H:i:s') }}
                                         @break
                                     @default
-                                        {{ $item->$field }}
+                                        {{ $arrear->$field }}
                                 @endswitch
                             </flux:table.cell>
                         @endif
                     @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:button
-                                variant="primary"
-                                size="sm"
-                                icon="pencil"
-                                wire:click="edit({{ $item->id }})"
-                            />
-                            <flux:modal.trigger name="delete-{{ $item->id }}">
-                                <flux:button variant="danger" size="sm" icon="trash"/>
-                            </flux:modal.trigger>
+                            <flux:button variant="primary" size="sm" icon="pencil" wire:click="editArrear({{ $arrear->id }})" tooltip="Edit" />
+                            <flux:button variant="danger" size="sm" icon="trash" wire:click="removeArrear({{ $arrear->id }})" tooltip="Remove Arrear" />
                         </div>
-
-                        <!-- Delete Confirmation Modal -->
-                        <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
-                            <div class="space-y-6">
-                                <div>
-                                    <flux:heading size="lg">Delete Salary Arrear?</flux:heading>
-                                    <flux:text class="mt-2">
-                                        <p>You're about to delete this salary arrear. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Salary arrears with related records cannot be deleted.</p>
-                                    </flux:text>
-                                </div>
-                                <div class="flex gap-2">
-                                    <flux:spacer/>
-                                    <flux:modal.close>
-                                        <flux:button variant="ghost">Cancel</flux:button>
-                                    </flux:modal.close>
-                                    <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
-                                </div>
-                            </div>
-                        </flux:modal>
                     </flux:table.cell>
                 </flux:table.row>
             @endforeach

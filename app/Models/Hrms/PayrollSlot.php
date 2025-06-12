@@ -69,6 +69,7 @@ class PayrollSlot extends Model
 		'CM' => 'Completed',
         'RS' => 'Re-Started',
         'L' => 'Locked',
+		'PB' =>'Published'
 	];
 
 	public function salary_cycle()

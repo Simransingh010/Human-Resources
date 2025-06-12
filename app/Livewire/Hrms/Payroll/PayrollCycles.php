@@ -14,13 +14,16 @@ use App\Models\Hrms\EmployeesSalaryDay;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\EmployeeTaxRegime;
 use App\Models\Hrms\SalaryComponent;
-use Flux;
-use Illuminate\Support\Facades\Session;
-use Livewire\Attributes\Computed;
-use Livewire\Component;
-use Livewire\WithPagination;
 use App\Models\Hrms\EmpAttendance;
 use App\Models\Hrms\PayrollStepPayrollSlotCmd;
+use Livewire\Component;
+use Livewire\WithPagination;
+use Livewire\Attributes\Computed;
+use Illuminate\Support\Facades\Session;
+use Flux;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 
 class PayrollCycles extends Component
 {
@@ -745,7 +748,28 @@ class PayrollCycles extends Component
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Payroll/blades/payroll-cycles.blade.php'));
+        return view('livewire.hrms.payroll.blades.payroll-cycles');
+    }
+    
+    public function modal($name)
+    {
+        // Assuming Flux modals are handled via Livewire's own modal system or a custom helper
+        // If 'Flux' is a facade that provides a modal helper, ensure it's properly imported and used.
+        // For now, I'm providing a placeholder if 'Flux' itself is not directly defining a modal method.
+        // If your Flux library provides a specific Livewire modal trait or helper, you'll want to use that.
+        return new class($this, $name) {
+            public $component;
+            public $name;
+            public function __construct($component, $name)
+            {
+                $this->component = $component;
+                $this->name = $name;
+            }
+            public function show()
+            {
+                $this->component->dispatch('open-modal', name: $this->name);
+            }
+        };
     }
 
     public function showSalaryTracks($slotId)
@@ -924,9 +948,47 @@ class PayrollCycles extends Component
 
     public function employeeTaxComponentsStep($stepId, $slotId)
     {
-        $this->selectedSlotId = $slotId;
         $this->selectedStepId = $stepId;
-        $this->modal('employee-tax-components')->show();
+        $this->selectedSlotId = $slotId;
+        $this->dispatch('open-modal', name: 'employee-tax-components');
+    }
+
+    public function viewSalaryHolds($slotId)
+    {
+        $this->selectedSlotId = $slotId;
+        
+        // Find the salary holds step
+        $step = PayrollStepPayrollSlot::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->where('step_code_main', 'salary_holds')
+            ->first();
+
+        // if ($step) {
+        //     // Auto complete the step
+        //     $this->completePayrollStep($step->payroll_step_id, $slotId);
+        // }
+
+        // Open the modal using the same method as other modals
+        $this->modal('salary-holds')->show();
+    }
+
+    public function viewSalaryAdvances($slotId)
+    {
+        $this->selectedSlotId = $slotId;
+
+        // Find the salary advances step
+        $step = PayrollStepPayrollSlot::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->where('step_code_main', 'salary_advances')
+            ->first();
+
+        if ($step) {
+            // Auto complete the step
+            $this->completePayrollStep($step->payroll_step_id, $slotId);
+        }
+
+        // Open the modal using the same method as other modals
+        $this->modal('salary-advances')->show();
     }
 
     public function showLogs($stepId, $slotId)

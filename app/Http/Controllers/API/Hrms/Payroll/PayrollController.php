@@ -502,6 +502,7 @@ class PayrollController extends Controller
             // Get payroll slots for the employee's salary execution groups
             $payrollSlots = PayrollSlot::whereIn('salary_execution_group_id', $salaryExecutionGroupIds)
                 ->where('firm_id', $employee->firm_id)
+                ->where('payroll_slot_status', 'PB')
                 ->where(function($query) use ($startDate, $endDate) {
                     $query->whereBetween('from_date', [$startDate, $endDate])
                           ->orWhereBetween('to_date', [$startDate, $endDate]);

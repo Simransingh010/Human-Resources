@@ -198,7 +198,7 @@
 
         <flux:table.rows>
             @foreach ($this->list as $rec)
-                <flux:table.row :key="$rec->id" class="border-b">
+                <flux:table.row :key="$rec->id" class="border-b table-cell-wrap">
                     <flux:table.cell class="table-cell-wrap">
                         <div class="flex items-center gap-2">
                             @if($rec->color)
@@ -210,16 +210,16 @@
                             {{ $rec->name }}
                         </div>
                     </flux:table.cell>
-                    <flux:table.cell>{{ $rec->code }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->wire ?? '-' }}</flux:table.cell>
-                    <flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->code }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->wire ?? '-' }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">
                         @if($rec->icon)
                             <i class="{{ $rec->icon }}" title="{{ $rec->icon }}"></i>
                         @else
                             -
                         @endif
                     </flux:table.cell>
-                    <flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">
                         @if($rec->color)
                             <div class="flex items-center gap-2">
                                 <div class="w-4 h-4 rounded" style="background-color: {{ $rec->color }}"></div>
@@ -229,16 +229,16 @@
                             -
                         @endif
                     </flux:table.cell>
-                    <flux:table.cell>{{ $rec->tooltip ?? '-' }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->order ?? '-' }}</flux:table.cell>
-                    <flux:table.cell>{{ $rec->badge ?? '-' }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->tooltip ?? '-' }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->order ?? '-' }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap"> {{ $rec->badge ?? '-' }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:switch
                             wire:model="statuses.{{ $rec->id }}"
                             wire:click="toggleStatus({{ $rec->id }})"
                         />
                     </flux:table.cell>
-                    <flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">
                         <div class="flex space-x-2">
                             <flux:button variant="primary" size="sm" icon="pencil"
                                 wire:click="edit({{ $rec->id }})"/>
