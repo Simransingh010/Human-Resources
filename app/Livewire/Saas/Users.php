@@ -14,7 +14,6 @@ class Users extends Component
 {
     use WithPagination;
 
-    public array $listsForFields = [];
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
@@ -28,6 +27,28 @@ class Users extends Component
         'is_inactive' => 0,
     ];
 
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'name' => ['label' => 'Name', 'type' => 'text'],
+        'email' => ['label' => 'Email', 'type' => 'text'],
+        'phone' => ['label' => 'Phone', 'type' => 'text'],
+        'passcode' => ['label' => 'Passcode', 'type' => 'text'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
+    ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'name' => ['label' => 'Name', 'type' => 'text'],
+        'email' => ['label' => 'Email', 'type' => 'text'],
+        'phone' => ['label' => 'Phone', 'type' => 'text'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status'],
+    ];
+
+    public array $listsForFields = [];
+    public array $filters = [];
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
+
     public $isEditing = false;
     public $modal = false;
     public $panels;
@@ -37,6 +58,13 @@ class Users extends Component
     {
         $this->refreshStatuses();
         $this->initListsForFields();
+        
+        // Set default visible fields
+        $this->visibleFields = ['name', 'email', 'phone', 'is_inactive'];
+        $this->visibleFilterFields = ['name', 'email', 'phone'];
+        
+        // Initialize filters
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
     public function refreshStatuses()
@@ -49,15 +77,61 @@ class Users extends Component
     protected function initListsForFields(): void
     {
         $this->listsForFields['panellist'] = Panel::pluck('name', 'id')->toArray();
+        $this->listsForFields['status'] = [
+            '0' => 'Active',
+            '1' => 'Inactive'
+        ];
+    }
 
+    public function applyFilters()
+    {
+        $this->resetPage();
+    }
+
+    public function clearFilters()
+    {
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        $this->resetPage();
+    }
+
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
     }
 
     #[\Livewire\Attributes\Computed]
     public function list()
     {
         return User::query()
+            ->when($this->filters['name'], fn($query, $value) => 
+                $query->where('name', 'like', "%{$value}%"))
+            ->when($this->filters['email'], fn($query, $value) => 
+                $query->where('email', 'like', "%{$value}%"))
+            ->when($this->filters['phone'], fn($query, $value) => 
+                $query->where('phone', 'like', "%{$value}%"))
+            ->when($this->filters['is_inactive'] !== '', fn($query) => 
+                $query->where('is_inactive', $this->filters['is_inactive']))
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate(100);
     }
 
     public function store()

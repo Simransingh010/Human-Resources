@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class EmpWorkShift
- * 
+ *
  * @property int $id
  * @property int $firm_id
  * @property int $work_shift_id
@@ -22,7 +22,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
- * 
+ *
  * @property Employee $employee
  * @property Firm $firm
  * @property WorkShift $work_shift
@@ -45,6 +45,7 @@ class EmpWorkShift extends Model
 	protected $fillable = [
 		'firm_id',
 		'work_shift_id',
+        'work_shifts_algo_id',
 		'employee_id',
 		'start_date',
 		'end_date'

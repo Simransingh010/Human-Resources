@@ -9,6 +9,8 @@ namespace App\Models\Hrms;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Hrms\Employee;
+use App\Models\Saas\Firm;
 
 /**
  * Class EmployeeBankAccount
@@ -41,7 +43,8 @@ class EmployeeBankAccount extends Model
 		'firm_id' => 'int',
 		'employee_id' => 'int',
 		'is_primary' => 'bool',
-		'is_inactive' => 'bool'
+		'is_inactive' => 'bool',
+		'bankaccount' => 'string'
 	];
 
 	protected $fillable = [

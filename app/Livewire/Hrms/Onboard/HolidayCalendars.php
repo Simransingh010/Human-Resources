@@ -72,7 +72,7 @@ class HolidayCalendars extends Component
                 $query->where('is_inactive', $this->filters['status'] === 'inactive');
             })
             ->where('firm_id', session('firm_id'))
-            ->paginate(10);
+            ->paginate(2);
     }
 
     public function fetchCalendar($id)

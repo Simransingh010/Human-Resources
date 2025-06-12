@@ -8,12 +8,16 @@ use Livewire\Component;
 use App\Models\Hrms\Employee;
 use Flux;
 use Illuminate\Validation\Rule;
+use Livewire\WithPagination;
+use Livewire\Attributes\Computed;
 
 class Employees extends Component
 {
-    use \Livewire\WithPagination;
+    use WithPagination;
     public array $employeeStatuses = [];
     public array $listsForFields = [];
+
+
     public $employeeData = [
         'id' => null,
         'fname' => '',
@@ -28,15 +32,38 @@ class Employees extends Component
     public $sortDirection = 'desc';
     public $isEditing = false;
     public $selectedEmpId = null;
-    public $filters = [
-        'search' => '',
-        'status' => ''
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'fname' => ['label' => 'First Name', 'type' => 'text'],
+        'mname' => ['label' => 'Middle Name', 'type' => 'text'],
+        'lname' => ['label' => 'Last Name', 'type' => 'text'],
+        'email' => ['label' => 'Email', 'type' => 'email'],
+        'phone' => ['label' => 'Phone', 'type' => 'text'],
+        'gender' => ['label' => 'Gender', 'type' => 'select', 'listKey' => 'gender']
     ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'fname' => ['label' => 'First Name', 'type' => 'text'],
+        'lname' => ['label' => 'Last Name', 'type' => 'text'],
+        'email' => ['label' => 'Email', 'type' => 'text'],
+        'phone' => ['label' => 'Phone', 'type' => 'text'],
+        'gender' => ['label' => 'Gender', 'type' => 'select', 'listKey' => 'gender']
+    ];
+
+    public array $filters = [];
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
 
     public function mount()
     {
         $this->loadEmployeeStatuses();
+        $this->resetPage();
         $this->initListsForFields();
+        $this->visibleFields = ['fname', 'lname', 'email', 'phone'];
+        $this->visibleFilterFields = ['fname', 'lname', 'email', 'phone'];
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
     private function loadEmployeeStatuses()
@@ -58,33 +85,16 @@ class Employees extends Component
         }
     }
 
-    #[\Livewire\Attributes\Computed]
+    #[Computed]
     public function employeeslist()
     {
         return Employee::query()
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->when($this->filters['search'], function($query) {
-                $query->where(function($q) {
-                    $search = '%' . $this->filters['search'] . '%';
-                    $q->where('fname', 'like', $search)
-                        ->orWhere('lname', 'like', $search)
-                        ->orWhere('email', 'like', $search);
-                });
-            })
-            ->when(!empty($this->filters['employees']), function($query) {
-                $query->whereIn('id', $this->filters['employees']);
-            })
-            ->when(!empty($this->filters['phone']), function($query) {
-                $search = '%' . $this->filters['phone'] . '%';
-                $query->where('phone','like',  $search);
-            })
-            ->when(!empty($this->filters['email']), function($query) {
-                $search = '%' . $this->filters['email'] . '%';
-                $query->where('email','like',  $search);
-            })
-            ->when($this->filters['status'] !== '', function($query) {
-                $query->where('is_inactive', $this->filters['status'] === 'inactive');
-            })
+            ->when($this->filters['fname'], fn($query, $value) => $query->where('fname', 'like', "%{$value}%"))
+            ->when($this->filters['lname'], fn($query, $value) => $query->where('lname', 'like', "%{$value}%"))
+            ->when($this->filters['email'], fn($query, $value) => $query->where('email', 'like', "%{$value}%"))
+            ->when($this->filters['phone'], fn($query, $value) => $query->where('phone', 'like', "%{$value}%"))
+            ->when($this->filters['gender'], fn($query, $value) => $query->where('gender', $value))
             ->where('firm_id', session('firm_id'))
             ->paginate(10);
     }
@@ -317,6 +327,11 @@ class Employees extends Component
     protected function initListsForFields(): void
     {
         $this->listsForFields['employeelist'] = Employee::where('firm_id',session('firm_id'))->pluck('fname','id');
+        $this->listsForFields['gender'] = [
+            '1' => 'Male',
+            '2' => 'Female',
+            '3' => 'Others'
+        ];
     }
 
     public function resetForm()
@@ -334,13 +349,11 @@ class Employees extends Component
     }
     public function applyFilters()
     {
-        // Optional: log or track something
-        $this->filters = $this->filters; // triggers reactivity
-        $this->resetPage(); // ensure pagination resets after filter
+        $this->resetPage();
     }
     public function clearFilters()
     {
-        $this->reset('filters');
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
         $this->resetPage();
     }
     public function toggleStatus($employeeId)
@@ -434,6 +447,30 @@ class Employees extends Component
     {
         $this->selectedEmpId = $employeeId;
         $this->modal('add-leave-requests')->show();
+    }
+
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
     }
 
     public function render()

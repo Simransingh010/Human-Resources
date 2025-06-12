@@ -16,8 +16,12 @@ use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
 
-class TdsReportExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents
+class TdsReportExport extends DefaultValueBinder implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, WithCustomValueBinder
 {
     protected $filters;
     protected $start;
@@ -148,7 +152,9 @@ class TdsReportExport implements FromCollection, WithHeadings, WithMapping, With
             ->whereBetween('salary_period_from', [$this->start, $this->end])
             ->sum('amount_payable');
         
-
+        // Ensure numeric values are properly formatted
+        $monthlyGrossSalary = is_numeric($monthlyGrossSalary) ? (float)$monthlyGrossSalary : 0;
+        $monthlyTds = is_numeric($monthlyTds) ? (float)$monthlyTds : 0;
             
         // Determine if staff is teaching or non-teaching
         $staffType = $job && isset($job->is_teaching_staff) && $job->is_teaching_staff ? 'Teaching' : 'Non-Teaching';
@@ -164,6 +170,22 @@ class TdsReportExport implements FromCollection, WithHeadings, WithMapping, With
         ];
 
         return $row;
+    }
+
+    public function bindValue(Cell $cell, $value)
+    {
+        // Columns F (5) and G (6) are 0-indexed
+        if (in_array($cell->getColumn(), ['F', 'G'])) {
+            // Ensure the value is numeric before setting it
+            if (is_numeric($value)) {
+                $cell->setValueExplicit((float)$value, DataType::TYPE_NUMERIC);
+                return true;
+            }
+            // If not numeric, set to 0
+            $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
+            return true;
+        }
+        return parent::bindValue($cell, $value);
     }
 
     public function styles(Worksheet $sheet)
@@ -212,11 +234,13 @@ class TdsReportExport implements FromCollection, WithHeadings, WithMapping, With
                 $dataRowEnd = $sheet->getHighestRow();
                 $sheet->getStyle("A{$dataRowStart}:{$highestColumn}{$dataRowEnd}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
 
-                // Format number columns to show 2 decimal places
-                $sheet->getStyle("F{$dataRowStart}:G{$dataRowEnd}")
-                    ->getNumberFormat()
-                    ->setFormatCode('#,##0.00');
-                
+                // Format numeric columns (F and G)
+                foreach (['F', 'G'] as $col) {
+                    $sheet->getStyle("{$col}{$dataRowStart}:{$col}{$dataRowEnd}")
+                        ->getNumberFormat()
+                        ->setFormatCode('#,##0.00');
+                }
+
                 // Auto width for all columns
                 foreach (range('A', $highestColumn) as $col) {
                     $sheet->getColumnDimension($col)->setAutoSize(true);

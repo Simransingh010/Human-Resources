@@ -209,18 +209,19 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
+                                    variant="primary"
+                                    class="p-1"
+                                    icon="pencil"
+                                    wire:click="edit({{ $item->id }})"
+                            />
+                            <flux:button
                                     wire:click="showLeaveTransactions({{ $item->id }})"
                                     color="green"
                                     size="sm"
                             >
                                     Transactions
                             </flux:button>
-{{--                            <flux:button--}}
-{{--                                variant="primary"--}}
-{{--                                size="sm"--}}
-{{--                                icon="pencil"--}}
-{{--                                wire:click="edit({{ $item->id }})"--}}
-{{--                            />--}}
+
 {{--                            <flux:modal.trigger name="delete-{{ $item->id }}">--}}
 {{--                                <flux:button variant="danger" size="sm" icon="trash"/>--}}
 {{--                            </flux:modal.trigger>--}}

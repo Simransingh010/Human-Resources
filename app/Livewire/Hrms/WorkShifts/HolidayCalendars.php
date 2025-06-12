@@ -16,7 +16,7 @@ class HolidayCalendars extends Component
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
     public $statuses;
-    public $perPage = 10;
+    public $perPage = 2;
     public $showHolidaysModal = false;
 
     public $formData = [

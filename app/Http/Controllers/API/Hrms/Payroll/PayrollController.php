@@ -208,9 +208,30 @@ class PayrollController extends Controller
                 'message_display' => 'none',
                 'message' => 'Employee holidays fetched successfully',
                 'data' => [
-                    'holidays' => $formattedHolidays,
-                    'calendar' => $calendarInfo,
-                    'work_shift' => $workShiftInfo,
+                    'holidays' => $formattedHolidays->map(function($holiday) {
+                        return [
+                            'id' => $holiday['id'],
+                            'title' => $holiday['title'],
+                            'description' => $holiday['description'],
+                            'repeat_annually' => (bool) $holiday['repeat_annually'],
+                            'day_status' => $holiday['day_status'] ?? 'H',
+                            'day_status_label' => Holiday::WORK_STATUS_SELECT[$holiday['day_status'] ?? 'H'] ?? 'Holiday',
+                            'start_date' => $holiday['start_date'] ? $holiday['start_date'] : null,
+                            'end_date' => $holiday['end_date'] ? $holiday['end_date'] : ($holiday['start_date'] ? $holiday['start_date'] : null)
+                        ];
+                    })->toArray(),
+                    'calendar' => $calendarInfo ? [
+                        'id' => $calendarInfo['id'],
+                        'title' => $calendarInfo['title'],
+                        'description' => $calendarInfo['description'],
+                        'is_default' => $calendarInfo['is_default']
+                    ] : [],
+                    'work_shift' => $workShiftInfo ? [
+                        'id' => $workShiftInfo['id'],
+                        'title' => $workShiftInfo['title'],
+                        'assignment_start_date' => $workShiftInfo['assignment_start_date'],
+                        'assignment_end_date' => $workShiftInfo['assignment_end_date']
+                    ] : [],
                     'filter_period' => [
                         'start_date' => $formattedStartDate,
                         'end_date' => $formattedEndDate
@@ -222,7 +243,13 @@ class PayrollController extends Controller
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => [
+                    'holidays' => [],
+                    'calendar' => [],
+                    'work_shift' => [],
+                    'filter_period' => []
+                ]
             ], 500);
         }
     }   
@@ -363,8 +390,35 @@ class PayrollController extends Controller
                 'message_display' => 'none',
                 'message' => $responseMessage,
                 'data' => [
-                    'employee' => $employeeData,
-                    'components' => $groupedComponents,
+                    'employee' => $employeeData ? [
+                        'id' => $employeeData['id'],
+                        'name' => $employeeData['name'],
+                        'employee_code' => $employeeData['employee_code'],
+                        'department' => $employeeData['department'],
+                        'designation' => $employeeData['designation']
+                    ] : [],
+                    'components' => [
+                        'earnings' => collect($groupedComponents['earnings'])->map(function($component) {
+                            return [
+                                'id' => $component['id'],
+                                'title' => $component['title'],
+                                'amount' => (float)$component['amount'],
+                                'nature' => $component['nature'],
+                                'component_type' => $component['component_type'],
+                                'amount_type' => $component['amount_type']
+                            ];
+                        })->toArray(),
+                        'deductions' => collect($groupedComponents['deductions'])->map(function($component) {
+                            return [
+                                'id' => $component['id'],
+                                'title' => $component['title'],
+                                'amount' => (float)$component['amount'],
+                                'nature' => $component['nature'],
+                                'component_type' => $component['component_type'],
+                                'amount_type' => $component['amount_type']
+                            ];
+                        })->toArray()
+                    ],
                     'totals' => [
                         'earnings' => $totalEarnings,
                         'deductions' => $totalDeductions,
@@ -378,7 +432,20 @@ class PayrollController extends Controller
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => [
+                    'employee' => [],
+                    'components' => [
+                        'earnings' => [],
+                        'deductions' => []
+                    ],
+                    'totals' => [
+                        'earnings' => 0,
+                        'deductions' => 0,
+                        'net_salary' => 0
+                    ],
+                    'requires_sync' => false
+                ]
             ], 500);
         }
     }
@@ -462,72 +529,68 @@ class PayrollController extends Controller
                 ], 200);
             }
 
-            // Format the payroll slots for response
-            $formattedSlots = $payrollSlots->map(function($slot) {
-                // Get latest slot command status if available
-                $latestCommand = $slot->payroll_slots_cmds->sortByDesc('created_at')->first();
-                
-                $data = [
-                    'id' => $slot->id,
-                    'title' => $slot->title,
-                    'from_date' => $slot->from_date->format('Y-m-d'),
-                    'to_date' => $slot->to_date->format('Y-m-d'),
-                    'payroll_slot_status' => $slot->payroll_slot_status,
-                    'payroll_slot_status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$slot->payroll_slot_status] ?? null,
-                    'salary_execution_group_id' => $slot->salary_execution_group_id,
-                    'salary_cycle_id' => $slot->salary_cycle_id,
-                    'command_history' => []
+            // If no salary execution groups or no payroll slots, return empty array
+            if ($employee->salary_execution_groups->isEmpty() || $payrollSlots->isEmpty()) {
+                return response()->json([
+                    'message_type' => $employee->salary_execution_groups->isEmpty() ? 'info' : 'success',
+                    'message_display' => $employee->salary_execution_groups->isEmpty() ? 'popup' : 'none',
+                    'message' => $employee->salary_execution_groups->isEmpty() ? 'No salary execution groups assigned to this employee' : 'No payroll slots found for the specified period',
+                    'data' => []
+                ], 200);
+            }
+
+            // Build the array of maps for each payroll slot
+            $data = $payrollSlots->map(function($slot) use ($employee, $startDate, $endDate) {
+                $group = $employee->salary_execution_groups->firstWhere('id', $slot->salary_execution_group_id);
+                return [
+                    'salary_execution_group' => $group ? [
+                        'id' => $group->id,
+                        'title' => $group->title,
+                        'description' => $group->description,
+                        'is_inactive' => (bool) $group->is_inactive
+                    ] : [],
+                    'payroll_slot' => [
+                        'id' => $slot->id,
+                        'title' => $slot->title,
+                        'from_date' => $slot->from_date->format('Y-m-d'),
+                        'to_date' => $slot->to_date->format('Y-m-d'),
+                        'payroll_slot_status' => $slot->payroll_slot_status,
+                        'payroll_slot_status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$slot->payroll_slot_status] ?? null,
+                        'salary_execution_group_id' => $slot->salary_execution_group_id,
+                        'salary_cycle_id' => $slot->salary_cycle_id,
+                        'command_history' => $slot->payroll_slots_cmds->map(function($cmd) {
+                            return [
+                                'id' => $cmd->id,
+                                'cmd_status' => $cmd->payroll_slot_status,
+                                'cmd_status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$cmd->payroll_slot_status] ?? null,
+                                'remarks' => $cmd->run_payroll_remarks,
+                                'created_at' => $cmd->created_at->format('Y-m-d H:i:s'),
+                                'user_id' => $cmd->user_id
+                            ];
+                        })->sortByDesc('created_at')->values()->all(),
+                        'latest_cmd_status' => optional($slot->payroll_slots_cmds->sortByDesc('created_at')->first())->payroll_slot_status,
+                        'latest_cmd_status_label' => optional($slot->payroll_slots_cmds->sortByDesc('created_at')->first()) ? PayrollSlotsCmd::PAYROLL_SLOT_STATUS[optional($slot->payroll_slots_cmds->sortByDesc('created_at')->first())->payroll_slot_status] ?? null : null
+                    ],
+                    'filter_period' => [
+                        'start_date' => $startDate->format('Y-m-d'),
+                        'end_date' => $endDate->format('Y-m-d')
+                    ]
                 ];
-                
-                // Add command history details if available
-                if ($slot->payroll_slots_cmds->isNotEmpty()) {
-                    $data['command_history'] = $slot->payroll_slots_cmds->map(function($cmd) {
-                        return [
-                            'id' => $cmd->id,
-                            'cmd_status' => $cmd->payroll_slot_status,
-                            'cmd_status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$cmd->payroll_slot_status] ?? null,
-                            'remarks' => $cmd->run_payroll_remarks,
-                            'created_at' => $cmd->created_at->format('Y-m-d H:i:s'),
-                            'user_id' => $cmd->user_id
-                        ];
-                    })->sortByDesc('created_at')->values()->all();
-                    
-                    // Add latest command status
-                    if ($latestCommand) {
-                        $data['latest_cmd_status'] = $latestCommand->payroll_slot_status;
-                        $data['latest_cmd_status_label'] = PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$latestCommand->payroll_slot_status] ?? null;
-                    }
-                }
-                
-                return $data;
-            });
+            })->values()->toArray();
 
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => count($payrollSlots) . ' payroll slots found',
-                'data' => [
-                    'salary_execution_groups' => $employee->salary_execution_groups->map(function($group) {
-                        return [
-                            'id' => $group->id,
-                            'title' => $group->title,
-                            'description' => $group->description,
-                            'is_inactive' => (bool) $group->is_inactive
-                        ];
-                    }),
-                    'payroll_slots' => $formattedSlots,
-                    'filter_period' => [
-                        'start_date' => $startDate->format('Y-m-d'),
-                        'end_date' => $endDate->format('Y-m-d')
-                    ]
-                ]
+                'data' => $data
             ], 200);
 
         } catch (\Throwable $e) {
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => []
             ], 500);
         }
     }
@@ -666,89 +729,76 @@ class PayrollController extends Controller
                 ], 200);
             }
             
-            // Format the components
-            $formattedComponents = [
-                'earnings' => [],
-                'deductions' => []
-            ];
-            
-            foreach ($payrollComponents as $component) {
-                $componentData = [
-                    'id' => $component->id,
-                    'component_id' => $component->salary_component_id,
-                    'component_name' => $component->salary_component->title ?? 'Unknown Component',
-                    'nature' => $component->nature,
-                    'component_type' => $component->component_type,
-                    'amount_type' => $component->amount_type,
-                    'amount_full' => $component->amount_full,
-                    'amount_payable' => $component->amount_payable,
-                    'amount_paid' => $component->amount_paid,
-                    'taxable' => (bool)$component->taxable,
-                    'sequence' => $component->sequence,
-                ];
-                
-                if ($component->nature === 'earning') {
-                    $formattedComponents['earnings'][] = $componentData;
-                } else if ($component->nature === 'deduction') {
-                    $formattedComponents['deductions'][] = $componentData;
-                }
+            // If payroll is not processed or no components, return empty array
+            if (!$isPayrollProcessed || $payrollComponents->isEmpty()) {
+                return response()->json([
+                    'message_type' => 'success',
+                    'message_display' => 'none',
+                    'message' => 'Payroll components fetched successfully',
+                    'data' => []
+                ], 200);
             }
-            
-            // Sort components by sequence
-            usort($formattedComponents['earnings'], function($a, $b) {
-                return $a['sequence'] - $b['sequence'];
-            });
-            
-            usort($formattedComponents['deductions'], function($a, $b) {
-                return $a['sequence'] - $b['sequence'];
-            });
-            
-            // Get employee details
-            $employeeData = [
-                'id' => $employee->id,
-                'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
-                'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
-                'department' => $employee->emp_job_profile && $employee->emp_job_profile->department ? $employee->emp_job_profile->department->title : null,
-                'designation' => $employee->emp_job_profile && $employee->emp_job_profile->designation ? $employee->emp_job_profile->designation->title : null,
-            ];
-            
-            // Build response
-            return response()->json([
-                'message_type' => 'success',
-                'message_display' => 'none',
-                'message' => 'Payroll components fetched successfully',
-                'data' => [
+
+            // Build the array of maps for each component
+            $data = $payrollComponents->map(function($component) use ($payrollSlot, $employee, $totalEarnings, $totalDeductions, $latestCommand, $isPayrollProcessed) {
+                return [
                     'payroll_slot' => [
                         'id' => $payrollSlot->id,
                         'title' => $payrollSlot->title,
                         'from_date' => $payrollSlot->from_date->format('Y-m-d'),
                         'to_date' => $payrollSlot->to_date->format('Y-m-d'),
                         'status' => $payrollSlot->payroll_slot_status,
-                        'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null,
+                        'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null
                     ],
-                    'employee' => $employeeData,
-                    'components' => $formattedComponents,
+                    'employee' => [
+                        'id' => $employee->id,
+                        'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
+                        'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
+                        'department' => $employee->emp_job_profile && $employee->emp_job_profile->department ? $employee->emp_job_profile->department->title : null,
+                        'designation' => $employee->emp_job_profile && $employee->emp_job_profile->designation ? $employee->emp_job_profile->designation->title : null,
+                    ],
+                    'component' => [
+                        'id' => $component->id,
+                        'component_id' => $component->salary_component_id,
+                        'component_name' => $component->salary_component->title ?? 'Unknown Component',
+                        'nature' => $component->nature,
+                        'component_type' => $component->component_type,
+                        'amount_type' => $component->amount_type,
+                        'amount_full' => $component->amount_full,
+                        'amount_payable' => $component->amount_payable,
+                        'amount_paid' => $component->amount_paid,
+                        'taxable' => (bool)$component->taxable,
+                        'sequence' => $component->sequence
+                    ],
                     'totals' => [
                         'earnings' => $totalEarnings,
                         'deductions' => $totalDeductions,
                         'net_salary' => $totalEarnings - $totalDeductions
                     ],
-                    'is_processed' => true,
+                    'is_processed' => $isPayrollProcessed,
                     'latest_command' => $latestCommand ? [
                         'status' => $latestCommand->payroll_slot_status,
                         'status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$latestCommand->payroll_slot_status] ?? null,
                         'remarks' => $latestCommand->run_payroll_remarks,
-                        'created_at' => $latestCommand->created_at->format('Y-m-d H:i:s'),
-                    ] : null
-                ]
+                        'created_at' => $latestCommand->created_at->format('Y-m-d H:i:s')
+                    ] : []
+                ];
+            })->values()->toArray();
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Payroll components fetched successfully',
+                'data' => $data
             ], 200);
             
         } catch (\Throwable $e) {
             return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => []
             ], 500);
         }
     }
-   }
+}

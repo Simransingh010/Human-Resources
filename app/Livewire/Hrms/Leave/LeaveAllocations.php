@@ -682,7 +682,7 @@ class LeaveAllocations extends Component
             DB::transaction(function () use ($batchId) {
                 $batch = Batch::with('items')->findOrFail($batchId);
 
-                    // First force delete all transactions
+                // First force delete all transactions
                 $transactionItems = $batch->items()
                     ->where('model_type', EmpLeaveTransaction::class)
                     ->get();

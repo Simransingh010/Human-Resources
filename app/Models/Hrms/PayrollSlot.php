@@ -86,6 +86,10 @@ class PayrollSlot extends Model
 		return $this->belongsTo(SalaryExecutionGroup::class);
 	}
 
+
+   //Undefined constant App\Models\Hrms\PayrollSlot::STATUS_SELECT
+    //GET start.iqdigit.com
+    
 	public function employees_lop_days_logs()
 	{
 		return $this->hasMany(EmployeesLopDaysLog::class);

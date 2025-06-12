@@ -92,18 +92,18 @@ class WorkShiftsAlgos extends Component
     ];
 
     public $weekDays = [
+        0 => 'Sunday',
         1 => 'Monday',
         2 => 'Tuesday',
         3 => 'Wednesday',
         4 => 'Thursday',
         5 => 'Friday',
-        6 => 'Saturday',
-        7 => 'Sunday'
+        6 => 'Saturday'
     ];
 
     // Field configuration for form and table
     public array $fieldConfig = [
-        'work_shift_id' => ['label' => 'Work Shift', 'type' => 'select', 'listKey' => 'work_shifts'],
+        'work_shift_id' => ['label' => 'Work Shift', 'type' => 'select', 'listKey' => 'work_shifts', 'disabled' => true],
         'start_date' => ['label' => 'Start Date', 'type' => 'date'],
         'end_date' => ['label' => 'End Date', 'type' => 'date'],
         'start_time' => ['label' => 'Start Time', 'type' => 'time'],
@@ -135,8 +135,8 @@ class WorkShiftsAlgos extends Component
 
     public function mount($selectedWorkShiftId)
     {
-        $this->selectedWorkShiftId = WorkShift::findOrFail($selectedWorkShiftId)->id;
-//        dd($this->selectedWorkShiftId);
+        $this->selectedWorkShiftId = $selectedWorkShiftId;
+        $this->formData['work_shift_id'] = $this->selectedWorkShiftId;
         $this->resetPage();
         $this->refreshStatuses();
         $this->getWorkShiftsForSelect();
@@ -222,8 +222,9 @@ class WorkShiftsAlgos extends Component
 
     public function store()
     {
+
         $validatedData = $this->validate([
-            'formData.work_shift_id' => 'required|exists:work_shifts,id',
+//            'formData.work_shift_id' => 'required|exists:work_shifts,id',
             'formData.start_date' => 'nullable|date',
             'formData.end_date' => 'nullable|date|after_or_equal:formData.start_date',
             'formData.start_time' => 'nullable|date_format:H:i',
@@ -240,6 +241,30 @@ class WorkShiftsAlgos extends Component
             'formData.comp_off' => 'nullable|string',
             'formData.is_inactive' => 'boolean',
         ]);
+
+        // Check for overlapping algorithms for the same work shift
+        $overlappingAlgo = WorkShiftsAlgo::where('work_shift_id', $this->formData['work_shift_id'])
+            ->when($this->isEditing, fn($query) => $query->where('id', '!=', $this->formData['id']))
+            ->where(function ($query) {
+                $query->whereBetween('start_date', [$this->formData['start_date'], $this->formData['end_date']])
+                    ->orWhereBetween('end_date', [$this->formData['start_date'], $this->formData['end_date']])
+                    ->orWhere(function ($q) {
+                        $q->where('start_date', '<=', $this->formData['start_date'])
+                            ->where('end_date', '>=', $this->formData['end_date']);
+                    });
+            })
+            ->first();
+
+        if ($overlappingAlgo) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Validation Error',
+                text: "Cannot create overlapping work shift algorithms. There is already an algorithm for this work shift from " .
+                    Carbon::parse($overlappingAlgo->start_date)->format('jS M Y') . " to " .
+                    Carbon::parse($overlappingAlgo->end_date)->format('jS M Y'),
+            );
+            return;
+        }
 
         // Validate week off pattern structure
         if (!isset($this->weekOffPattern['type']) || !array_key_exists($this->weekOffPattern['type'], $this->weekOffTypes)) {
@@ -278,13 +303,16 @@ class WorkShiftsAlgos extends Component
 
         // Add firm_id from session and week off pattern
         $validatedData['formData']['firm_id'] = session('firm_id');
+        $validatedData['formData']['work_shift_id'] = $this->selectedWorkShiftId;
         $validatedData['formData']['week_off_pattern'] = json_encode($this->weekOffPattern);
+
 
         if ($this->isEditing) {
             $algo = WorkShiftsAlgo::findOrFail($this->formData['id']);
             $algo->update($validatedData['formData']);
             $toastMsg = 'Work Shift Algorithm updated successfully';
         } else {
+
             WorkShiftsAlgo::create($validatedData['formData']);
             $toastMsg = 'Work Shift Algorithm added successfully';
         }
@@ -353,9 +381,25 @@ class WorkShiftsAlgos extends Component
 
     public function resetForm()
     {
-        $this->reset(['formData']);
-        $this->formData['allow_wfh'] = false;
-        $this->formData['is_inactive'] = false;
+        $this->selectedAlgoId = null;
+        $this->formData = [
+            'id' => null,
+            'work_shift_id' => '',
+            'start_date' => '',
+            'end_date' => '',
+            'start_time' => '',
+            'end_time' => '',
+            'week_off_pattern' => '',
+            'work_breaks' => '',
+            'holiday_calendar_id' => '',
+            'allow_wfh' => false,
+            'half_day_rule' => '',
+            'overtime_rule' => '',
+            'rules_config' => '',
+            'late_panelty' => '',
+            'comp_off' => '',
+            'is_inactive' => false,
+        ];
         $this->isEditing = false;
 
         // Reset week off pattern to default state
@@ -755,7 +799,7 @@ class WorkShiftsAlgos extends Component
 
         // Check fixed weekly pattern (third priority)
         if (in_array($weekOffPattern['type'], ['fixed_weekly', 'combined'])) {
-            $dayNumber = $date->dayOfWeek + 1; // Convert to 1-7 format (Monday-Sunday)
+            $dayNumber = $date->dayOfWeek; // This now returns 0-6 (Sunday-Saturday)
             if (in_array($dayNumber, $weekOffPattern['fixed_weekly']['off_days'])) {
                 $isOff = true;
             }
@@ -993,6 +1037,19 @@ class WorkShiftsAlgos extends Component
                 text: $e->getMessage(),
             );
         }
+    }
+
+    public function showAddModal()
+    {
+        $this->resetForm();
+        $this->modal('mdl-algo')->show();
+    }
+
+    public function showAllocation($algoId, $workShiftId)
+    {
+        $this->selectedAlgoId = $algoId;
+        $this->selectedWorkShiftId = $workShiftId;
+        $this->modal('work-shift-allocation')->show();
     }
 
     public function render()

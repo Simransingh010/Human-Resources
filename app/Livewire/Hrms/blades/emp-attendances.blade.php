@@ -25,15 +25,11 @@
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <flux:select
+                    <flux:input
                         label="Employee"
                         wire:model="attendanceData.employee_id"
-                    >
-                        <option value="">Select Employee</option>
-                        @foreach($this->employeesList as $id => $name)
-                            <option value="{{ $id }}">{{ $name }}</option>
-                        @endforeach
-                    </flux:select>
+                        placeholder="Enter employee name"
+                    />
 
                     <flux:input
                         type="date"
@@ -112,42 +108,103 @@
         </form>
     </flux:modal>
 
-    <form wire:submit.prevent="applyFilters">
-        <flux:heading level="3" size="lg" >Filter Records</flux:heading>
-        <flux:card size="sm" class="sm:p-2 !rounded-xl rounded-xl! mb-1 rounded-t-lg p-0 bg-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+    <flux:separator class="mt-2 mb-2" />
 
-            <div class="grid md:grid-cols-3 gap-2 items-end">
-                <div class="">
-                    <flux:date-picker with-today mode="range" with-presets wire:model="filters.date_range"/>
-                </div>
+    <!-- Filters Start -->
+    <flux:card>
+        <flux:heading>Filters</flux:heading>
+        <div class="flex flex-wrap gap-4">
+            @foreach($filterFields as $field => $cfg)
+                @if(in_array($field, $visibleFilterFields))
+                    <div class="w-1/4">
+                        @switch($cfg['type'])
+                            @case('daterange')
+                                <flux:date-picker 
+                                    with-today 
+                                    mode="range" 
+                                    with-presets 
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                                @break
 
-                <div class="">
-                    <flux:select variant="listbox" searchable multiple placeholder="Employees" wire:model="filters.employees">
-                        @foreach($this->listsForFields['employeelist'] as $key => $value)
-                            <flux:select.option value="{{ $key }}">{{ $value }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                </div>
+                            @case('select')
+                                <flux:select
+                                    variant="listbox"
+                                    searchable
+                                    multiple
+                                    placeholder="All {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                >
+                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                @break
 
-                <div class="flex flex-wrap gap-2">
-                    <flux:select variant="listbox" multiple placeholder="Status" wire:model="filters.status">
-                        @foreach($this->listsForFields['attendance_status_main'] as $key => $value)
-                            <flux:select.option value="{{ $key }}">{{ $value }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                    <div class="min-w-[100px]">
-                        <flux:button type="submit" variant="primary" class="w-full">Go</flux:button>
+                            @default
+                                <flux:input
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                        @endswitch
                     </div>
-                    <div class="min-w-[100px]">
-                        <flux:button variant="filled" class="w-full px-2" tooltip="Cancel Filter" icon="x-circle" wire:click="clearFilters()"></flux:button>
-                    </div>
-                </div>
+                @endif
+            @endforeach
+
+            <flux:button.group>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
+                <flux:modal.trigger name="mdl-show-hide-filters">
+                    <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="mdl-show-hide-columns">
+                    <flux:button variant="outline" tooltip="Set Columns" icon="table-cells"></flux:button>
+                </flux:modal.trigger>
+            </flux:button.group>
+        </div>
+    </flux:card>
+
+    <!-- Filter Fields Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-filters" variant="flyout">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Filters</flux:heading>
             </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($filterFields as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFilterFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleFilterColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
 
-        </flux:card>
-    </form>
-
-
+    <!-- Columns Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Columns</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
 
     <flux:table :paginate="$this->attendancesList">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">

@@ -3,6 +3,7 @@
 namespace App\Livewire\Hrms\Workshifts;
 
 use App\Models\Hrms\WorkShift;
+use App\Models\Hrms\WorkShiftsAlgo;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Carbon\Carbon;
@@ -26,7 +27,8 @@ class WorkShifts extends Component
     public $isEditing = false;
     public $modal = false;
     public $perPage = 10;
-
+    public $workShiftsAlgo = [];
+    public $listsForFields = [];
     // Field configuration for form and table
     public array $fieldConfig = [
         'shift_title' => ['label' => 'Title', 'type' => 'text'],
@@ -45,6 +47,22 @@ class WorkShifts extends Component
         'is_inactive' => '',
     ];
 
+    // Lists for Work Shifts Algo
+
+    public array $fieldConfigAlgo = [
+        'work_shift_id' => ['label' => 'Work Shift', 'type' => 'select', 'listKey' => 'work_shifts'],
+        'start_date' => ['label' => 'Start Date', 'type' => 'date'],
+        'end_date' => ['label' => 'End Date', 'type' => 'date'],
+        'start_time' => ['label' => 'Start Time', 'type' => 'time'],
+        'week_off_pattern' => ['label' => 'Week Off Pattern', 'type' => 'text'],
+        'end_time' => ['label' => 'End Time', 'type' => 'time'],
+
+        'work_breaks' => ['label' => 'Work Breaks', 'type' => 'multiselect', 'listKey' => 'work_breaks'],
+        'holiday_calendar_id' => ['label' => 'Holiday Calendar', 'type' => 'select', 'listKey' => 'holiday_calendars'],
+        'allow_wfh' => ['label' => 'Allow WFH', 'type' => 'boolean'],
+        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+    ];
+
     public array $visibleFields = [];
     public array $visibleFilterFields = [];
 
@@ -52,6 +70,14 @@ class WorkShifts extends Component
     {
         $this->resetPage();
         $this->refreshStatuses();
+        $this->workShiftsAlgo = collect([]);
+        
+        // Initialize lists for fields
+        $this->listsForFields['work_breaks'] = [
+            '7' => '7 Minutes',
+            '11' => '11 Minutes',
+            // Add more break options as needed
+        ];
 
         // Set default visible fields and filters
         $this->visibleFields = ['shift_title', 'shift_desc'];
@@ -183,6 +209,13 @@ class WorkShifts extends Component
         $this->modal('emp-work-shifts-modal')->show();
     }
 
+    public function showWorkShiftSetup($id)
+    {
+        $this->selectedShiftId = $id;
+//        $this->loadWorkShiftsAlgos();
+        $this->modal('work-shifts-algos-modal')->show();
+    }
+
     public function toggleColumn(string $field)
     {
         if (in_array($field, $this->visibleFields)) {
@@ -205,6 +238,86 @@ class WorkShifts extends Component
         } else {
             $this->visibleFilterFields[] = $field;
         }
+    }
+
+    public function handleAccordionClick($workShiftId)
+    {
+        $this->selectedShiftId = $workShiftId;
+//        $this->loadWorkShiftsAlgos();
+    }
+
+    public function configureWeekOffPattern($algoId)
+    {
+        // Add your week off pattern configuration logic here
+        $this->dispatch('openWeekOffPatternConfig', algoId: $algoId);
+    }
+
+    public function toggleAlgoStatus($algoId)
+    {
+        $algo = WorkShiftsAlgo::find($algoId);
+        if ($algo) {
+            $algo->is_inactive = !$algo->is_inactive;
+            $algo->save();
+        }
+    }
+
+    protected function refreshAlgoStatuses()
+    {
+        if ($this->selectedShiftId) {
+            $algos = WorkShiftsAlgo::query()
+                ->where('firm_id', session('firm_id'))
+                ->where('work_shift_id', $this->selectedShiftId)
+                ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
+                ->get();
+                
+            $this->workShiftsAlgo = $algos->toArray();
+        }
+    }
+
+    #[\Livewire\Attributes\Computed]
+    public function algo()
+    {
+        if (!$this->selectedShiftId) {
+            return null;
+        }
+
+        return WorkShift::with(['work_shifts_algos' => function ($query) {
+            $query->where('firm_id', session('firm_id'))
+                ->when($this->sortBy, fn($q) => $q->orderBy($this->sortBy, $this->sortDirection));
+        }])->find($this->selectedShiftId);
+    }
+
+    public function editAlgo($id)
+    {
+        // Add your algorithm edit logic here
+    }
+
+    public function deleteAlgo($id)
+    {
+        $algo = WorkShiftsAlgo::findOrFail($id);
+        $algo->delete();
+
+        Flux::toast(
+            variant: 'success',
+            heading: 'Algorithm Deleted.',
+            text: 'Work Shift Algorithm has been deleted successfully',
+        );
+    }
+
+    public function getBatchStatus($algoId)
+    {
+        // Add your batch status logic here
+        return null;
+    }
+
+    public function syncWorkShiftDays($algoId)
+    {
+        // Add your sync logic here
+    }
+
+    public function rollbackSync($algoId)
+    {
+        // Add your rollback logic here
     }
 
     public function render()

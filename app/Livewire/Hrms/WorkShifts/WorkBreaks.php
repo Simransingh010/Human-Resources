@@ -87,8 +87,8 @@ class WorkBreaks extends Component
         $validatedData = $this->validate([
             'formData.break_title' => 'required|string|max:255',
             'formData.break_desc' => 'nullable|string',
-            'formData.start_time' => 'required|date_format:h:i A',
-            'formData.end_time' => 'required|date_format:h:i A|after:formData.start_time',
+            'formData.start_time' => 'required|date_format:H:i',
+            'formData.end_time' => 'required|date_format:H:i|after:formData.start_time',
             'formData.is_inactive' => 'boolean',
         ]);
 
@@ -97,10 +97,6 @@ class WorkBreaks extends Component
             ->toArray();
 
         $validatedData['formData']['firm_id'] = session('firm_id');
-
-        // Convert 12-hour format to 24-hour format for storage
-        $validatedData['formData']['start_time'] = Carbon::createFromFormat('h:i A', $validatedData['formData']['start_time'])->format('H:i:s');
-        $validatedData['formData']['end_time'] = Carbon::createFromFormat('h:i A', $validatedData['formData']['end_time'])->format('H:i:s');
 
         if ($this->isEditing) {
             $break = WorkBreak::findOrFail($this->formData['id']);
@@ -132,8 +128,8 @@ class WorkBreaks extends Component
     {
         $break = WorkBreak::findOrFail($id);
         $this->formData = array_merge($break->toArray(), [
-            'start_time' => Carbon::parse($break->start_time)->format('h:i A'),
-            'end_time' => Carbon::parse($break->end_time)->format('h:i A'),
+            'start_time' => $break->start_time->format('H:i'),
+            'end_time' => $break->end_time->format('H:i'),
         ]);
         $this->isEditing = true;
         $this->modal('mdl-break')->show();

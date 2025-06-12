@@ -24,20 +24,30 @@ class BulkEmployeeJobProfiles extends Component
         'doh'                => ['label'=>'Join Date','type'=>'date'],
         'uanno'              => ['label'=>'UAN No.','type'=>'text'],
         'esicno'             => ['label'=>'ESIC No.','type'=>'text'],
+        'pran_number'        => ['label'=>'PRAN Number','type'=>'text'],
+        'paylevel'           => ['label'=>'Pay Level','type'=>'text'],
+        'rf_id'              => ['label'=>'RF ID','type'=>'text'],
+        'pan_number'         => ['label'=>'PAN Number','type'=>'text'],
+        'biometric_emp_code' => ['label'=>'Biometric Code','type'=>'text'],
     ];
 
     // ── NEW ── define exactly which fields appear in the filter bar
     public array $filterFields   = [
         // employee table field:
         'fname'             => ['label'=>'First Name','type'=>'text','source'=>'employee'],
-        'employee_code'      => ['label'=>'Employee Code','type'=>'text'],
-        'department_id'      => ['label'=>'Department','type'=>'select','listKey'=>'departmentlist'],
-        'designation_id'     => ['label'=>'Designation','type'=>'select','listKey'=>'designationlist'],
-        'employment_type_id' => ['label'=>'Employment Type','type'=>'select','listKey'=>'employmentTypelist'],
-        'joblocation_id'     => ['label'=>'Job Location','type'=>'select','listKey'=>'joblocationlist'],
-        'doh'                => ['label'=>'Join Date','type'=>'date'],
-        'uanno'              => ['label'=>'UAN No.','type'=>'text'],
-        'esicno'             => ['label'=>'ESIC No.','type'=>'text'],
+        'employee_code'      => ['label'=>'Employee Code','type'=>'text','source'=>'profile'],
+        'department_id'      => ['label'=>'Department','type'=>'select','listKey'=>'departmentlist','source'=>'profile'],
+        'designation_id'     => ['label'=>'Designation','type'=>'select','listKey'=>'designationlist','source'=>'profile'],
+        'employment_type_id' => ['label'=>'Employment Type','type'=>'select','listKey'=>'employmentTypelist','source'=>'profile'],
+        'joblocation_id'     => ['label'=>'Job Location','type'=>'select','listKey'=>'joblocationlist','source'=>'profile'],
+        'doh'                => ['label'=>'Join Date','type'=>'date','source'=>'profile'],
+        'uanno'              => ['label'=>'UAN No.','type'=>'text','source'=>'profile'],
+        'esicno'             => ['label'=>'ESIC No.','type'=>'text','source'=>'profile'],
+        'pran_number'        => ['label'=>'PRAN Number','type'=>'text','source'=>'profile'],
+        'paylevel'           => ['label'=>'Pay Level','type'=>'text','source'=>'profile'],
+        'rf_id'              => ['label'=>'RF ID','type'=>'text','source'=>'profile'],
+        'pan_number'         => ['label'=>'PAN Number','type'=>'text','source'=>'personal'],
+        'biometric_emp_code' => ['label'=>'Biometric Code','type'=>'text','source'=>'profile'],
     ];
 
     public array $listsForFields = [];
@@ -53,6 +63,7 @@ class BulkEmployeeJobProfiles extends Component
 
     public function mount()
     {
+        $this->resetPage();
         $firmId = session('firm_id');
 
         $this->listsForFields = [
@@ -65,7 +76,7 @@ class BulkEmployeeJobProfiles extends Component
         // show all columns by default
 //        $this->visibleFields = array_keys($this->fieldConfig);
         $this->visibleFields=['employee_code','department_id','designation_id','employment_type_id'];
-        $this->visibleFilterFields=['employee_code','department_id','designation_id','employment_type_id'];
+        $this->visibleFilterFields=['fname','employee_code','department_id','designation_id','employment_type_id'];
 
 
 
@@ -84,7 +95,7 @@ class BulkEmployeeJobProfiles extends Component
     {
         $firmId = session('firm_id');
 
-        $query = Employee::with('emp_job_profile')
+        $query = Employee::with(['emp_job_profile', 'emp_personal_detail'])
             ->where('firm_id', $firmId);
 
         // 1) First, apply any filters that live on the employees table
@@ -103,6 +114,16 @@ class BulkEmployeeJobProfiles extends Component
                 } else {
                     $query->where($field, 'like', "%{$value}%");
                 }
+            } elseif ($cfg['source'] === 'personal') {
+                $query->whereHas('emp_personal_detail', function ($q) use ($field, $cfg, $value) {
+                    if ($cfg['type'] === 'select') {
+                        $q->where($field, $value);
+                    } elseif ($cfg['type'] === 'date') {
+                        $q->whereDate($field, $value);
+                    } else {
+                        $q->where($field, 'like', "%{$value}%");
+                    }
+                });
             }
         }
 
@@ -131,8 +152,16 @@ class BulkEmployeeJobProfiles extends Component
         // seed editing values as before
         foreach ($employees as $emp) {
             $profile = $emp->emp_job_profile;
+            $personal = $emp->emp_personal_detail;
             foreach (array_keys($this->fieldConfig) as $field) {
-                $this->bulkupdate[$emp->id][$field] = $profile?->{$field};
+                if ($field === 'biometric_emp_code') {
+                    $this->bulkupdate[$emp->id][$field] = $personal?->biometric_emp_code ?? $profile?->biometric_emp_code;
+                }
+                if ($field === 'pan_number') {
+                    $this->bulkupdate[$emp->id][$field] = $personal?->panno;
+                } else {
+                    $this->bulkupdate[$emp->id][$field] = $profile?->{$field};
+                }
             }
         }
 
@@ -181,6 +210,17 @@ class BulkEmployeeJobProfiles extends Component
     public function triggerUpdate(int $employeeId, string $field)
     {
         $value = $this->bulkupdate[$employeeId][$field] ?? null;
+
+        if ($field === 'pan_number') {
+            $personal = \App\Models\Hrms\EmployeePersonalDetail::firstOrCreate(
+                ['employee_id' => $employeeId],
+                ['firm_id'     => session('firm_id')]
+            );
+            $personal->panno = $value;
+            $personal->save();
+            return;
+        }
+
 
         $profile = EmployeeJobProfile::firstOrCreate(
             ['employee_id' => $employeeId],

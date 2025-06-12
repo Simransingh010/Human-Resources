@@ -20,7 +20,7 @@ class EmployeeTaxComponents extends Component
 {
     use WithPagination;
 
-    public $perPage = 10;
+    public $perPage = 100;
     public $sortBy = 'fname';
     public $sortDirection = 'asc';
     public $payrollSlotId;

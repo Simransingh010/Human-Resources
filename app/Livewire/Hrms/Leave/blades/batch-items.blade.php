@@ -51,7 +51,7 @@
             @endforeach
 
             <flux:button.group>
-                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="bars-3"></flux:button>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
                 <flux:modal.trigger name="mdl-show-hide-filters">
                     <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
                 </flux:modal.trigger>
@@ -113,9 +113,10 @@
                     <flux:table.cell>
                         @if($leaveData)
                             <div class="text-sm">
-                                <div>From: {{ $leaveData['period_start'] }}</div>
-                                <div>To: {{ $leaveData['period_end'] }}</div>
+                                <div>From: {{ \Carbon\Carbon::parse($leaveData['period_start'])->format('jS F Y') }}</div>
+                                <div>To: {{ \Carbon\Carbon::parse($leaveData['period_end'])->format('jS F Y') }}</div>
                             </div>
+
                         @else
                             <span class="text-gray-400">N/A</span>
                         @endif

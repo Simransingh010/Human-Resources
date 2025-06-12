@@ -29,10 +29,14 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
+ * @property int|null $disburse_wef_payroll_slot_id
+ * @property string|null $additional_rule
+ * @property string|null $remarks
  * 
  * @property SalaryComponent $salary_component
  * @property Employee $employee
  * @property Firm $firm
+ * @property PayrollSlot|null $disburseWefPayrollSlot
  * @property Collection|PayrollComponentsEmployeesTrack[] $payroll_components_employees_tracks
  *
  * @package App\Models\Hrms
@@ -61,7 +65,8 @@ class SalaryArrear extends Model
 		'paid_amount' => 'float',
 		'installments' => 'int',
 		'installment_amount' => 'float',
-		'is_inactive' => 'bool'
+		'is_inactive' => 'bool',
+		'disburse_wef_payroll_slot_id' => 'int'
 	];
 
 	protected $fillable = [
@@ -75,7 +80,10 @@ class SalaryArrear extends Model
 		'installments',
 		'installment_amount',
 		'arrear_status',
-		'is_inactive'
+		'is_inactive',
+		'disburse_wef_payroll_slot_id',
+		'additional_rule',
+		'remarks'
 	];
 
 	public function salary_component()
@@ -96,5 +104,10 @@ class SalaryArrear extends Model
 	public function payroll_components_employees_tracks()
 	{
 		return $this->hasMany(PayrollComponentsEmployeesTrack::class);
+	}
+
+	public function disburseWefPayrollSlot()
+	{
+		return $this->belongsTo(PayrollSlot::class, 'disburse_wef_payroll_slot_id');
 	}
 }

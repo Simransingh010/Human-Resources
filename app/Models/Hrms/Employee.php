@@ -120,4 +120,9 @@ class Employee extends Model
             ->withPivot('id', 'firm_id')
             ->withTimestamps();
     }
+
+    public function attendance_policy()
+    {
+        return $this->hasOne(AttendancePolicy::class);
+    }
 }

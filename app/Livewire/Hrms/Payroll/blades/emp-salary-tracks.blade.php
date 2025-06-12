@@ -119,7 +119,7 @@
                     <flux:table.cell class="table-cell-wrap">
                         <div class="flex space-x-2">
                             <flux:button
-                                wire:click="showSalarySlip({{ $item['employee_id'] }}, '{{ \Carbon\Carbon::parse($item['from_date'])->format('Y-m-d') }}', '{{ \Carbon\Carbon::parse($item['to_date'])->format('Y-m-d') }}')"
+                                wire:click="showSalarySlip({{ $item['employee_id'] }}, '{{ \Carbon\Carbon::parse($item['from_date'])->format('Y-m-d') }}', '{{ \Carbon\Carbon::parse($item['to_date'])->format('Y-m-d') }}', {{ $item['payroll_slot_id'] ?? 'null' }})"
                                 tooltip="View Salary Slip"
                             >View Salary Slip</flux:button>
                         </div>
@@ -133,10 +133,18 @@
     <flux:modal wire:model="showSalarySlipModal" class="max-w-3xl">
         <div class="bg-white">
             <!-- Header with Logo -->
-            <div class="text-center mb-6">
-                <img src="https://www.iimsirmaur.ac.in/themes/sirmaur/images/logo.png" 
-                     alt="IIM Logo" 
-                     class="mx-auto h-16 w-auto mb-4"/>
+            <div class="flex justify-center mb-6">
+                @if($firmSquareLogo)
+                    <img src="{{ asset($firmSquareLogo) }}"
+                         alt="Company Square Logo"
+                         class="h-16 w-16 object-contain"/>
+                @elseif ($firmWideLogo)
+                    <img src="{{ asset($firmWideLogo) }}"
+                         alt="Company Wide Logo"
+                         class="h-16 w-48 object-contain mt-2"/>
+                @endif
+            </div>
+            <div class="flex justify-center mb-6">
                 @if($rawComponents && $rawComponents->count() > 0)
                     <h2 class="text-xl font-bold">PAYSLIP FOR THE MONTH OF {{ strtoupper(date('F Y', strtotime($rawComponents->first()->salary_period_from))) }}</h2>
                 @else
@@ -150,9 +158,11 @@
                     <!-- Employee Details Section -->
                     <tr>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">EMPLOYEE CODE </td>
-                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->id }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->emp_job_profile->employee_code}}</td>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">DATE OF JOINING </td>
-                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->joining_date }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">
+                            : {{ optional($selectedEmployee->emp_job_profile)->doh?->format('jS M Y') }}
+                        </td>
                     </tr>
                     <tr>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">NAME </td>
@@ -172,13 +182,13 @@
                         <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->designation?->title }}</td>
 
                          <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PAY LEVEL</td>
-                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->pay_level ?? 'N/A' }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ optional($selectedEmployee->emp_job_profile)->paylevel ?? 'N/A' }}</td>
                     </tr>
                     <tr>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PAN NUMBER </td>
-                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->pan ?? 'N/A' }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->emp_personal_detail->panno?? 'N/A' }}</td>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">PRAN NUMBER </td>
-                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->pran ?? 'N/A' }}</td>
+                        <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->emp_job_profile->pran_number ?? 'N/A' }}</td>
                     </tr>
 
                     <!-- Salary Components Headers -->
@@ -241,7 +251,11 @@
 
                 <!-- Action Buttons -->
                 <div class="mt-6 flex justify-end space-x-3">
-{{--                    <flux:button wire:click="downloadPDF" variant="primary" icon="document-arrow-down">Download PDF</flux:button>--}}
+                    <flux:button 
+                        wire:click="downloadPDF({{ $selectedEmployee->id }}, '{{ $rawComponents->first()->salary_period_from }}', '{{ $rawComponents->first()->salary_period_to }}', {{ $rawComponents->first()->payroll_slot_id }})" 
+                        variant="primary" 
+                        icon="document-arrow-down"
+                    >Download PDF</flux:button>
                     <flux:button wire:click="closeSalarySlipModal">Close</flux:button>
                 </div>
             @endif

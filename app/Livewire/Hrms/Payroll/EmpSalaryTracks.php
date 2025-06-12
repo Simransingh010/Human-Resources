@@ -18,6 +18,8 @@ use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Flux;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\View;
 
 class EmpSalaryTracks extends Component
 {
@@ -33,6 +35,11 @@ class EmpSalaryTracks extends Component
     public $selectedEmployee = null;
     public $selectedEmployeeName = '';
     public $salaryComponents = [];
+
+    public $firmWideLogo = null; // Assuming this is set somewhere in your application
+    public $firmSquareLogo = null;
+
+
     public $totalEarnings = 0;
     public $totalDeductions = 0;
     public $netSalary = 0;
@@ -157,7 +164,8 @@ class EmpSalaryTracks extends Component
                     'period' => $firstTrack->salary_period_from->format('jS F Y') . ' to ' . $firstTrack->salary_period_to->format('jS F Y'),
                     'employee_id' => $firstTrack->employee_id,
                     'from_date' => $firstTrack->salary_period_from,
-                    'to_date' => $firstTrack->salary_period_to
+                    'to_date' => $firstTrack->salary_period_to,
+                    'payroll_slot_id' => $firstTrack->payroll_slot_id
                 ];
             })
             ->values();
@@ -176,14 +184,21 @@ class EmpSalaryTracks extends Component
         );
     }
 
-    public function showSalarySlip($employeeId, $fromDate = null, $toDate = null)
+    public function showSalarySlip($employeeId, $fromDate = null, $toDate = null, $payrollSlotId = null)
     {
         try {
             // Load employee with job profile
-            $this->selectedEmployee = Employee::with('emp_job_profile.department', 'emp_job_profile.designation')
+            $this->selectedEmployee = Employee::with('emp_personal_detail','emp_job_profile.department', 'emp_job_profile.designation')
                 ->findOrFail($employeeId);
 
             $this->selectedEmployeeName = $this->selectedEmployee->fname . ' ' . $this->selectedEmployee->lname;
+
+            // Get firm logos
+            $firm = \App\Models\Saas\Firm::find(Session::get('firm_id'));
+            if ($firm) {
+                $this->firmSquareLogo = $firm->getFirstMediaUrl('squareLogo');
+                $this->firmWideLogo = $firm->getFirstMediaUrl('wideLogo');
+            }
 
             // Get salary components from PayrollComponentsEmployeesTrack
             $query = PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
@@ -195,9 +210,29 @@ class EmpSalaryTracks extends Component
                     ->where('salary_period_to', $toDate);
             }
 
-            $this->rawComponents = $query->with(['salary_component'])->get();
+            // Get the payroll slot ID from the parameters - this is what's causing duplicates
+            if ($payrollSlotId === null) {
+                if ($this->slotId) {
+                    $payrollSlotId = $this->slotId;
+                } else {
+                    // Try to determine the payroll slot ID from the date range
+                    $payrollSlot = PayrollSlot::where('firm_id', Session::get('firm_id'))
+                        ->where('from_date', $fromDate)
+                        ->where('to_date', $toDate)
+                        ->first();
+                    
+                    if ($payrollSlot) {
+                        $payrollSlotId = $payrollSlot->id;
+                    }
+                }
+            }
+            
+            // Filter by specific payroll slot if available
+            if ($payrollSlotId) {
+                $query->where('payroll_slot_id', $payrollSlotId);
+            }
 
-           dd($this->rawComponents->toArray());
+            $this->rawComponents = $query->with(['salary_component'])->get();
 
             $this->salaryComponents = [];
             $this->totalEarnings = 0;
@@ -229,9 +264,6 @@ class EmpSalaryTracks extends Component
                 ['title', 'asc']
             ])->values()->all();
 
-
-
-
             $this->netSalary = $this->totalEarnings - $this->totalDeductions;
             $this->netSalaryInWords = $this->numberToWords($this->netSalary);
             $this->showSalarySlipModal = true;
@@ -261,6 +293,64 @@ class EmpSalaryTracks extends Component
     {
         $f = new \NumberFormatter("en", \NumberFormatter::SPELLOUT);
         return ucfirst($f->format($number)) . ' Rupees Only';
+    }
+
+    public function downloadPDF($employeeId, $fromDate = null, $toDate = null, $payrollSlotId = null)
+    {
+        try {
+            // Load the same data as showSalarySlip (this will set selectedEmployee etc.)
+            $this->showSalarySlip($employeeId, $fromDate, $toDate, $payrollSlotId);
+
+            $firmSquareLogoData = null;
+            $firmWideLogoData = null;
+
+            // Re-fetch firm and prepare base64 encoded logos specifically for PDF
+            $firm = \App\Models\Saas\Firm::find(Session::get('firm_id'));
+            if ($firm) {
+                $squareMedia = $firm->getFirstMedia('squareLogo');
+                if ($squareMedia) {
+                    $firmSquareLogoData = 'data:' . $squareMedia->mime_type . ';base64,' . base64_encode(file_get_contents($squareMedia->getPath()));
+                }
+
+                $wideMedia = $firm->getFirstMedia('wideLogo');
+                if ($wideMedia) {
+                    $firmWideLogoData = 'data:' . $wideMedia->mime_type . ';base64,' . base64_encode(file_get_contents($wideMedia->getPath()));
+                }
+            }
+
+            // Generate PDF
+            $pdf = PDF::loadView('livewire.hrms.payroll.blades.salary-slip-pdf', [
+                'selectedEmployee' => $this->selectedEmployee,
+                'salaryComponents' => $this->salaryComponents,
+                'totalEarnings' => $this->totalEarnings,
+                'totalDeductions' => $this->totalDeductions,
+                'netSalary' => $this->netSalary,
+                'rawComponents' => $this->rawComponents,
+                'firmSquareLogo' => $firmSquareLogoData, // Pass base64 data
+                'firmWideLogo' => $firmWideLogoData,     // Pass base64 data
+            ]);
+
+            // Set paper size to A4
+            $pdf->setPaper('a4');
+
+            // Generate filename
+            $filename = $this->selectedEmployeeName . '_Salary_Slip_' .
+                       ($this->rawComponents->first() ?
+                        date('F_Y', strtotime($this->rawComponents->first()->salary_period_from)) :
+                        '') . '.pdf';
+
+            // Download the PDF
+            return response()->streamDownload(function () use ($pdf) {
+                echo $pdf->output();
+            }, $filename);
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to generate PDF: ' . $e->getMessage(),
+            );
+        }
     }
 
     public function render()

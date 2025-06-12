@@ -50,12 +50,12 @@
                 @endforeach
 
                     <flux:button.group>
-                        <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="bars-3"></flux:button>
+                        <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
                         <flux:modal.trigger name="mdl-show-hide-filters">
                             <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
                         </flux:modal.trigger>
                         <flux:modal.trigger name="mdl-show-hide-columns">
-                            <flux:button variant="outline" tooltip="Set Columns" icon="bars-3"></flux:button>
+                            <flux:button variant="outline" tooltip="Set Columns" icon="table-cells"></flux:button>
                         </flux:modal.trigger>
                     </flux:button.group>
 

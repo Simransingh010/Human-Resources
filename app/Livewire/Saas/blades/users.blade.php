@@ -8,8 +8,103 @@
             </flux:button>
         </flux:modal.trigger>
     </div>
+    <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->
 
+    <!-- Filters Start -->
+    <flux:card>
+        <flux:heading>Filters</flux:heading>
+        <div class="flex flex-wrap gap-4">
+            @foreach($filterFields as $field => $cfg)
+                @if(in_array($field, $visibleFilterFields))
+                    <div class="w-1/4">
+                        @switch($cfg['type'])
+                            @case('select')
+                                <flux:select
+                                    variant="listbox"
+                                    searchable
+                                    placeholder="All {{ $cfg['label'] }}"
+                                    wire:model="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                >
+                                    <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
+                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
+                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                @break
+
+                            @case('number')
+                                <flux:input
+                                    type="number"
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                                @break
+
+                            @default
+                                <flux:input
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
+                                    wire:change="applyFilters"
+                                />
+                        @endswitch
+                    </div>
+                @endif
+            @endforeach
+
+            <flux:button.group>
+                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
+                <flux:modal.trigger name="mdl-show-hide-filters">
+                    <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
+                </flux:modal.trigger>
+                <flux:modal.trigger name="mdl-show-hide-columns">
+                    <flux:button variant="outline" tooltip="Set Columns" icon="table-cells"></flux:button>
+                </flux:modal.trigger>
+            </flux:button.group>
+        </div>
+    </flux:card>
+
+    <!-- Filter Fields Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-filters" variant="flyout">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Filters</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($filterFields as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFilterFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleFilterColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
+
+    <!-- Columns Show/Hide Modal -->
+    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Show/Hide Columns</flux:heading>
+            </div>
+            <div class="flex flex-wrap items-center gap-4">
+                <flux:checkbox.group>
+                    @foreach($fieldConfig as $field => $cfg)
+                        <flux:checkbox 
+                            :checked="in_array($field, $visibleFields)" 
+                            label="{{ $cfg['label'] }}" 
+                            wire:click="toggleColumn('{{ $field }}')" 
+                        />
+                    @endforeach
+                </flux:checkbox.group>
+            </div>
+        </div>
+    </flux:modal>
 
     <!-- Modal Start -->
     <flux:modal name="mdl-user" @cancel="resetForm" position="right" class="max-w-none" >
@@ -56,44 +151,43 @@
     <!-- Table Start-->
     <flux:table :paginate="$this->list" class="w-full">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            <flux:table.column>Name</flux:table.column>
-            <flux:table.column>Email</flux:table.column>
-            <flux:table.column>Password</flux:table.column>
-            <flux:table.column>Passcode</flux:table.column>
-            <flux:table.column>Phone</flux:table.column>
-            <flux:table.column>Mark as Inactive</flux:table.column>
+            @foreach($fieldConfig as $field => $cfg)
+                @if(in_array($field, $visibleFields))
+                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
+                @endif
+            @endforeach
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
             @foreach ($this->list as $rec)
                 <flux:table.row :key="$rec->id" class="border-b">
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->name }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->email }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->password }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->passcode }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->phone }}</flux:table.cell>
-
-                    <flux:table.cell>
-                        <flux:switch wire:model="statuses.{{ $rec->id }}"
-                                     wire:click="toggleStatus({{ $rec->id }})"/>
-                    </flux:table.cell>
+                    @foreach($fieldConfig as $field => $cfg)
+                        @if(in_array($field, $visibleFields))
+                            <flux:table.cell>
+                                @switch($cfg['type'])
+                                    @case('switch')
+                                        <flux:switch wire:model="statuses.{{ $rec->id }}"
+                                                     wire:click="toggleStatus({{ $rec->id }})"/>
+                                        @break
+                                    @default
+                                        {{ $rec->$field }}
+                                @endswitch
+                            </flux:table.cell>
+                        @endif
+                    @endforeach
                     <flux:table.cell class="table-cell-wrap" >
+                        <!-- Manage Metas -->
+                        <flux:button wire:click="showmodal_panelSync({{ $rec->id }})" color="zinc" size="xs">Panels</flux:button>
+                        <flux:button wire:click="showmodal_firmSync({{ $rec->id }})" size="xs">Firms</flux:button>
+                        <flux:button wire:click="showmodal_permissionGroupSync({{ $rec->id }})" size="xs">Roles</flux:button>
+                        <flux:button wire:click="showmodal_permissionSync({{ $rec->id }})" size="xs">Permissions</flux:button>
 
-                            <!-- Manage Metas -->
-                            <flux:button wire:click="showmodal_panelSync({{ $rec->id }})" color="zinc" size="xs">Panels</flux:button>
-                            <flux:button wire:click="showmodal_firmSync({{ $rec->id }})" size="xs">Firms</flux:button>
-                            <flux:button wire:click="showmodal_permissionGroupSync({{ $rec->id }})" size="xs">Roles</flux:button>
-                            <flux:button wire:click="showmodal_permissionSync({{ $rec->id }})" size="xs">Permissions</flux:button>
-
-
-                            <flux:button variant="primary" size="xs" icon="pencil"
-                                         wire:click="edit({{ $rec->id }})"/>
-                            <flux:modal.trigger name="delete-{{ $rec->id }}">
-                                <flux:button variant="danger" size="xs" icon="trash"/>
-                            </flux:modal.trigger>
-
-
+                        <flux:button variant="primary" size="xs" icon="pencil"
+                                     wire:click="edit({{ $rec->id }})"/>
+                        <flux:modal.trigger name="delete-{{ $rec->id }}">
+                            <flux:button variant="danger" size="xs" icon="trash"/>
+                        </flux:modal.trigger>
 
                         <!-- Delete Modal -->
                         <flux:modal name="delete-{{ $rec->id }}" class="min-w-[22rem]">

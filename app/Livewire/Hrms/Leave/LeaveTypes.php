@@ -56,6 +56,7 @@ class LeaveTypes extends Component
 
     public function mount()
     {
+        $this->resetPage();
         $this->initListsForFields();
         
         // Set default visible fields

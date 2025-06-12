@@ -48,9 +48,14 @@ class TaxBracket extends Model
 		'type',
 		'income_from',
 		'income_to',
-		'rate'
-	];
+		'rate',
+		'apply_breakdown_rate',
 
+	];
+	public const APPLY_BREAKDOWN_RATE = [
+		'yes' => 'Yes',
+		'no' => 'No'
+	];
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);

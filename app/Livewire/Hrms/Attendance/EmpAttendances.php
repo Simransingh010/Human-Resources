@@ -19,6 +19,7 @@ class EmpAttendances extends Component
         'id' => null,
         'firm_id' => null,
         'employee_id' => null,
+        'employee_name' => '',
         'work_date' => null,
         'work_shift_day_id' => null,
         'attendance_status_main' => null,
@@ -32,6 +33,27 @@ class EmpAttendances extends Component
     public $sortBy = 'work_date';
     public $sortDirection = 'desc';
     public $isEditing = false;
+
+    // Field configuration for form and table
+    public array $fieldConfig = [
+        'work_date' => ['label' => 'Work Date', 'type' => 'date'],
+        'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employeelist'],
+        'attendance_status_main' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'attendance_status_main'],
+        'ideal_working_hours' => ['label' => 'Ideal Hours', 'type' => 'number'],
+        'actual_worked_hours' => ['label' => 'Actual Hours', 'type' => 'number'],
+        'final_day_weightage' => ['label' => 'Day Weightage', 'type' => 'number'],
+    ];
+
+    // Filter fields configuration
+    public array $filterFields = [
+        'date_range' => ['label' => 'Date Range', 'type' => 'daterange'],
+        'employees' => ['label' => 'Employees', 'type' => 'select', 'listKey' => 'employeelist'],
+        'status' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'attendance_status_main'],
+    ];
+
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
+
     public $filters = [
         'date_range' => null,
         'employees' => [],
@@ -52,21 +74,32 @@ class EmpAttendances extends Component
 
     public function mount()
     {
+        $this->resetPage();
         $this->attendanceData['firm_id'] = session('firm_id', 1);
         $this->initListsForFields();
+
+        
+        // Set default visible fields
+        $this->visibleFields = ['work_date', 'employee_id', 'attendance_status_main'];
+        $this->visibleFilterFields = ['date_range', 'employees', 'status'];
     }
 
     #[\Livewire\Attributes\Computed]
     public function attendancesList()
     {
         $query = EmpAttendance::with(['employee', 'work_shift_day'])
-            ->where('firm_id', session('firm_id'));
-//        dd($this->filters['date_range']);
+            ->where('firm_id', session('firm_id'))
+            ->where('work_date', '<=', Carbon::today()->endOfDay()); // Show all records up to end of today
+
         // Date range filter
         if ($this->filters['date_range']) {
             try {
                 $start = Carbon::parse($this->filters['date_range']['start'])->startOfDay();
                 $end = Carbon::parse($this->filters['date_range']['end'])->endOfDay();
+                
+                // Ensure end date doesn't exceed today
+                $end = min($end, Carbon::today()->endOfDay());
+                
                 $query->whereBetween('work_date', [$start, $end]);
             } catch (\Exception $e) {
                 \Log::error("Invalid date range: {$this->filters['date_range']}");
@@ -105,9 +138,35 @@ class EmpAttendances extends Component
         })->pluck('work_shift_id', 'id');
     }
 
+    public function updatedAttendanceDataEmployeeName($value)
+    {
+        if (empty($value)) {
+            $this->attendanceData['employee_id'] = null;
+            return;
+        }
+
+        // Find employee by name
+        $employee = Employee::where('firm_id', session('firm_id'))
+            ->where(function($query) use ($value) {
+                $query->where('fname', 'like', "%{$value}%")
+                    ->orWhere('lname', 'like', "%{$value}%")
+                    ->orWhereRaw("CONCAT(fname, ' ', lname) LIKE ?", ["%{$value}%"]);
+            })
+            ->first();
+
+        if ($employee) {
+            $this->attendanceData['employee_id'] = $employee->id;
+            $this->attendanceData['employee_name'] = $employee->fname . ' ' . $employee->lname;
+        } else {
+            $this->attendanceData['employee_id'] = null;
+        }
+    }
+
     public function fetchAttendance($id)
     {
-        $this->attendanceData = EmpAttendance::findOrFail($id)->toArray();
+        $attendance = EmpAttendance::with('employee')->findOrFail($id);
+        $this->attendanceData = $attendance->toArray();
+        $this->attendanceData['employee_name'] = $attendance->employee->fname . ' ' . $attendance->employee->lname;
         $this->isEditing = true;
         $this->modal('mdl-emp-attendance')->show();
     }
@@ -179,21 +238,63 @@ class EmpAttendances extends Component
             : 'asc';
         $this->sortBy = $column;
     }
+
+    public function toggleColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $field !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
     public function applyFilters()
     {
-        // Optional: log or track something
-        $this->filters = $this->filters; // triggers reactivity
-        $this->resetPage(); // ensure pagination resets after filter
-    }
-    public function clearFilters()
-    {
-        $this->reset('filters');
         $this->resetPage();
     }
+
+    public function clearFilters()
+    {
+        $this->filters = [
+            'date_range' => null,
+            'employees' => [],
+            'status' => [],
+        ];
+        $this->resetPage();
+    }
+
     public function resetForm()
     {
         $this->reset(['attendanceData', 'isEditing']);
-        $this->attendanceData['firm_id'] = session('firm_id');
+        $this->attendanceData = [
+            'id' => null,
+            'firm_id' => session('firm_id'),
+            'employee_id' => null,
+            'employee_name' => '',
+            'work_date' => null,
+            'work_shift_day_id' => null,
+            'attendance_status_main' => null,
+            'attend_location_id' => null,
+            'ideal_working_hours' => 0,
+            'actual_worked_hours' => 0,
+            'final_day_weightage' => 0,
+            'attend_remarks' => null,
+        ];
     }
 
     protected function initListsForFields(): void

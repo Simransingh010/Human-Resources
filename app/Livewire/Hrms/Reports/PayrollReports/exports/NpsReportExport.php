@@ -14,8 +14,12 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 
-class NpsReportExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents
+class NpsReportExport extends DefaultValueBinder implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, WithCustomValueBinder
 {
     protected $filters;
     protected $start;
@@ -51,6 +55,7 @@ class NpsReportExport implements FromCollection, WithHeadings, WithMapping, With
     private function fetchEmployees($firmId)
     {
         $query = Employee::with([
+            'emp_job_profile',
             'emp_job_profile.department',
             'payroll_tracks' => function ($q) {
                 $q->whereBetween('salary_period_from', [$this->start, $this->end])
@@ -150,7 +155,7 @@ class NpsReportExport implements FromCollection, WithHeadings, WithMapping, With
             $serial++,
             $job->employee_code ?? '',
             trim("Dr. {$employee->fname} {$employee->lname}"),
-            '', // PRAN NO (empty for now)
+            $job->pran_number ?? '',
             $nps14Amount,
             $nps10Amount,
             $npsTotal
@@ -163,6 +168,16 @@ class NpsReportExport implements FromCollection, WithHeadings, WithMapping, With
     {
         // We'll do most formatting in AfterSheet for dynamic merges
         return [];
+    }
+
+    public function bindValue(Cell $cell, $value)
+    {
+        // Column D contains PRAN numbers
+        if ($cell->getColumn() === 'D') {
+            $cell->setValueExplicit($value, DataType::TYPE_STRING);
+            return true;
+        }
+        return parent::bindValue($cell, $value);
     }
 
     public function registerEvents(): array
@@ -212,10 +227,12 @@ class NpsReportExport implements FromCollection, WithHeadings, WithMapping, With
                     // Add thick borders to data cells
                     $sheet->getStyle("A{$dataRowStart}:{$lastCol}{$dataRowEnd}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM);
 
-                    // Format number columns to show 2 decimal places (columns E, F, G)
-                    $sheet->getStyle("E{$dataRowStart}:G{$dataRowEnd}")
-                        ->getNumberFormat()
-                        ->setFormatCode('#,##0.00');
+                    // Format numeric columns (E, F, G)
+                    foreach (['E', 'F', 'G'] as $col) {
+                        $sheet->getStyle("{$col}{$dataRowStart}:{$col}{$dataRowEnd}")
+                            ->getNumberFormat()
+                            ->setFormatCode('#,##0.00');
+                    }
 
                     // Grand Total row
                     $totalsRow = $dataRowEnd + 1;

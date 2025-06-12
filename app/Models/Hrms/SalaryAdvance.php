@@ -27,9 +27,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
+ * @property string|null $disburse_salary_component
+ * @property string|null $recovery_salary_component
+ * @property int|null $disburse_payroll_slot_id
+ * @property int|null $recovery_wef_payroll_slot_id
+ * @property string|null $additional_rule_remarks
  * 
  * @property Employee $employee
  * @property Firm $firm
+ * @property PayrollSlot|null $disbursePayrollSlot
+ * @property PayrollSlot|null $recoveryWefPayrollSlot
  * @property Collection|PayrollComponentsEmployeesTrack[] $payroll_components_employees_tracks
  *
  * @package App\Models\Hrms
@@ -56,7 +63,9 @@ class SalaryAdvance extends Model
 		'installments' => 'int',
 		'installment_amount' => 'float',
 		'recovered_amount' => 'float',
-		'is_inactive' => 'bool'
+		'is_inactive' => 'bool',
+		'disburse_payroll_slot_id' => 'int',
+		'recovery_wef_payroll_slot_id' => 'int'
 	];
 
 	protected $fillable = [
@@ -68,7 +77,12 @@ class SalaryAdvance extends Model
 		'installment_amount',
 		'recovered_amount',
 		'advance_status',
-		'is_inactive'
+		'is_inactive',
+		'disburse_salary_component',
+		'recovery_salary_component',
+		'disburse_payroll_slot_id',
+		'recovery_wef_payroll_slot_id',
+		'additional_rule_remarks'
 	];
 
 	public function employee()
@@ -84,5 +98,15 @@ class SalaryAdvance extends Model
 	public function payroll_components_employees_tracks()
 	{
 		return $this->hasMany(PayrollComponentsEmployeesTrack::class);
+	}
+
+	public function disbursePayrollSlot()
+	{
+		return $this->belongsTo(PayrollSlot::class, 'disburse_payroll_slot_id');
+	}
+
+	public function recoveryWefPayrollSlot()
+	{
+		return $this->belongsTo(PayrollSlot::class, 'recovery_wef_payroll_slot_id');
 	}
 }

@@ -368,7 +368,8 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
-                                wire:click="showBatchItems({{ $batch->id }})"
+                                wire:click="
+                                ({{ $batch->id }})"
                                 variant="primary"
                                 size="xs"
                                 icon="eye"

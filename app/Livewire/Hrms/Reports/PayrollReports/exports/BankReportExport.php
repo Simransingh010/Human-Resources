@@ -13,10 +13,13 @@ use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Maatwebsite\Excel\Events\AfterSheet;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 class BankReportExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize
 {
-    protected $filters;
+    protected $filters; 
     protected $start;
     protected $end;
     protected $employees;
@@ -32,28 +35,26 @@ class BankReportExport implements FromCollection, WithHeadings, WithMapping, Wit
     {
         $firmId = $this->filters['firm_id'] ?? session('firm_id');
 
-        $query = Employee::with([
+        $employees = Employee::with([
             'emp_job_profile:id,employee_code,employee_id',
-            'bank_account:id,employee_id,bankaccount,ifsc',
+            'bank_account',
             'payroll_tracks' => function ($query) {
                 $query->whereBetween('salary_period_from', [$this->start, $this->end]);
             }
         ])
-            ->where('firm_id', $firmId);
+            ->where('firm_id', $firmId)
+            ->when(!empty($this->filters['employee_id']), fn($q) =>
+                $q->whereIn('id', $this->filters['employee_id'])
+            )->get();
 
-        // Apply salary execution group filter if selected
-        if (!empty($this->filters['salary_execution_group_id'])) {
-            $query->whereHas('salary_execution_groups', function ($q) {
-                $q->where('salary_execution_groups.id', $this->filters['salary_execution_group_id']);
-            });
-        }
-
-        // Apply employee filter if selected
-        if (!empty($this->filters['employee_id'])) {
-            $query->whereIn('id', $this->filters['employee_id']);
-        }
-
-        return $this->employees = $query->get();
+        // Filter out employees with zero or no amounts
+        return $this->employees = $employees->filter(function ($employee) {
+            $amount_earning = $employee->payroll_tracks->where('nature', 'earning')->sum('amount_payable');
+            $amount_deduction = $employee->payroll_tracks->where('nature', 'deduction')->sum('amount_payable');
+            $amount = $amount_earning - $amount_deduction;
+            
+            return $amount > 0;
+        });
     }
 
     public function headings(): array
@@ -72,16 +73,16 @@ class BankReportExport implements FromCollection, WithHeadings, WithMapping, Wit
     {
         static $i = 1;
 
-        $amount_earning = $employee->payroll_tracks->where('nature','earning')->sum('amount_payable');
-        $amount_deduction = $employee->payroll_tracks->where('nature','deduction')->sum('amount_payable');
-        $amount=$amount_earning-$amount_deduction;
+        $amount_earning = $employee->payroll_tracks->where('nature', 'earning')->sum('amount_payable');
+        $amount_deduction = $employee->payroll_tracks->where('nature', 'deduction')->sum('amount_payable');
+        $amount = $amount_earning - $amount_deduction;
 
         return [
             $i++,
             $employee->emp_job_profile->employee_code ?? '',
             trim("{$employee->fname} {$employee->lname}"),
-            $employee->bank_account->bankaccount ?? '',
-            $employee->bank_account->ifsc ?? '',
+            isset($employee->bank_account) ? $employee->bank_account->bankaccount : '',
+            isset($employee->bank_account) ? $employee->bank_account->ifsc : '',
             number_format($amount, 0, '.', '')
         ];
     }
@@ -93,17 +94,69 @@ class BankReportExport implements FromCollection, WithHeadings, WithMapping, Wit
                 'font' => ['bold' => true],
                 'alignment' => ['horizontal' => 'center'],
                 'borders' => [
-                    'allBorders' => ['borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN],
+                    'allBorders' => ['borderStyle' => Border::BORDER_THIN],
                 ],
                 'fill' => [
-                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'D9E1F2']
                 ]
             ],
         ];
     }
-
     public function registerEvents(): array
+    {
+        return [
+            AfterSheet::class => function (AfterSheet $event) {
+                $sheet = $event->sheet->getDelegate();
+                $rowCount = $this->employees->count();
+                $headerRow = 1;
+                $dataStartRow = $headerRow + 1;
+                $dataEndRow = $dataStartRow + $rowCount - 1;
+
+                // Set bank account number column to text format
+                $sheet->getStyle('D' . $dataStartRow . ':' . 'D' . $dataEndRow)
+                    ->getNumberFormat()
+                    ->setFormatCode(NumberFormat::FORMAT_TEXT);
+
+                // Apply border and style to data and header rows
+                $sheet->getStyle("A{$headerRow}:F{$dataEndRow}")->applyFromArray([
+                    'borders' => [
+                        'allBorders' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                        ],
+                    ],
+                    'alignment' => [
+                        'vertical' => 'center',
+                    ],
+                ]);
+
+                // Calculate total
+                $grandTotal = $this->employees->sum(function ($e) {
+                    $earn = $e->payroll_tracks->where('nature', 'earning')->sum('amount_payable');
+                    $deduct = $e->payroll_tracks->where('nature', 'deduction')->sum('amount_payable');
+                    return $earn - $deduct;
+                });
+
+                $totalRow = $dataEndRow + 1;
+
+                // Add Grand Total row
+                $sheet->setCellValue("E{$totalRow}", 'Grand Total');
+                $sheet->setCellValue("F{$totalRow}", number_format($grandTotal, 0, '.', ''));
+
+                $sheet->getStyle("E{$totalRow}:F{$totalRow}")->applyFromArray([
+                    'font' => ['bold' => true],
+                    'alignment' => ['horizontal' => 'right'],
+                    'borders' => [
+                        'top' => [
+                            'borderStyle' => Border::BORDER_THIN,
+                        ],
+                    ],
+                ]);
+            },
+        ];
+    }
+
+    public function registerEvents_old(): array
     {
         return [
             AfterSheet::class => function (AfterSheet $event) {
@@ -116,8 +169,7 @@ class BankReportExport implements FromCollection, WithHeadings, WithMapping, Wit
                 $sheet->getStyle($cellRange)->applyFromArray([
                     'borders' => [
                         'allBorders' => [
-                            'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                            'color' => ['argb' => '000000'],
+                            'borderStyle' => Border::BORDER_THIN,
                         ],
                     ],
                     'alignment' => [
