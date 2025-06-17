@@ -35,6 +35,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('hrms/leave/leave-balances', [LeaveController::class, 'leavesBalances']);
     Route::post('hrms/leave/submitleaverequest', [LeaveController::class, 'submitLeaveRequest']);
     Route::get('hrms/leave/leave-requests', [LeaveController::class, 'leaveRequests']);
+    Route::get('hrms/leave/team-leaves', [LeaveController::class, 'getTeamLeaves']);
+    Route::post('hrms/leave/leave-action', [LeaveController::class, 'handleLeaveAction']);
 
     Route::get('/hrms/employees/job-profile', [OnboardController::class, 'getEmployeeJobProfile']);
     Route::post('/hrms/employees/post-job-profile', [OnboardController::class, 'saveEmployeeJobProfile']);

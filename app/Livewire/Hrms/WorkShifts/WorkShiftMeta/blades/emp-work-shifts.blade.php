@@ -118,8 +118,8 @@
                     @if(!$workShift)
                         <flux:table.cell class="table-cell-wrap">{{ $rec->work_shift->shift_title }}</flux:table.cell>
                     @endif
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->start_date->format('Y-m-d') }}</flux:table.cell>
-                    <flux:table.cell class="table-cell-wrap">{{ $rec->end_date ? $rec->end_date->format('Y-m-d') : '-' }}
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->start_date->format('jS M Y ') }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->end_date ? $rec->end_date->format('jS M Y') : '-' }}
                     </flux:table.cell>
                     <flux:table.cell>
                         <div class="flex space-x-2">

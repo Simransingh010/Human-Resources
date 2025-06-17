@@ -4,6 +4,7 @@ namespace App\Livewire\Hrms\Onboard;
 
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmployeeJobProfile;
+use App\Models\Hrms\EmployeeBankAccount;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -21,6 +22,7 @@ class BulkEmployeeJobProfiles extends Component
         'designation_id'     => ['label'=>'Designation','type'=>'select','listKey'=>'designationlist'],
         'employment_type_id' => ['label'=>'Employment Type','type'=>'select','listKey'=>'employmentTypelist'],
         'joblocation_id'     => ['label'=>'Job Location','type'=>'select','listKey'=>'joblocationlist'],
+        'reporting_manager'  => ['label'=>'Reporting Manager','type'=>'select','listKey'=>'employeelist'],
         'doh'                => ['label'=>'Join Date','type'=>'date'],
         'uanno'              => ['label'=>'UAN No.','type'=>'text'],
         'esicno'             => ['label'=>'ESIC No.','type'=>'text'],
@@ -29,6 +31,10 @@ class BulkEmployeeJobProfiles extends Component
         'rf_id'              => ['label'=>'RF ID','type'=>'text'],
         'pan_number'         => ['label'=>'PAN Number','type'=>'text'],
         'biometric_emp_code' => ['label'=>'Biometric Code','type'=>'text'],
+        'bank_name'          => ['label'=>'Bank Name','type'=>'text'],
+        'branch_name'        => ['label'=>'Branch Name','type'=>'text'],
+        'ifsc'               => ['label'=>'IFSC Code','type'=>'text'],
+        'bankaccount'        => ['label'=>'Account Number','type'=>'text'],
     ];
 
     // ── NEW ── define exactly which fields appear in the filter bar
@@ -48,6 +54,11 @@ class BulkEmployeeJobProfiles extends Component
         'rf_id'              => ['label'=>'RF ID','type'=>'text','source'=>'profile'],
         'pan_number'         => ['label'=>'PAN Number','type'=>'text','source'=>'personal'],
         'biometric_emp_code' => ['label'=>'Biometric Code','type'=>'text','source'=>'profile'],
+        'bank_name'          => ['label'=>'Bank Name','type'=>'text','source'=>'bank'],
+        'branch_name'        => ['label'=>'Branch Name','type'=>'text','source'=>'bank'],
+        'ifsc'               => ['label'=>'IFSC Code','type'=>'text','source'=>'bank'],
+        'bankaccount'        => ['label'=>'Account Number','type'=>'text','source'=>'bank'],
+        
     ];
 
     public array $listsForFields = [];
@@ -71,12 +82,13 @@ class BulkEmployeeJobProfiles extends Component
             'designationlist'    => \App\Models\Settings\Designation::where('firm_id',$firmId)->pluck('title','id')->toArray(),
             'employmentTypelist' => \App\Models\Settings\EmploymentType::where('firm_id',$firmId)->pluck('title','id')->toArray(),
             'joblocationlist'    => \App\Models\Settings\Joblocation::where('firm_id',$firmId)->pluck('name','id')->toArray(),
+            'employeelist'       => \App\Models\Hrms\Employee::where('firm_id',$firmId)->pluck('fname','id')->toArray(),
         ];
 
         // show all columns by default
 //        $this->visibleFields = array_keys($this->fieldConfig);
-        $this->visibleFields=['employee_code','department_id','designation_id','employment_type_id'];
-        $this->visibleFilterFields=['fname','employee_code','department_id','designation_id','employment_type_id'];
+        $this->visibleFields=['employee_code','department_id','designation_id','employment_type_id','bankaccount','reporting_manager'];
+        $this->visibleFilterFields=['fname','employee_code','department_id','designation_id','employment_type_id','bankaccount',];
 
 
 
@@ -95,7 +107,7 @@ class BulkEmployeeJobProfiles extends Component
     {
         $firmId = session('firm_id');
 
-        $query = Employee::with(['emp_job_profile', 'emp_personal_detail'])
+        $query = Employee::with(['emp_job_profile', 'emp_personal_detail', 'bank_account'])
             ->where('firm_id', $firmId);
 
         // 1) First, apply any filters that live on the employees table
@@ -116,6 +128,16 @@ class BulkEmployeeJobProfiles extends Component
                 }
             } elseif ($cfg['source'] === 'personal') {
                 $query->whereHas('emp_personal_detail', function ($q) use ($field, $cfg, $value) {
+                    if ($cfg['type'] === 'select') {
+                        $q->where($field, $value);
+                    } elseif ($cfg['type'] === 'date') {
+                        $q->whereDate($field, $value);
+                    } else {
+                        $q->where($field, 'like', "%{$value}%");
+                    }
+                });
+            } elseif ($cfg['source'] === 'bank') {
+                $query->whereHas('bank_account', function ($q) use ($field, $cfg, $value) {
                     if ($cfg['type'] === 'select') {
                         $q->where($field, $value);
                     } elseif ($cfg['type'] === 'date') {
@@ -153,13 +175,18 @@ class BulkEmployeeJobProfiles extends Component
         foreach ($employees as $emp) {
             $profile = $emp->emp_job_profile;
             $personal = $emp->emp_personal_detail;
+            $bankAccount = $emp->bank_account;
             foreach (array_keys($this->fieldConfig) as $field) {
                 if ($field === 'biometric_emp_code') {
                     $this->bulkupdate[$emp->id][$field] = $personal?->biometric_emp_code ?? $profile?->biometric_emp_code;
                 }
-                if ($field === 'pan_number') {
+                elseif ($field === 'pan_number') {
                     $this->bulkupdate[$emp->id][$field] = $personal?->panno;
-                } else {
+                }
+                elseif (in_array($field, ['bank_name', 'branch_name', 'ifsc', 'bankaccount'])) {
+                    $this->bulkupdate[$emp->id][$field] = $bankAccount?->{$field};
+                }
+                else {
                     $this->bulkupdate[$emp->id][$field] = $profile?->{$field};
                 }
             }
@@ -221,6 +248,15 @@ class BulkEmployeeJobProfiles extends Component
             return;
         }
 
+        if (in_array($field, ['bank_name', 'branch_name', 'ifsc', 'bankaccount'])) {
+            $bankAccount = \App\Models\Hrms\EmployeeBankAccount::firstOrCreate(
+                ['employee_id' => $employeeId],
+                ['firm_id'     => session('firm_id')]
+            );
+            $bankAccount->$field = $value;
+            $bankAccount->save();
+            return;
+        }
 
         $profile = EmployeeJobProfile::firstOrCreate(
             ['employee_id' => $employeeId],
@@ -234,7 +270,7 @@ class BulkEmployeeJobProfiles extends Component
     // ← NEW: reset all filters
     public function clearFilters()
     {
-        $this->filters = array_fill_keys(array_keys($this->fieldConfig), '');
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
     // New: flip a column on/off

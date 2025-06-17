@@ -33,6 +33,12 @@ class BulkEmployeeSalaryComponents extends Component
     public $employeeComponents = [];
     public array $bulkupdate = [];
 
+    // Loading states
+    public $isLoading = true;
+    public $isLoadingComponents = true;
+    public $isLoadingEmployees = true;
+    public $isLoadingFilters = true;
+
     // Salary Slip Modal Properties
     public $showSalarySlipModal = false;
     public $selectedEmployee = null;
@@ -56,14 +62,33 @@ class BulkEmployeeSalaryComponents extends Component
 
     public function mount()
     {
-        $this->initListsForFields();
-        $this->loadComponents();
+        $this->isLoading = true;
+        $this->isLoadingFilters = true;
+        $this->isLoadingComponents = true;
+        
+        try {
+            $this->initListsForFields();
+            $this->loadComponents();
 
-        // Set default visible filter fields
-        $this->visibleFilterFields = ['department_id', 'designation_id', 'salary_execution_group_id', 'search'];
+            // Set default visible filter fields
+            $this->visibleFilterFields = ['department_id', 'designation_id', 'salary_execution_group_id', 'search'];
 
-        // Initialize filters
-        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+            // Initialize filters
+            $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+            
+            $this->isLoadingFilters = false;
+            $this->isLoadingComponents = false;
+        } catch (\Exception $e) {
+            $this->isLoadingFilters = false;
+            $this->isLoadingComponents = false;
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load initial data: ' . $e->getMessage(),
+            );
+        } finally {
+            $this->isLoading = false;
+        }
     }
 
     protected function initListsForFields(): void
@@ -89,51 +114,80 @@ class BulkEmployeeSalaryComponents extends Component
 
     protected function loadComponents()
     {
-        $this->components = SalaryComponent::where('firm_id', Session::get('firm_id'))
-            ->get()
-            ->filter(function ($component) {
-                // Only include components with static_known or static_unknown amount_type
-                return in_array($component->amount_type, ['static_known', ]);
-            })
-            ->sortBy('title')
-            ->map(function ($component) {
-                return [
-                    'id' => $component->id,
-                    'title' => $component->title,
-                    'nature' => $component->nature,
-                    'component_type' => $component->component_type,
-                    'amount_type' => $component->amount_type,
-                    'is_calculated' => str_contains($component->amount_type, 'calculated_'),
-                ];
-            })
-            ->toArray();
+        // Cache components for better performance
+        $firmId = Session::get('firm_id');
+        $cacheKey = "salary_components_{$firmId}";
+        
+        $this->components = Cache::remember($cacheKey, 600, function () use ($firmId) { // Cache for 10 minutes
+            return SalaryComponent::where('firm_id', $firmId)
+                ->get()
+                ->filter(function ($component) {
+                    // Only include components with static_known or static_unknown amount_type
+                    return in_array($component->amount_type, ['static_known', ]);
+                })
+                ->sortBy('title')
+                ->map(function ($component) {
+                    return [
+                        'id' => $component->id,
+                        'title' => $component->title,
+                        'nature' => $component->nature,
+                        'component_type' => $component->component_type,
+                        'amount_type' => $component->amount_type,
+                        'is_calculated' => str_contains($component->amount_type, 'calculated_'),
+                    ];
+                })
+                ->toArray();
+        });
     }
 
     protected function loadEmployeeComponents($employeeIds)
     {
+        $this->isLoadingEmployees = true;
 
-
-        $this->employeeComponents = SalaryComponentsEmployee::whereIn('employee_id', $employeeIds)
+        try {
+            // Optimized query with eager loading and proper indexing
+            $components = SalaryComponentsEmployee::select([
+                'employee_id',
+                'salary_component_id',
+                'amount',
+                'amount_type',
+                'nature'
+            ])
+            ->whereIn('employee_id', $employeeIds)
             ->where('firm_id', Session::get('firm_id'))
             ->where(function ($query) {
                 $query->whereNull('effective_to')
                     ->orWhere('effective_to', '>', now());
             })
             ->get()
-            ->map(function ($component) {
-                // Initialize bulkupdate with current values
-                $this->bulkupdate[$component->employee_id][$component->salary_component_id] = $component->amount;
-
-                return [
-                    'employee_id' => $component->employee_id,
-                    'component_id' => $component->salary_component_id,
-                    'amount' => $component->amount,
-                    'amount_type' => $component->amount_type,
-                    'nature' => $component->nature
-                ];
-            })
             ->groupBy('employee_id')
+            ->map(function ($employeeComponents) {
+                return $employeeComponents->map(function ($component) {
+                    // Initialize bulkupdate with current values
+                    $this->bulkupdate[$component->employee_id][$component->salary_component_id] = $component->amount;
+
+                    return [
+                        'employee_id' => $component->employee_id,
+                        'component_id' => $component->salary_component_id,
+                        'amount' => $component->amount,
+                        'amount_type' => $component->amount_type,
+                        'nature' => $component->nature
+                    ];
+                })->toArray();
+            })
             ->toArray();
+
+            $this->employeeComponents = $components;
+
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load employee components: ' . $e->getMessage(),
+            );
+        } finally {
+            $this->isLoadingEmployees = false;
+        }
     }
 
     public function isComponentActive($employeeId, $componentId): bool
@@ -160,11 +214,15 @@ class BulkEmployeeSalaryComponents extends Component
 
     public function applyFilters()
     {
+        $this->isLoadingEmployees = true;
+        $this->clearCaches(); // Clear caches when filters change
         $this->resetPage();
     }
 
     public function clearFilters()
     {
+        $this->isLoadingEmployees = true;
+        $this->clearCaches(); // Clear caches when filters are cleared
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
         $this->resetPage();
     }
@@ -179,6 +237,13 @@ class BulkEmployeeSalaryComponents extends Component
         } else {
             $this->visibleFilterFields[] = $field;
         }
+    }
+
+    public function updatedFilters()
+    {
+        $this->isLoadingEmployees = true;
+        $this->clearCaches(); // Clear caches when filters are updated
+        $this->resetPage();
     }
 
     public function toggleComponent($employeeId, $componentId)
@@ -247,72 +312,18 @@ class BulkEmployeeSalaryComponents extends Component
     #[Computed]
     public function list()
     {
-        $query = SalaryComponentsEmployee::query()
-            ->select([
-                'salary_components_employees.employee_id',
-                'employees.fname',
-                'employees.mname',
-                'employees.lname',
-                'employees.email',
-                'employees.phone',
-                'employees.gender',
-                'employee_job_profiles.employee_code',
-                'employee_job_profiles.department_id',
-                'employee_job_profiles.designation_id',
-                'departments.title as department_title',
-                'designations.title as designation_title'
-            ])
-            ->join('employees', 'employees.id', '=', 'salary_components_employees.employee_id')
-            ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
-            ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
-            ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
-            ->where('salary_components_employees.firm_id', Session::get('firm_id'))
-            ->where(function ($query) {
-                $query->whereNull('salary_components_employees.effective_to')
-                    ->orWhere('salary_components_employees.effective_to', '>', now());
-            })
-            ->where('employees.is_inactive', false)
-            ->when($this->filters['department_id'], fn($query, $value) =>
-                $query->where('employee_job_profiles.department_id', $value))
-            ->when($this->filters['designation_id'], fn($query, $value) =>
-                $query->where('employee_job_profiles.designation_id', $value))
-            ->when($this->filters['salary_execution_group_id'], function($query, $value) {
-                $query->whereExists(function ($subquery) use ($value) {
-                    $subquery->select('id')
-                        ->from('employees_salary_execution_group')
-                        ->whereColumn('employee_id', 'employees.id')
-                        ->where('salary_execution_group_id', $value)
-                        ->where('firm_id', Session::get('firm_id'));
-                });
-            })
-            ->when($this->filters['search'], fn($query, $value) =>
-                $query->where(function ($q) use ($value) {
-                    $q->where('employees.fname', 'like', "%{$value}%")
-                        ->orWhere('employees.lname', 'like', "%{$value}%")
-                        ->orWhere('employees.email', 'like', "%{$value}%")
-                        ->orWhere('employees.phone', 'like', "%{$value}%")
-                        ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
-                }))
-            ->groupBy([
-                'salary_components_employees.employee_id',
-                'employees.fname',
-                'employees.mname',
-                'employees.lname',
-                'employees.email',
-                'employees.phone',
-                'employees.gender',
-                'employee_job_profiles.employee_code',
-                'employee_job_profiles.department_id',
-                'employee_job_profiles.designation_id',
-                'departments.title',
-                'designations.title'
-            ])
-            ->orderBy($this->sortBy, $this->sortDirection);
+        // Set loading state when list is being computed
+        if (!$this->isLoadingEmployees) {
+            $this->isLoadingEmployees = true;
+        }
 
-        $employees = $query->paginate($this->perPage);
+        // Use optimized query with caching
+        $employees = $this->getOptimizedEmployeeQuery();
 
-        // Load components for displayed employees
-        $this->loadEmployeeComponents($employees->pluck('employee_id')->toArray());
+        // Load components for displayed employees - optimized with eager loading
+        if ($employees->count() > 0) {
+            $this->loadEmployeeComponents($employees->pluck('employee_id')->toArray());
+        }
 
         return $employees;
     }
@@ -1207,6 +1218,187 @@ $health_education_cess = .04 * $totalTax;
             heading: 'Coming Soon',
             text: 'PDF download functionality will be available soon.',
         );
+    }
+
+    public function refresh()
+    {
+        $this->isLoading = true;
+        $this->isLoadingEmployees = true;
+        $this->clearCaches(); // Clear all caches
+        $this->resetPage();
+        $this->loadComponents();
+        $this->isLoading = false;
+    }
+
+    /**
+     * Get suggested database indexes for optimal performance
+     * Run these SQL commands in your database to improve query performance
+     */
+    public function getSuggestedIndexes()
+    {
+        return [
+            // Core indexes for main tables
+            'CREATE INDEX idx_employees_firm_inactive ON employees(firm_id, is_inactive)',
+            'CREATE INDEX idx_employee_job_profiles_employee ON employee_job_profiles(employee_id)',
+            'CREATE INDEX idx_employee_job_profiles_dept_desig ON employee_job_profiles(department_id, designation_id)',
+            
+            // Salary components indexes
+            'CREATE INDEX idx_salary_components_employees_firm_employee ON salary_components_employees(firm_id, employee_id)',
+            'CREATE INDEX idx_salary_components_employees_effective ON salary_components_employees(effective_to)',
+            'CREATE INDEX idx_salary_components_employees_component ON salary_components_employees(salary_component_id)',
+            
+            // Execution group indexes
+            'CREATE INDEX idx_employees_execution_group ON employees_salary_execution_group(employee_id, salary_execution_group_id, firm_id)',
+            
+            // Search optimization indexes
+            'CREATE INDEX idx_employees_search ON employees(fname, lname, email, phone)',
+            'CREATE INDEX idx_employee_job_profiles_code ON employee_job_profiles(employee_code)',
+            
+            // Composite indexes for common queries
+            'CREATE INDEX idx_salary_components_employees_composite ON salary_components_employees(firm_id, employee_id, effective_to, salary_component_id)',
+        ];
+    }
+
+    /**
+     * Optimize the query further with query hints and caching
+     */
+    protected function getOptimizedEmployeeQuery()
+    {
+        $firmId = Session::get('firm_id');
+        
+        // Use query caching for better performance
+        $cacheKey = "employee_list_{$firmId}_" . md5(serialize($this->filters) . $this->sortBy . $this->sortDirection . $this->perPage);
+        
+        return Cache::remember($cacheKey, 300, function () use ($firmId) { // Cache for 5 minutes
+            $query = Employee::query()
+                ->select([
+                    'employees.id as employee_id',
+                    'employees.fname',
+                    'employees.mname',
+                    'employees.lname',
+                    'employees.email',
+                    'employees.phone',
+                    'employees.gender',
+                    'employee_job_profiles.employee_code',
+                    'employee_job_profiles.department_id',
+                    'employee_job_profiles.designation_id',
+                    'departments.title as department_title',
+                    'designations.title as designation_title'
+                ])
+                ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
+                ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
+                ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
+                ->whereExists(function ($subquery) use ($firmId) {
+                    $subquery->select(\DB::raw(1))
+                        ->from('salary_components_employees')
+                        ->whereColumn('salary_components_employees.employee_id', 'employees.id')
+                        ->where('salary_components_employees.firm_id', $firmId)
+                        ->where(function ($q) {
+                            $q->whereNull('salary_components_employees.effective_to')
+                              ->orWhere('salary_components_employees.effective_to', '>', now());
+                        });
+                })
+                ->where('employees.firm_id', $firmId)
+                ->where('employees.is_inactive', false)
+                ->when($this->filters['department_id'], fn($query, $value) =>
+                    $query->where('employee_job_profiles.department_id', $value))
+                ->when($this->filters['designation_id'], fn($query, $value) =>
+                    $query->where('employee_job_profiles.designation_id', $value))
+                ->when($this->filters['salary_execution_group_id'], function($query, $value) use ($firmId) {
+                    $query->whereExists(function ($subquery) use ($value, $firmId) {
+                        $subquery->select(\DB::raw(1))
+                            ->from('employees_salary_execution_group')
+                            ->whereColumn('employee_id', 'employees.id')
+                            ->where('salary_execution_group_id', $value)
+                            ->where('firm_id', $firmId);
+                    });
+                })
+                ->when($this->filters['search'], fn($query, $value) =>
+                    $query->where(function ($q) use ($value) {
+                        $q->where('employees.fname', 'like', "%{$value}%")
+                            ->orWhere('employees.lname', 'like', "%{$value}%")
+                            ->orWhere('employees.email', 'like', "%{$value}%")
+                            ->orWhere('employees.phone', 'like', "%{$value}%")
+                            ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
+                    }))
+                ->orderBy($this->sortBy, $this->sortDirection)
+                ->distinct();
+
+            return $query->paginate($this->perPage);
+        });
+    }
+
+    /**
+     * Clear all caches when data is updated
+     */
+    protected function clearCaches()
+    {
+        $firmId = Session::get('firm_id');
+        Cache::forget("salary_components_{$firmId}");
+        
+        // Clear employee list cache
+        $cacheKey = "employee_list_{$firmId}_" . md5(serialize($this->filters) . $this->sortBy . $this->sortDirection . $this->perPage);
+        Cache::forget($cacheKey);
+    }
+
+    /**
+     * Optimize the query by reducing the number of columns selected
+     */
+    protected function getMinimalEmployeeQuery()
+    {
+        $firmId = Session::get('firm_id');
+        
+        return Employee::query()
+            ->select([
+                'employees.id as employee_id',
+                'employees.fname',
+                'employees.lname',
+                'employees.email',
+                'employees.phone',
+                'employee_job_profiles.employee_code',
+                'employee_job_profiles.department_id',
+                'employee_job_profiles.designation_id',
+                'departments.title as department_title',
+                'designations.title as designation_title'
+            ])
+            ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
+            ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
+            ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
+            ->whereExists(function ($subquery) use ($firmId) {
+                $subquery->select(\DB::raw(1))
+                    ->from('salary_components_employees')
+                    ->whereColumn('salary_components_employees.employee_id', 'employees.id')
+                    ->where('salary_components_employees.firm_id', $firmId)
+                    ->where(function ($q) {
+                        $q->whereNull('salary_components_employees.effective_to')
+                          ->orWhere('salary_components_employees.effective_to', '>', now());
+                    });
+            })
+            ->where('employees.firm_id', $firmId)
+            ->where('employees.is_inactive', false)
+            ->when($this->filters['department_id'], fn($query, $value) =>
+                $query->where('employee_job_profiles.department_id', $value))
+            ->when($this->filters['designation_id'], fn($query, $value) =>
+                $query->where('employee_job_profiles.designation_id', $value))
+            ->when($this->filters['salary_execution_group_id'], function($query, $value) use ($firmId) {
+                $query->whereExists(function ($subquery) use ($value, $firmId) {
+                    $subquery->select(\DB::raw(1))
+                        ->from('employees_salary_execution_group')
+                        ->whereColumn('employee_id', 'employees.id')
+                        ->where('salary_execution_group_id', $value)
+                        ->where('firm_id', $firmId);
+                });
+            })
+            ->when($this->filters['search'], fn($query, $value) =>
+                $query->where(function ($q) use ($value) {
+                    $q->where('employees.fname', 'like', "%{$value}%")
+                        ->orWhere('employees.lname', 'like', "%{$value}%")
+                        ->orWhere('employees.email', 'like', "%{$value}%")
+                        ->orWhere('employees.phone', 'like', "%{$value}%")
+                        ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
+                }))
+            ->orderBy($this->sortBy, $this->sortDirection)
+            ->distinct();
     }
 
     public function render()

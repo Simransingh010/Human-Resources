@@ -151,43 +151,44 @@
     <!-- Table Start-->
     <flux:table :paginate="$this->list" class="w-full">
         <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
-            @foreach($fieldConfig as $field => $cfg)
-                @if(in_array($field, $visibleFields))
-                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
-                @endif
-            @endforeach
+            <flux:table.column>Name</flux:table.column>
+            <flux:table.column>Email</flux:table.column>
+            <flux:table.column>Password</flux:table.column>
+            <flux:table.column>Passcode</flux:table.column>
+            <flux:table.column>Phone</flux:table.column>
+            <flux:table.column>Mark as Inactive</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
         <flux:table.rows>
             @foreach ($this->list as $rec)
                 <flux:table.row :key="$rec->id" class="border-b">
-                    @foreach($fieldConfig as $field => $cfg)
-                        @if(in_array($field, $visibleFields))
-                            <flux:table.cell>
-                                @switch($cfg['type'])
-                                    @case('switch')
-                                        <flux:switch wire:model="statuses.{{ $rec->id }}"
-                                                     wire:click="toggleStatus({{ $rec->id }})"/>
-                                        @break
-                                    @default
-                                        {{ $rec->$field }}
-                                @endswitch
-                            </flux:table.cell>
-                        @endif
-                    @endforeach
-                    <flux:table.cell class="table-cell-wrap" >
-                        <!-- Manage Metas -->
-                        <flux:button wire:click="showmodal_panelSync({{ $rec->id }})" color="zinc" size="xs">Panels</flux:button>
-                        <flux:button wire:click="showmodal_firmSync({{ $rec->id }})" size="xs">Firms</flux:button>
-                        <flux:button wire:click="showmodal_permissionGroupSync({{ $rec->id }})" size="xs">Roles</flux:button>
-                        <flux:button wire:click="showmodal_permissionSync({{ $rec->id }})" size="xs">Permissions</flux:button>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->name }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->email }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->password }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->passcode }}</flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap">{{ $rec->phone }}</flux:table.cell>
 
-                        <flux:button variant="primary" size="xs" icon="pencil"
-                                     wire:click="edit({{ $rec->id }})"/>
-                        <flux:modal.trigger name="delete-{{ $rec->id }}">
-                            <flux:button variant="danger" size="xs" icon="trash"/>
-                        </flux:modal.trigger>
+                    <flux:table.cell>
+                        <flux:switch wire:model="statuses.{{ $rec->id }}"
+                                     wire:click="toggleStatus({{ $rec->id }})"/>
+                    </flux:table.cell>
+                    <flux:table.cell class="table-cell-wrap" >
+
+                            <!-- Manage Metas -->
+                            <flux:button wire:click="showmodal_panelSync({{ $rec->id }})" color="zinc" size="xs">Panels</flux:button>
+                            <flux:button wire:click="showmodal_firmSync({{ $rec->id }})" size="xs">Firms</flux:button>
+                            <flux:button wire:click="showmodal_permissionGroupSync({{ $rec->id }})" size="xs">Roles</flux:button>
+                            <flux:button wire:click="showmodal_permissionSync({{ $rec->id }})" size="xs">Permissions</flux:button>
+
+
+                            <flux:button variant="primary" size="xs" icon="pencil"
+                                         wire:click="edit({{ $rec->id }})"/>
+                            <flux:modal.trigger name="delete-{{ $rec->id }}">
+                                <flux:button variant="danger" size="xs" icon="trash"/>
+                            </flux:modal.trigger>
+
+
 
                         <!-- Delete Modal -->
                         <flux:modal name="delete-{{ $rec->id }}" class="min-w-[22rem]">

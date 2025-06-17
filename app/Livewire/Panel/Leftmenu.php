@@ -4,13 +4,18 @@ namespace App\Livewire\Panel;
 
 use Livewire\Component;
 use App\Services\MenuCoordinator;
+use App\Models\Saas\Firm;
+use Illuminate\Support\Facades\Session;
 
 class Leftmenu extends Component
 {
     public $apps = [];
     public $modules = [];
     public $selectedAppId = null;
-    public $selectedModuleId=null;
+    public $selectedModuleId = null;
+    public $firmLogo = null;
+    public $firmWideLogo = null;
+    public $firmSquareLogo = null;
 
     public function mount()
     {
@@ -18,6 +23,17 @@ class Leftmenu extends Component
         $this->selectedAppId = MenuCoordinator::getSelectedAppId() ?? $this->apps[0]['id'] ?? null;
         $firstModuleId = MenuCoordinator::selectApp($this->selectedAppId);
         $this->modules = MenuCoordinator::getAppModules($this->selectedAppId);
+
+        // Get the firm's logo through user relationship
+        $user = auth()->user();
+        if ($user) {
+            $firm = $user->firms()->where('firms.id', Session::get('firm_id'))->first();
+            if ($firm) {
+                $this->firmLogo = $firm->getMedia('squareLogo')->first()?->getUrl();
+                $this->firmWideLogo = $firm->getMedia('wideLogo')->first()?->getUrl();
+                $this->firmSquareLogo = $firm->getMedia('squareLogo')->first()?->getUrl();
+            }
+        }
 
         if ($firstModuleId) {
             $this->dispatch('moduleSelected', $firstModuleId);
@@ -74,7 +90,6 @@ class Leftmenu extends Component
         $this->dispatch('moduleSelected', $moduleId); // Refresh Topmenu
         $this->dispatch('wireSelected', $wire);       // Refresh MainContent
     }
-
 
 
     public function render()

@@ -87,9 +87,48 @@ class TdsReport extends Component
         // Add firm_id to filters
         $this->filters['firm_id'] = session('firm_id');
 
+        // Build file name based on filters
+        $parts = [];
+        // Department
+        if (!empty($this->filters['department_id'])) {
+            $departments = $this->listsForFields['departments'];
+            $deptNames = [];
+            foreach ((array)$this->filters['department_id'] as $deptId) {
+                if (isset($departments[$deptId])) {
+                    $deptNames[] = strtolower(str_replace(' ', '_', $departments[$deptId]));
+                }
+            }
+            if ($deptNames) {
+                $parts[] = implode('_', $deptNames);
+            }
+        }
+        // Salary Execution Group
+        if (!empty($this->filters['salary_execution_group_id'])) {
+            $groups = $this->listsForFields['salary_execution_groups'];
+            $groupNames = [];
+            foreach ((array)$this->filters['salary_execution_group_id'] as $groupId) {
+                if (isset($groups[$groupId])) {
+                    $groupNames[] = strtolower(str_replace(' ', '_', $groups[$groupId]));
+                }
+            }
+            if ($groupNames) {
+                $parts[] = implode('_', $groupNames);
+            }
+        }
+        // If neither department nor group, use 'all'
+        if (empty($parts)) {
+            $parts[] = 'all_departments';
+        }
+        // Month
+        $month = Carbon::parse($this->filters['date_range']['start'])->format('F');
+        $month = strtolower($month);
+        $parts[] = $month;
+        $parts[] = 'tds_report';
+        $filename = implode('_', $parts) . '.xlsx';
+
         return Excel::download(
             new TdsReportExport($this->filters),
-            'tds-report-' . now()->format('Ymd_His') . '.xlsx'
+            $filename
         );
     }
 

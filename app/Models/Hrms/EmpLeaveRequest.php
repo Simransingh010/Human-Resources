@@ -23,6 +23,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $apply_days
  * @property string|null $reason
  * @property string $status
+ * @property string|null $time_from
+ * @property string|null $time_to
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
@@ -46,7 +48,9 @@ class EmpLeaveRequest extends Model
 		'leave_type_id' => 'int',
 		'apply_from' => 'datetime',
 		'apply_to' => 'datetime',
-		'apply_days' => 'int'
+		'apply_days' => 'decimal:2',
+		'time_from' => 'datetime',
+		'time_to' => 'datetime'
 	];
 
     public const STATUS_SELECT = [
@@ -75,7 +79,10 @@ class EmpLeaveRequest extends Model
 		'apply_to',
 		'apply_days',
 		'reason',
-		'status'
+		'status',
+        'time_from',
+        'time_to'
+        //TIME FROM - TIME TO
 	];
 
 	public function employee()

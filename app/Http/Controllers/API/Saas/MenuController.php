@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\Saas\Action;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Response;
 
 class MenuController extends Controller
 {
@@ -34,15 +35,15 @@ class MenuController extends Controller
             try {
                 $isFirmAssociated = $user->firms()->where('firms.id', $firmId)->exists();
                 if (!$isFirmAssociated) {
-                    return \response()->json([
+                    return response()->json([
                         'message_type' => 'error',
                         'message_display' => 'flash',
                         'message' => 'Unauthorized firm access.'
                     ], 403);
                 }
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Firm association check failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Firm association check failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error checking firm association: ' . $e->getMessage()
@@ -53,15 +54,15 @@ class MenuController extends Controller
             try {
                 $isPanelAssociated = $user->panels()->where('panels.id', $panelId)->exists();
                 if (!$isPanelAssociated) {
-                    return \response()->json([
+                    return response()->json([
                         'message_type' => 'error',
                         'message_display' => 'flash',
                         'message' => 'Unauthorized panel access.'
                     ], 403);
                 }
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Panel association check failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Panel association check failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error checking panel association: ' . $e->getMessage()
@@ -70,13 +71,13 @@ class MenuController extends Controller
 
             // Retrieve roles assigned to the user.
             try {
-                $roleIds = \Illuminate\Support\Facades\DB::table('role_user')
+                $roleIds = DB::table('role_user')
                     ->where('user_id', $user->id)
                     ->pluck('role_id')
                     ->toArray();
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Role retrieval failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Role retrieval failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error retrieving user roles: ' . $e->getMessage()
@@ -86,7 +87,7 @@ class MenuController extends Controller
             // this need to be fixed later, as some case user may assigned with actions wihout assiging roles,
             // so we have to merge direct actions and actions against assigned role than after merging if no action found than the eror should come
             if (empty($roleIds)) {
-                return \response()->json([
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'No Role assigned for the user.'
@@ -95,14 +96,14 @@ class MenuController extends Controller
 
             // Get permission IDs associated with these permission groups.
             try {
-                $actionIds = \Illuminate\Support\Facades\DB::table('action_role')
+                $actionIds = DB::table('action_role')
                     ->whereIn('role_id', $roleIds)
                     ->pluck('action_id')
                     ->unique()
                     ->toArray();
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Action IDs retrieval failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Action IDs retrieval failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error retrieving action IDs: ' . $e->getMessage()
@@ -111,13 +112,13 @@ class MenuController extends Controller
 
             // Get list of app_module IDs that are assigned to the selected panel.
             try {
-                $componentPanelIds = \Illuminate\Support\Facades\DB::table('component_panel')
+                $componentPanelIds = DB::table('component_panel')
                     ->where('panel_id', $panelId)
                     ->pluck('component_id')
                     ->toArray();
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Component panel IDs retrieval failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Component panel IDs retrieval failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error retrieving component panel IDs: ' . $e->getMessage()
@@ -126,14 +127,14 @@ class MenuController extends Controller
 
             // Retrieve permission details along with the related app_module and app.
             try {
-                $actions = \App\Models\Saas\Action::with(['component.modules.apps'])
+                $actions = Action::with(['component.modules.apps'])
                     ->whereIn('id', $actionIds)
                     ->whereIn('component_id', $componentPanelIds)
                     ->where('is_inactive', false)
                     ->get();
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Actions retrieval failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Actions retrieval failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error retrieving actions: ' . $e->getMessage()
@@ -216,20 +217,20 @@ class MenuController extends Controller
                     return $app;
                 }, array_values($menuHierarchy));
 
-                return \response()->json([
+                return response()->json([
                     'menus' => $result,
                 ]);
             } catch (Exception $e) {
-                \Illuminate\Support\Facades\Log::error('Menu hierarchy building failed: ' . $e->getMessage());
-                return \response()->json([
+                Log::error('Menu hierarchy building failed: ' . $e->getMessage());
+                return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
                     'message' => 'Error building menu hierarchy: ' . $e->getMessage()
                 ], 500);
             }
         } catch (Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Menu API failed: ' . $e->getMessage());
-            return \response()->json([
+            Log::error('Menu API failed: ' . $e->getMessage());
+            return response()->json([
                 'message_type' => 'error',
                 'message_display' => 'flash',
                 'message' => 'Error retrieving menu: ' . $e->getMessage(),

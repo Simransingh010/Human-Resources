@@ -37,7 +37,7 @@ class HolidayCalendars extends Component
         'description' => ['label' => 'Description', 'type' => 'textarea'],
         'start_date' => ['label' => 'Start Date', 'type' => 'date'],
         'end_date' => ['label' => 'End Date', 'type' => 'date'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+        'is_inactive' => ['label' => 'Inactive', 'type' => 'boolean'],
     ];
 
     // Filter fields configuration

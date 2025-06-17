@@ -109,7 +109,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
 
     public function headings(): array
     {
-        return [
+        return [[
             'SR. NO.',
             'DATE',
             'STAFF',
@@ -117,7 +117,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             'PAN NO.',
             'Total Amount to be shown in Form 16',
             'Total TDS Amount to be shown in Form 16'
-        ];
+        ]];
     }
 
     public function map($employee): array
@@ -161,7 +161,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
         
         $row = [
             $serial++,
-            Carbon::now()->format('d.m.Y'),
+            $this->end->format('d.m.Y'),
             $staffType,
             trim("{$employee->fname} {$employee->mname} {$employee->lname}"),
             strtoupper($panNo),
@@ -174,14 +174,13 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
 
     public function bindValue(Cell $cell, $value)
     {
-        // Columns F (5) and G (6) are 0-indexed
-        if (in_array($cell->getColumn(), ['F', 'G'])) {
-            // Ensure the value is numeric before setting it
+        // Only apply numeric formatting for data rows (not the header row)
+        // Header is on row 4 (after 3 inserted rows)
+        if ($cell->getRow() > 4 && in_array($cell->getColumn(), ['F', 'G'])) {
             if (is_numeric($value)) {
                 $cell->setValueExplicit((float)$value, DataType::TYPE_NUMERIC);
                 return true;
             }
-            // If not numeric, set to 0
             $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
             return true;
         }
@@ -223,7 +222,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
                 $sheet->getStyle("A3")->getFont()->setSize(12)->setBold(true);
                 $sheet->getStyle("A3")->getAlignment()->setHorizontal('center');
 
-                // Set header row style
+                // Set header row style (now row 4)
                 $headerRow = 4;
                 $sheet->getStyle("A{$headerRow}:{$highestColumn}{$headerRow}")->getFont()->setBold(true);
                 $sheet->getStyle("A{$headerRow}:{$highestColumn}{$headerRow}")->getAlignment()->setHorizontal('center');

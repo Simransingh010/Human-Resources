@@ -8,11 +8,11 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Spatie\MediaLibrary\MediaCollections\Models\Media;
-use App\Models\Hrms\Holiday;
-use App\Models\Hrms\HolidayCalendar;
 use App\Models\Hrms\EmpWorkShift;
 use App\Models\Hrms\WorkShift;
 use App\Models\Hrms\WorkShiftsAlgo;
+use App\Models\Hrms\Holiday;
+use App\Models\Hrms\HolidayCalendar;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\PayrollSlot;
 use App\Models\Hrms\PayrollSlotsCmd;
@@ -564,7 +564,7 @@ class PayrollController extends Controller
                                 'id' => $cmd->id,
                                 'cmd_status' => $cmd->payroll_slot_status,
                                 'cmd_status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$cmd->payroll_slot_status] ?? null,
-                                'remarks' => $cmd->run_payroll_remarks,
+                                'remarks' => is_string($cmd->run_payroll_remarks) ? json_decode($cmd->run_payroll_remarks, true) : $cmd->run_payroll_remarks,
                                 'created_at' => $cmd->created_at->format('Y-m-d H:i:s'),
                                 'user_id' => $cmd->user_id
                             ];
@@ -659,48 +659,27 @@ class PayrollController extends Controller
             $validStatusCodes = ['ST', 'RS', 'IP', 'CM']; // Started, Restarted, In Progress, Completed
             
             $latestCommand = $payrollSlot->payroll_slots_cmds->sortByDesc('created_at')->first();
-            $isPayrollProcessed = $latestCommand && in_array($latestCommand->payroll_slot_status, $validStatusCodes);
             
-            // Get the payroll components if available
-            $payrollComponents = collect([]);
+            // First, check if there are actual payroll components for this employee
+            $payrollComponents = PayrollComponentsEmployeesTrack::where('payroll_slot_id', $payrollSlotId)
+                ->where('employee_id', $employee->id)
+                ->with('salary_component')
+                ->orderBy('nature')
+                ->orderBy('sequence')
+                ->get();
+            
+            // If we have components, payroll is processed regardless of command status
+            $isPayrollProcessed = !$payrollComponents->isEmpty();
+            
+            // If no components, then check command status as fallback
+            if (!$isPayrollProcessed) {
+                $isPayrollProcessed = $latestCommand && in_array($latestCommand->payroll_slot_status, $validStatusCodes);
+            }
+            
             $totalEarnings = 0;
             $totalDeductions = 0;
             
             if ($isPayrollProcessed) {
-                // Get the payroll components for the employee
-                $payrollComponents = PayrollComponentsEmployeesTrack::where('payroll_slot_id', $payrollSlotId)
-                    ->where('employee_id', $employee->id)
-                    ->with('salary_component')
-                    ->orderBy('nature')
-                    ->orderBy('sequence')
-                    ->get();
-                
-                // If no components found even though payroll is processed, it might be that this employee wasn't included
-                if ($payrollComponents->isEmpty()) {
-                    return response()->json([
-                        'message_type' => 'info',
-                        'message_display' => 'popup',
-                        'message' => 'No payroll data available for this employee in the selected period.',
-                        'data' => [
-                            'payroll_slot' => [
-                                'id' => $payrollSlot->id,
-                                'title' => $payrollSlot->title,
-                                'from_date' => $payrollSlot->from_date->format('Y-m-d'),
-                                'to_date' => $payrollSlot->to_date->format('Y-m-d'),
-                                'status' => $payrollSlot->payroll_slot_status,
-                                'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null,
-                            ],
-                            'employee' => [
-                                'id' => $employee->id,
-                                'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
-                                'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
-                            ],
-                            'is_processed' => false,
-                            'components' => []
-                        ]
-                    ], 200);
-                }
-                
                 // Calculate totals
                 $totalEarnings = $payrollComponents->where('nature', 'earning')->sum('amount_payable');
                 $totalDeductions = $payrollComponents->where('nature', 'deduction')->sum('amount_payable');
@@ -780,7 +759,7 @@ class PayrollController extends Controller
                     'latest_command' => $latestCommand ? [
                         'status' => $latestCommand->payroll_slot_status,
                         'status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$latestCommand->payroll_slot_status] ?? null,
-                        'remarks' => $latestCommand->run_payroll_remarks,
+                        'remarks' => is_string($latestCommand->run_payroll_remarks) ? json_decode($latestCommand->run_payroll_remarks, true) : $latestCommand->run_payroll_remarks,
                         'created_at' => $latestCommand->created_at->format('Y-m-d H:i:s')
                     ] : []
                 ];

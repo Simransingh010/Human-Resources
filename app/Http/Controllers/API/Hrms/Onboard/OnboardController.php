@@ -658,6 +658,10 @@ class OnboardController extends Controller
                 'esicno'             => 'nullable|string|max:255',
             ]);
 
+            // Remove reporting_manager from validated data before saving
+            $validatedForDb = $validated;
+            unset($validatedForDb['reporting_manager']);
+
             DB::beginTransaction();
 
             // Find or create the employee job profile
@@ -665,10 +669,10 @@ class OnboardController extends Controller
 
             if ($jobProfile) {
                 // Update existing profile
-                $jobProfile->update($validated);
+                $jobProfile->update($validatedForDb);
             } else {
                 // Create new profile
-                $jobProfile = EmployeeJobProfile::create(array_merge($validated, [
+                $jobProfile = EmployeeJobProfile::create(array_merge($validatedForDb, [
                     'firm_id' => $employee->firm_id,
                     'employee_id' => $employee->id,
                 ]));

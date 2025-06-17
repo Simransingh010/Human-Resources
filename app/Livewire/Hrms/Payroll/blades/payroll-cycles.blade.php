@@ -129,6 +129,9 @@
                                 elseif($step->step_code_main == 'salary_advances') {
                                     $icon = 'banknotes';
                                 }
+                                elseif($step->step_code_main == 'salary_arrears') {
+                                    $icon = 'minus-circle'; // Using minus-circle icon for arrears
+                                }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
                                 <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>

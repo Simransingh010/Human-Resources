@@ -19,6 +19,9 @@ use Flux;
 use Illuminate\Support\Facades\DB;
 use App\Models\Hrms\EmpLeaveBalance;
 use App\Models\Hrms\EmpLeaveTransaction;
+use Illuminate\Support\Facades\Notification; // if you need it elsewhere
+use App\Models\NotificationQueue;
+use Carbon\Carbon;
 
 class TeamLeaves extends Component
 {
@@ -35,30 +38,30 @@ class TeamLeaves extends Component
     public $showEventsModal = false;
 
     // Add Livewire hooks for debugging
-    public function booted()
-    {
-        $this->dispatch('console-log', message: 'TeamLeaves component booted');
-    }
-
-    public function hydrate()
-    {
-        $this->dispatch('console-log', message: 'TeamLeaves component hydrated');
-    }
-
-    public function dehydrate()
-    {
-        $this->dispatch('console-log', message: 'TeamLeaves component dehydrated');
-    }
-
-    public function updating($name, $value)
-    {
-        $this->dispatch('console-log', message: "Updating {$name}", data: ['value' => $value]);
-    }
-
-    public function updated($name, $value)
-    {
-        $this->dispatch('console-log', message: "Updated {$name}", data: ['value' => $value]);
-    }
+//    public function booted()
+//    {
+//        $this->dispatch('console-log', message: 'TeamLeaves component booted');
+//    }
+//
+//    public function hydrate()
+//    {
+//        $this->dispatch('console-log', message: 'TeamLeaves component hydrated');
+//    }
+//
+//    public function dehydrate()
+//    {
+//        $this->dispatch('console-log', message: 'TeamLeaves component dehydrated');
+//    }
+//
+//    public function updating($name, $value)
+//    {
+//        $this->dispatch('console-log', message: "Updating {$name}", data: ['value' => $value]);
+//    }
+//
+//    public function updated($name, $value)
+//    {
+//        $this->dispatch('console-log', message: "Updated {$name}", data: ['value' => $value]);
+//    }
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -616,7 +619,7 @@ class TeamLeaves extends Component
     }
 
 
-    public function handleAction($action, $id)
+    public function handleAction_simran($action, $id)
     {
         $this->dispatch(
             'console-log',
@@ -758,6 +761,230 @@ class TeamLeaves extends Component
             );
         }
     }
+    public function handleAction($action, $id)
+    {
+        $this->dispatch(
+            'console-log',
+            message: 'Handling leave action',
+            data: [
+                'action' => $action,
+                'id'     => $id,
+                'user'   => Auth::id()
+            ]
+        );
+
+        try {
+            // 1) Validate remarks
+            $this->validate([
+                'formData.remarks' => 'nullable|string|min:3',
+            ]);
+
+            if (! in_array($action, ['approve', 'reject'])) {
+                throw new \Exception('Invalid action');
+            }
+
+            if (! $id) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Error',
+                    text: 'No leave request selected.',
+                );
+                return;
+            }
+
+            $leaveRequest = EmpLeaveRequest::where('id', $id)
+                ->where('firm_id', Session::get('firm_id'))
+                ->with('employee') // eager‐load employee relation
+                ->first();
+
+            if (! $leaveRequest) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Error',
+                    text: 'Leave request not found.',
+                );
+                return;
+            }
+
+            if (! $this->canApproveLeave($leaveRequest)) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Unauthorized',
+                    text: 'You are not authorized to perform this action.',
+                );
+                return;
+            }
+
+            $approvalLevel   = $this->getApprovalLevel($leaveRequest);
+            $oldStatus       = $leaveRequest->status;
+            $maxApprovalLevel = $this->getMaxApprovalLevel($leaveRequest);
+
+            // Count current approvals
+            $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $id)
+                ->where('status', 'approved')
+                ->count();
+
+            // Add the current approval if approving
+            if ($action === 'approve') {
+                $approvalCount++;
+                // Determine new status
+                $newStatus = ($approvalCount >= $maxApprovalLevel)
+                    ? 'approved'
+                    : 'approved_further';
+            } else {
+                $newStatus = 'rejected';
+            }
+
+            try {
+                // 2) Update leave request status
+                $leaveRequest->update([
+                    'status' => $newStatus
+                ]);
+
+                // 3) Create approval record
+                EmpLeaveRequestApproval::create([
+                    'emp_leave_request_id' => $id,
+                    'approval_level'       => $approvalLevel,
+                    'approver_id'          => Auth::id(),
+                    'status'               => ($action === 'approve') ? 'approved' : 'rejected',
+                    'remarks'              => $this->formData['remarks'] ?? null,
+                    'acted_at'             => now(),
+                    'firm_id'              => Session::get('firm_id')
+                ]);
+
+                // 4) Update leave balance if approved
+                if ($action === 'approve') {
+                    $this->updateLeaveBalance($leaveRequest);
+                }
+
+                // 5) Log the event
+                LeaveRequestEvent::create([
+                    'emp_leave_request_id' => $id,
+                    'user_id'              => Auth::id(),
+                    'event_type'           => 'status_changed',
+                    'from_status'          => $oldStatus,
+                    'to_status'            => $newStatus,
+                    'remarks'              => $this->formData['remarks'] ?? null,
+                    'firm_id'              => Session::get('firm_id'),
+                    'created_at'           => now(),
+                ]);
+
+                // ── NEW: SEND NOTIFICATION TO THE EMPLOYEE ───────────────────────────
+                // Format the dates in “j-M-Y” (e.g. “2-Aug-2025”)
+                $fromDT = Carbon::parse($leaveRequest->apply_from)->format('j-M-Y');
+                $toDT   = Carbon::parse($leaveRequest->apply_to)->format('j-M-Y');
+
+                $employeeUser = $leaveRequest->employee->user;
+                // (Assumes Employee model has a `user()` relationship.)
+
+                if ($employeeUser) {
+                    $employeePayload = [
+                        'firm_id'      => Session::get('firm_id'),
+                        'subject'      => "Your leave request has been {$newStatus}",
+                        'message'      => "Your leave request from {$fromDT} to {$toDT} has been <strong>{$newStatus}</strong>.",
+                        'company_name' => $leaveRequest->employee->firm->name,
+                    ];
+
+                    NotificationQueue::create([
+                        'firm_id'         => Session::get('firm_id'),
+                        'notifiable_type'=> User::class,
+                        'notifiable_id'  => $employeeUser->id,
+                        'channel'        => 'mail',
+                        'data'           => json_encode($employeePayload),
+                        'status'         => 'pending',
+                        'created_at'     => now(),
+                        'updated_at'     => now(),
+                    ]);
+                }
+                // ───────────────────────────────────────────────────────────────────────
+
+                // ── NEW: NOTIFY ALL APPROVERS ABOUT THE UPDATED STATUS ─────────────────
+                // 1) Fetch all applicable approval rules again (same logic as in submit)
+                $rules = LeaveApprovalRule::with('employees')
+                    ->where('firm_id', Session::get('firm_id'))
+                    ->where('approval_mode', '!=', 'view_only')
+                    ->where('is_inactive', false)
+                    ->whereDate('period_start', '<=', now())
+                    ->whereDate('period_end',   '>=', now())
+                    ->where(function($q) use ($leaveRequest) {
+                        $q->whereNull('leave_type_id')
+                            ->orWhere('leave_type_id', $leaveRequest->leave_type_id);
+                    })
+                    ->whereHas('employees', function($q) use ($leaveRequest) {
+                        $q->where('employee_id', $leaveRequest->employee_id);
+                    })
+                    ->get();
+
+                // 2) Pluck unique approver IDs
+                $approverIds = $rules
+                    ->pluck('approver_id')
+                    ->filter()    // drop null values
+                    ->unique()
+                    ->values()
+                    ->all();
+
+                // 3) Load those User models
+                $approverUsers = User::whereIn('id', $approverIds)->get();
+
+                // 4) Prepare a single payload to reuse
+                $approverPayload = [
+                    'firm_id'      => Session::get('firm_id'),
+                    'subject'      => "Leave #{$leaveRequest->id} status updated to {$newStatus}",
+                    'message'      => "{$leaveRequest->employee->fname} {$leaveRequest->employee->lname}'s leave from {$fromDT} to {$toDT} has been <strong>{$newStatus}</strong> by " . Auth::user()->name . ".",
+                    'company_name' => $leaveRequest->employee->firm->name,
+                ];
+
+                // 5) Create one notification per approver
+                foreach ($approverUsers as $approverUser) {
+                    NotificationQueue::create([
+                        'firm_id'         => Session::get('firm_id'),
+                        'notifiable_type'=> User::class,
+                        'notifiable_id'  => $approverUser->id,
+                        'channel'        => 'mail',
+                        'data'           => json_encode($approverPayload),
+                        'status'         => 'pending',
+                        'created_at'     => now(),
+                        'updated_at'     => now(),
+                    ]);
+                }
+                // ───────────────────────────────────────────────────────────────────────
+
+                // 6) Close modal and reset
+                $this->closeModal();
+                $this->resetPage();
+                $this->dispatch('leave-status-updated');
+
+                $successMessage = ($action === 'approve')
+                    ? (
+                    $newStatus === 'approved'
+                        ? 'Leave request has been fully approved'
+                        : "Leave request approved ({$approvalCount}/{$maxApprovalLevel} approvals)"
+                    )
+                    : 'Leave request has been rejected';
+
+                Flux::toast(
+                    variant: 'success',
+                    heading: $action === 'approve' ? 'Leave Approved' : 'Leave Rejected',
+                    text: $successMessage,
+                );
+
+            } catch (\Exception $e) {
+                throw $e;
+            }
+
+        } catch (\Exception $e) {
+            $this->dispatch(
+                'console-log',
+                message: 'Leave action error',
+                data: ['error' => $e->getMessage()]
+            );
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage(),
+            );
+        }
+    }
 
     /**
      * Get the approval level for the current user from the matching rule
@@ -781,7 +1008,7 @@ class TeamLeaves extends Component
 
     /**
      * Update employee leave balance when leave is approved
-     * 
+     *
      * @param EmpLeaveRequest $leaveRequest
      * @return void
      */

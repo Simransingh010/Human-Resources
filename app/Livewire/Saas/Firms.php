@@ -6,11 +6,12 @@ use App\Models\Saas\Agency;
 use App\Models\Saas\Firm;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Livewire\WithFileUploads;
 use Flux;
 
 class Firms extends Component
 {
-    use WithPagination;
+    use WithPagination, WithFileUploads;
     public $selectedId = null;
     public array $listsForFields = [];
     public $sortBy = 'created_at';
@@ -31,6 +32,11 @@ class Firms extends Component
     public $isEditing = false;
     public $modal = false;
 
+    // Add public properties for file uploads
+    public $favicon;
+    public $squareLogo;
+    public $wideLogo;
+
     public function mount()
     {
         $this->refreshStatuses();
@@ -48,8 +54,6 @@ class Firms extends Component
 
     public function store()
     {
-
-
         $validatedData = $this->validate([
             'formData.name' => 'required|string|max:255',
             'formData.short_name' => 'nullable|string|max:255',
@@ -58,7 +62,9 @@ class Firms extends Component
             'formData.parent_firm_id' => 'nullable|integer|exists:firms,id',
             'formData.is_master_firm' => 'boolean',
             'formData.is_inactive' => 'boolean',
-
+            'favicon' => 'nullable|image|max:1024',
+            'squareLogo' => 'nullable|image|max:1024',
+            'wideLogo' => 'nullable|image|max:1024',
         ]);
 
         // Convert empty strings to null
@@ -68,11 +74,23 @@ class Firms extends Component
 
         if ($this->isEditing) {
             // Editing: Update the record
-            Firm::findOrFail($this->formData['id'])->update($validatedData['formData']);
+            $firm = Firm::findOrFail($this->formData['id']);
+            $firm->update($validatedData['formData']);
             $toastMsg = 'Record updated successfully';
         } else {
-            firm::create($validatedData['formData']);
+            $firm = Firm::create($validatedData['formData']);
             $toastMsg = 'Record added successfully';
+        }
+
+        // Handle file uploads
+        if ($this->favicon) {
+            $firm->addMedia($this->favicon->getRealPath())->toMediaCollection('favicon');
+        }
+        if ($this->squareLogo) {
+            $firm->addMedia($this->squareLogo->getRealPath())->toMediaCollection('squareLogo');
+        }
+        if ($this->wideLogo) {
+            $firm->addMedia($this->wideLogo->getRealPath())->toMediaCollection('wideLogo');
         }
 
         // Reset the form and editing state after saving
@@ -85,7 +103,6 @@ class Firms extends Component
             heading: 'Changes saved.',
             text: $toastMsg,
         );
-
     }
 
     public function edit($id)
@@ -157,6 +174,17 @@ class Firms extends Component
     {
         $this->selectedId = $firmId;
         $this->modal('app-access')->show();
+    }
+
+    public function removeLogo($collection)
+    {
+        $firm = Firm::findOrFail($this->formData['id']);
+        $firm->clearMediaCollection($collection);
+        Flux::toast(
+            variant: 'success',
+            heading: 'Logo Removed.',
+            text: 'Logo has been removed successfully',
+        );
     }
 
     public function render()

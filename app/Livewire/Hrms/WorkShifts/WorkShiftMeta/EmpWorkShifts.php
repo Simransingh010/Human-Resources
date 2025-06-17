@@ -71,9 +71,10 @@ class EmpWorkShifts extends Component
                 $query->where('work_shift_id', $this->workShiftId);
             })
             ->when($this->filters['search_employee'], function ($query) {
-                $query->whereHas('employee', function ($q) {
-                    $search = strtolower($this->filters['search_employee']);
-                    $q->whereRaw('LOWER(CONCAT(fname, " ", COALESCE(mname, ""), " ", lname)) LIKE ?', ['%' . $search . '%']);
+                $search = $this->filters['search_employee'];
+                $query->whereHas('employee', function ($q) use ($search) {
+                    $q->where('fname', 'like', "%{$search}%")
+                      ->orWhere('lname', 'like', "%{$search}%");
                 });
             })
             ->when($this->filters['search_date'], function ($query) {
@@ -84,7 +85,7 @@ class EmpWorkShifts extends Component
             })
             ->with(['work_shift:id,shift_title', 'employee:id,fname,mname,lname'])
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(5);
+            ->paginate(12);
     }
 
     public function store()
@@ -166,6 +167,13 @@ class EmpWorkShifts extends Component
             'end_date' => '',
         ];
         $this->isEditing = false;
+    }
+
+    public function showWorkShiftsAllocation($workShiftId)
+    {
+        $this->workShiftId = $workShiftId;
+        $this->modal('work-shift-allocation')->show();
+        $this->modal('emp-work-shifts-modal')->close();
     }
 
     public function render()

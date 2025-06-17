@@ -16,6 +16,9 @@ use App\Models\Hrms\EmployeeTaxRegime;
 use App\Models\Hrms\SalaryComponent;
 use App\Models\Hrms\EmpAttendance;
 use App\Models\Hrms\PayrollStepPayrollSlotCmd;
+use App\Models\Hrms\SalaryHold;
+use App\Models\Hrms\SalaryAdvance;
+use App\Models\Hrms\SalaryArrear;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
@@ -562,17 +565,7 @@ class PayrollCycles extends Component
             $monthlyTax = ($total_tds_remaining_for_year) / $total_count_of_salary_slots_remaining;
             $monthlyTax = $this->roundOffTax($monthlyTax);
 
-            // Check if TDS entry already exists for this slot
-//            $existingTdsEntry = PayrollComponentsEmployeesTrack::where('firm_id', Session::get('firm_id'))
-//                ->where('payroll_slot_id', $slot_id)
-//                ->where('employee_id', $employeeId)
-//                ->where('salary_component_id', $tdsComponent->id)
-//                ->first();
-//
-//            if ($existingTdsEntry) {
-//                // Skip if entry already exists
-//                return;
-//            }
+           
 
             // 8. Create PayrollComponentsEmployeesTrack for TDS
             PayrollComponentsEmployeesTrack::firstOrCreate(
@@ -748,34 +741,15 @@ class PayrollCycles extends Component
 
     public function render()
     {
-        return view('livewire.hrms.payroll.blades.payroll-cycles');
+        return view()->file(app_path('Livewire/Hrms/Payroll/blades/payroll-cycles.blade.php'));
     }
     
-    public function modal($name)
-    {
-        // Assuming Flux modals are handled via Livewire's own modal system or a custom helper
-        // If 'Flux' is a facade that provides a modal helper, ensure it's properly imported and used.
-        // For now, I'm providing a placeholder if 'Flux' itself is not directly defining a modal method.
-        // If your Flux library provides a specific Livewire modal trait or helper, you'll want to use that.
-        return new class($this, $name) {
-            public $component;
-            public $name;
-            public function __construct($component, $name)
-            {
-                $this->component = $component;
-                $this->name = $name;
-            }
-            public function show()
-            {
-                $this->component->dispatch('open-modal', name: $this->name);
-            }
-        };
-    }
+  
 
     public function showSalaryTracks($slotId)
     {
         $this->selectedSlotId = $slotId;
-        $this->modal('salary-tracks')->show();
+        $this-> modal('salary-tracks')->show();
     }
 
     public function openAttendanceStep($stepId, $slotId)
@@ -886,6 +860,42 @@ class PayrollCycles extends Component
     public function completePayrollStep($stepId, $slotId)
     {
         try {
+            // Get the payroll slot details
+            $payrollSlot = PayrollSlot::findOrFail($slotId);
+            
+            // Get the step details
+            $step = PayrollStep::findOrFail($stepId);
+            
+            // Get employees from the execution group
+            $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
+                ->where('salary_execution_group_id', $payrollSlot->salary_execution_group_id)
+                ->pluck('employee_id')
+                ->toArray();
+
+            // Get employees on salary hold for this payroll slot
+            $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
+                ->where('payroll_slot_id', $slotId)
+                ->pluck('employee_id')
+                ->toArray();
+
+            // Filter out employees on hold
+            $activeEmployees = array_diff($employeeIds, $employeesOnHold);
+
+            // Handle salary holds step
+            if ($step->step_code_main === 'salary_holds') {
+                $this->processSalaryHolds($slotId, $employeeIds, $employeesOnHold);
+            }
+            
+            // Handle salary advances step
+            if ($step->step_code_main === 'salary_advances') {
+                $this->processSalaryAdvances($slotId, $activeEmployees, $payrollSlot);
+            }
+            
+            // Handle salary arrears step
+            if ($step->step_code_main === 'salary_arrears') {
+                $this->processSalaryArrears($slotId, $activeEmployees, $payrollSlot);
+            }
+
             // Update the step status to completed in PayrollStepPayrollSlot
             PayrollStepPayrollSlot::where('firm_id', Session::get('firm_id'))
                 ->where('payroll_slot_id', $slotId)
@@ -899,8 +909,8 @@ class PayrollCycles extends Component
                 'user_id' => auth()->user()->id,
                 'run_payroll_remarks' => json_encode([
                     'payroll_step_id' => $stepId,
-                    'step_title' => PayrollStep::find($stepId)->step_title,
-                    'remark' => PayrollStep::find($stepId)->step_title . "Completed", // <-- whatever remark you want to pass, set $remark earlier
+                    'step_title' => $step->step_title,
+                    'remark' => $step->step_title . " Completed",
                 ]),
                 'payroll_slot_status' => 'IP',
             ]);
@@ -918,6 +928,195 @@ class PayrollCycles extends Component
                 variant: 'error',
                 heading: 'Error',
                 text: 'Failed to complete step: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    /**
+     * Process salary holds for the payroll slot
+     */
+    protected function processSalaryHolds($slotId, $employeeIds, $employeesOnHold)
+    {
+        // Get the latest payroll slots command ID
+        $latestCmd = PayrollSlotsCmd::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->latest()
+            ->first();
+
+        if (!$latestCmd) {
+            return;
+        }
+
+        // Get salary hold component
+        $holdComponent = SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->where('component_type', 'salary_hold')
+            ->first();
+
+        if (!$holdComponent) {
+            return;
+        }
+
+        // Create entries for employees on hold
+        foreach ($employeesOnHold as $employeeId) {
+            PayrollComponentsEmployeesTrack::updateOrCreate(
+                [
+                    'firm_id' => Session::get('firm_id'),
+                    'payroll_slot_id' => $slotId,
+                    'employee_id' => $employeeId,
+                    'salary_component_id' => $holdComponent->id,
+                ],
+                [
+                    'payroll_slots_cmd_id' => $latestCmd->id,
+                    'salary_template_id' => $holdComponent->salary_template_id ?? null,
+                    'salary_component_group_id' => $holdComponent->salary_component_group_id ?? null,
+                    'sequence' => 1,
+                    'nature' => 'deduction',
+                    'component_type' => 'salary_hold',
+                    'amount_type' => 'static_known',
+                    'taxable' => false,
+                    'calculation_json' => $holdComponent->calculation_json ?? null,
+                    'salary_period_from' => $this->payrollSlotDetails->from_date,
+                    'salary_period_to' => $this->payrollSlotDetails->to_date,
+                    'user_id' => Session::get('user_id'),
+                    'amount_full' => 0,
+                    'amount_payable' => 0,
+                    'amount_paid' => 0,
+                    'salary_advance_id' => null,
+                    'salary_arrear_id' => null,
+                    'salary_cycle_id' => $this->payrollSlotDetails->salary_cycle_id,
+                    'remarks' => 'Salary on hold for this payroll period',
+                    'entry_type' => 'system'
+                ]
+            );
+        }
+    }
+
+    /**
+     * Process salary advances for the payroll slot
+     */
+    protected function processSalaryAdvances($slotId, $activeEmployees, $payrollSlot)
+    {
+        // Get the latest payroll slots command ID
+        $latestCmd = PayrollSlotsCmd::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->latest()
+            ->first();
+
+        if (!$latestCmd) {
+            return;
+        }
+
+        // Get active salary advances for employees where amount > recovered_amount
+        $salaryAdvances = SalaryAdvance::where('firm_id', Session::get('firm_id'))
+            ->whereIn('employee_id', $activeEmployees)
+            ->where('is_inactive', false)
+            ->where('advance_status', 'active')
+            ->whereRaw('amount > recovered_amount')
+            ->get();
+
+        foreach ($salaryAdvances as $advance) {
+            // Calculate remaining amount to recover
+            $remainingAmount = $advance->amount - $advance->recovered_amount;
+            $recoveryAmount = min($remainingAmount, $advance->installment_amount);
+
+            // Get advance component
+            $advanceComponent = SalaryComponent::where('firm_id', Session::get('firm_id'))
+                ->where('component_type', 'salary_advance')
+                ->first();
+
+            if ($advanceComponent) {
+                PayrollComponentsEmployeesTrack::updateOrCreate(
+                    [
+                        'firm_id' => Session::get('firm_id'),
+                        'payroll_slot_id' => $slotId,
+                        'employee_id' => $advance->employee_id,
+                        'salary_component_id' => $advanceComponent->id,
+                    ],
+                    [
+                        'payroll_slots_cmd_id' => $latestCmd->id,
+                        'salary_template_id' => $advanceComponent->salary_template_id ?? null,
+                        'salary_component_group_id' => $advanceComponent->salary_component_group_id ?? null,
+                        'sequence' => 1,
+                        'nature' => 'deduction',
+                        'component_type' => 'salary_advance',
+                        'amount_type' => 'static_known',
+                        'taxable' => false,
+                        'calculation_json' => $advanceComponent->calculation_json ?? null,
+                        'salary_period_from' => $payrollSlot->from_date,
+                        'salary_period_to' => $payrollSlot->to_date,
+                        'user_id' => Session::get('user_id'),
+                        'amount_full' => $recoveryAmount,
+                        'amount_payable' => $recoveryAmount,
+                        'amount_paid' => 0,
+                        'salary_advance_id' => $advance->id,
+                        'salary_arrear_id' => null,
+                        'salary_cycle_id' => $payrollSlot->salary_cycle_id,
+                        'remarks' => "Advance recovery for advance ID: {$advance->id}",
+                        'entry_type' => 'system'
+                    ]
+                );
+            }
+        }
+    }
+
+    /**
+     * Process salary arrears for the payroll slot
+     */
+    protected function processSalaryArrears($slotId, $activeEmployees, $payrollSlot)
+    {
+        // Get the latest payroll slots command ID
+        $latestCmd = PayrollSlotsCmd::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->latest()
+            ->first();
+
+        if (!$latestCmd) {
+            return;
+        }
+
+        // Get active salary arrears for employees where total_amount > paid_amount
+        $salaryArrears = SalaryArrear::where('firm_id', Session::get('firm_id'))
+            ->whereIn('employee_id', $activeEmployees)
+            ->where('is_inactive', false)
+            ->where('arrear_status', '!=', 'paid')
+            ->whereRaw('total_amount > paid_amount')
+            ->get();
+
+        foreach ($salaryArrears as $arrear) {
+            // Calculate remaining amount to pay
+            $remainingAmount = $arrear->total_amount - $arrear->paid_amount;
+            $paymentAmount = min($remainingAmount, $arrear->installment_amount);
+
+            // Create entry using the arrear's salary component
+            PayrollComponentsEmployeesTrack::updateOrCreate(
+                [
+                    'firm_id' => Session::get('firm_id'),
+                    'payroll_slot_id' => $slotId,
+                    'employee_id' => $arrear->employee_id,
+                    'salary_component_id' => $arrear->salary_component_id,
+                ],
+                [
+                    'payroll_slots_cmd_id' => $latestCmd->id,
+                    'salary_template_id' => null,
+                    'salary_component_group_id' => null,
+                    'sequence' => 1,
+                    'nature' => 'earning',
+                    'component_type' => 'salary_arrear',
+                    'amount_type' => 'static_known',
+                    'taxable' => true, // Arrears are typically taxable
+                    'calculation_json' => null,
+                    'salary_period_from' => $payrollSlot->from_date,
+                    'salary_period_to' => $payrollSlot->to_date,
+                    'user_id' => Session::get('user_id'),
+                    'amount_full' => $paymentAmount,
+                    'amount_payable' => $paymentAmount,
+                    'amount_paid' => 0,
+                    'salary_advance_id' => null,
+                    'salary_arrear_id' => $arrear->id,
+                    'salary_cycle_id' => $payrollSlot->salary_cycle_id,
+                    'remarks' => "Arrear payment for arrear ID: {$arrear->id}",
+                    'entry_type' => 'system'
+                ]
             );
         }
     }
@@ -950,7 +1149,7 @@ class PayrollCycles extends Component
     {
         $this->selectedStepId = $stepId;
         $this->selectedSlotId = $slotId;
-        $this->dispatch('open-modal', name: 'employee-tax-components');
+        $this->modal('employee-tax-components')->show();
     }
 
     public function viewSalaryHolds($slotId)
@@ -962,11 +1161,6 @@ class PayrollCycles extends Component
             ->where('payroll_slot_id', $slotId)
             ->where('step_code_main', 'salary_holds')
             ->first();
-
-        // if ($step) {
-        //     // Auto complete the step
-        //     $this->completePayrollStep($step->payroll_step_id, $slotId);
-        // }
 
         // Open the modal using the same method as other modals
         $this->modal('salary-holds')->show();
@@ -982,13 +1176,26 @@ class PayrollCycles extends Component
             ->where('step_code_main', 'salary_advances')
             ->first();
 
-        if ($step) {
-            // Auto complete the step
-            $this->completePayrollStep($step->payroll_step_id, $slotId);
-        }
+       
 
         // Open the modal using the same method as other modals
         $this->modal('salary-advances')->show();
+    }
+
+    public function viewSalaryArrears($slotId)
+    {
+        $this->selectedSlotId = $slotId;
+
+        // Find the salary arrears step
+        $step = PayrollStepPayrollSlot::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->where('step_code_main', 'salary_arrears')
+            ->first();
+
+      
+
+        // Open the modal using the same method as other modals
+        $this->modal('salary-arrears')->show();
     }
 
     public function showLogs($stepId, $slotId)

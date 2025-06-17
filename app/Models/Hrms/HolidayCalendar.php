@@ -46,6 +46,7 @@ class HolidayCalendar extends Model
         'end_date',
 		'is_inactive'
 	];
+	
 
 	public function firm()
 	{

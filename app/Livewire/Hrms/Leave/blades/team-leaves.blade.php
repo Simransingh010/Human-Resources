@@ -210,14 +210,14 @@
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
-        <flux:table.rows>
+        <flux:table.rows class="table-cell-wrap">
             @foreach($this->list as $item)
                 <div wire:key="leave-row-wrapper-{{ $item->id }}" class="contents">
-                    <flux:table.row >
+                    <flux:table.row class="table-cell-wrap">
                         @foreach($fieldConfig as $field => $cfg)
                             @if(in_array($field, $visibleFields))
                                 @if($field !== 'status')
-                                    <flux:table.cell>
+                                    <flux:table.cell class="table-cell-wrap">
                                         @switch($field)
                                             @case('employee_id')
                                                 {{ $item->employee->fname ?? 'N/A' }}
@@ -258,7 +258,7 @@
                                 @endif
                             @endif
                         @endforeach
-                        <flux:table.cell>
+                        <flux:table.cell class="table-cell-wrap">
                             @php
                                 $statusColor = match($item->status) {
                                     'applied' => 'blue',

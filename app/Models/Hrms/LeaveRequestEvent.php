@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Saas\Firm;
 
 /**
  * Class LeaveRequestEvent

@@ -53,6 +53,31 @@
                     <flux:switch wire:model.live="formData.is_master_firm" label="Set as Master"/>
                     <flux:switch wire:model.live="formData.is_inactive" label="Mark as Inactive"/>
 
+                    <!-- File upload fields for logos -->
+                    <flux:input type="file" label="Favicon" wire:model="favicon" accept="image/*"/>
+                    @if($isEditing && App\Models\Saas\Firm::find($this->formData['id'])->getMedia('favicon')->first())
+                        <div class="flex items-center space-x-2">
+                            <img src="{{ App\Models\Saas\Firm::find($this->formData['id'])->getMedia('favicon')->first()->getUrl() }}" alt="Favicon" class="h-8 w-8"/>
+                            <flux:button wire:click="removeLogo('favicon')" variant="danger" size="sm">Remove</flux:button>
+                        </div>
+                    @endif
+
+                    <flux:input type="file" label="Square Logo" wire:model="squareLogo" accept="image/*"/>
+                    @if($isEditing && App\Models\Saas\Firm::find($this->formData['id'])->getMedia('squareLogo')->first())
+                        <div class="flex items-center space-x-2">
+                            <img src="{{ App\Models\Saas\Firm::find($this->formData['id'])->getMedia('squareLogo')->first()->getUrl() }}" alt="Square Logo" class="h-8 w-8"/>
+                            <flux:button wire:click="removeLogo('squareLogo')" variant="danger" size="sm">Remove</flux:button>
+                        </div>
+                    @endif
+
+                    <flux:input type="file" label="Wide Logo" wire:model="wideLogo" accept="image/*"/>
+                    @if($isEditing && App\Models\Saas\Firm::find($this->formData['id'])->getMedia('wideLogo')->first())
+                        <div class="flex items-center space-x-2">
+                            <img src="{{ App\Models\Saas\Firm::find($this->formData['id'])->getMedia('wideLogo')->first()->getUrl() }}" alt="Wide Logo" class="h-8 w-8"/>
+                            <flux:button wire:click="removeLogo('wideLogo')" variant="danger" size="sm">Remove</flux:button>
+                        </div>
+                    @endif
+
                 </div>
 
                 <!-- Submit Button -->
@@ -77,6 +102,9 @@
             <flux:table.column>Parent Firm</flux:table.column>
             <flux:table.column>Set as Master</flux:table.column>
             <flux:table.column>Mark as Inactive</flux:table.column>
+            <flux:table.column>Favicon</flux:table.column>
+            <flux:table.column>Square Logo</flux:table.column>
+            <flux:table.column>Wide Logo</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
@@ -96,6 +124,27 @@
                     <flux:table.cell>
                         <flux:switch wire:model="statuses.{{ $firm->id }}"
                                      wire:click="toggleStatus({{ $firm->id }})"/>
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        @if($firm->getMedia('favicon')->first())
+                            <img src="{{ $firm->getMedia('favicon')->first()->getUrl() }}" alt="Favicon" class="h-8 w-8"/>
+                        @else
+                            -
+                        @endif
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        @if($firm->getMedia('squareLogo')->first())
+                            <img src="{{ $firm->getMedia('squareLogo')->first()->getUrl() }}" alt="Square Logo" class="h-8 w-8"/>
+                        @else
+                            -
+                        @endif
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        @if($firm->getMedia('wideLogo')->first())
+                            <img src="{{ $firm->getMedia('wideLogo')->first()->getUrl() }}" alt="Wide Logo" class="h-8 w-8"/>
+                        @else
+                            -
+                        @endif
                     </flux:table.cell>
                     <flux:table.cell>
                         <div class="flex space-x-2">

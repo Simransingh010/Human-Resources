@@ -227,8 +227,8 @@ class WorkShiftsAlgos extends Component
 //            'formData.work_shift_id' => 'required|exists:work_shifts,id',
             'formData.start_date' => 'nullable|date',
             'formData.end_date' => 'nullable|date|after_or_equal:formData.start_date',
-            'formData.start_time' => 'nullable|date_format:H:i',
-            'formData.end_time' => 'nullable|date_format:H:i|after:formData.start_time',
+            'formData.start_time' => 'nullable',
+            'formData.end_time' => 'nullable|after:formData.start_time',
             'formData.week_off_pattern' => 'nullable|string',
             'formData.work_breaks' => 'nullable|array',
             'formData.work_breaks.*' => 'exists:work_breaks,id',
@@ -927,27 +927,18 @@ class WorkShiftsAlgos extends Component
                 "Sync Work Shift Days for Algo #{$algoId}"
             );
 
-            // Delete existing work shift days if any
-            WorkShiftDay::where('work_shift_id', $algo->work_shift_id)
-                ->whereBetween('work_date', [$algo->start_date, $algo->end_date])
-                ->get()
-                ->each(function ($day) use ($batch) {
-                    $originalData = json_encode($day->getAttributes());
-
-                    $batch->items()->create([
-                        'operation' => 'delete',
-                        'model_type' => get_class($day),
-                        'model_id' => $day->id,
-                        'original_data' => $originalData
-                    ]);
-
-                    $day->delete();
-                });
-
             // Generate days
             $period = CarbonPeriod::create($algo->start_date, $algo->end_date);
 
             foreach ($period as $date) {
+                // Check if a WorkShiftDay already exists for this work_shift_id and date
+                $existingDay = \App\Models\Hrms\WorkShiftDay::where('work_shift_id', $algo->work_shift_id)
+                    ->whereDate('work_date', $date)
+                    ->first();
+                if ($existingDay) {
+                    // Skip this day, do not overwrite
+                    continue;
+                }
                 $dayStatus = $this->getDayStatus($date, $weekOffPattern, $algo->holiday_calendar_id);
 
                 $workShiftDay = new WorkShiftDay([
@@ -1013,8 +1004,14 @@ class WorkShiftsAlgos extends Component
                     ->toArray();
 
                 if (!empty($createdIds)) {
-                    // Hard delete all WorkShiftDay records created in this batch
-                    WorkShiftDay::whereIn('id', $createdIds)->forceDelete();
+                    // Only delete WorkShiftDay records that do NOT have any EmpAttendance records
+                    $toDelete = \App\Models\Hrms\WorkShiftDay::whereIn('id', $createdIds)
+                        ->whereDoesntHave('emp_attendances')
+                        ->pluck('id')
+                        ->toArray();
+                    if (!empty($toDelete)) {
+                        \App\Models\Hrms\WorkShiftDay::whereIn('id', $toDelete)->forceDelete();
+                    }
                 }
 
                 // Mark batch as rolled back
@@ -1027,7 +1024,7 @@ class WorkShiftsAlgos extends Component
             Flux::toast(
                 variant: 'success',
                 heading: 'Rollback Complete',
-                text: 'All work shift days from this sync have been deleted.',
+                text: 'All work shift days from this sync (without attendance) have been deleted.',
             );
 
         } catch (\Exception $e) {
