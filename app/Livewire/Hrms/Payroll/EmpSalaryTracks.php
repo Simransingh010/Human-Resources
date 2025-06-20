@@ -137,16 +137,17 @@ class EmpSalaryTracks extends Component
     #[Computed]
     public function list()
     {
-        $tracks = PayrollComponentsEmployeesTrack::query()
+        $query = PayrollComponentsEmployeesTrack::query()
             ->where('firm_id', Session::get('firm_id'))
             ->when($this->slotId, fn($query) =>
                 $query->where('payroll_slot_id', $this->slotId))
             ->when($this->filters['employee_id'], fn($query, $value) =>
                 $query->where('employee_id', $value))
-            ->with(['employee', 'salary_component', 'payroll_slot'])
-            ->get()
+            ->with(['employee', 'salary_component', 'payroll_slot']);
+
+        // Group by employee and period after fetching paginated results
+        $tracks = $query->get()
             ->groupBy(function ($track) {
-                // Create a unique key combining employee_id and period
                 return $track->employee_id . '_' . $track->salary_period_from->format('Y-m-d') . '_' . $track->salary_period_to->format('Y-m-d');
             })
             ->map(function ($employeeTracks) {
@@ -170,18 +171,18 @@ class EmpSalaryTracks extends Component
             })
             ->values();
 
-        // Convert to paginator
+        // Paginate the grouped results manually using Laravel's paginator
         $page = $this->page ?? 1;
         $perPage = $this->perPage;
-        $items = $tracks->slice(($page - 1) * $perPage, $perPage);
-
-        return new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
+        $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
+            $tracks->forPage($page, $perPage),
             $tracks->count(),
             $perPage,
             $page,
             ['path' => request()->url()]
         );
+
+        return $paginated;
     }
 
     public function showSalarySlip($employeeId, $fromDate = null, $toDate = null, $payrollSlotId = null)

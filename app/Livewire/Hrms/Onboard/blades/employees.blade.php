@@ -7,7 +7,7 @@
                     @if($isEditing)
                         Edit Employee Record
                     @else
-                        New
+                        <New></New>
                     @endif
                 </flux:button>
             </flux:modal.trigger>

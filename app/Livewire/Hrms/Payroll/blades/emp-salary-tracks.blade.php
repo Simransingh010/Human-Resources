@@ -130,7 +130,7 @@
     </flux:table>
 
     <!-- Salary Slip Modal -->
-    <flux:modal wire:model="showSalarySlipModal" class="max-w-3xl">
+    <flux:modal wire:model="showSalarySlipModal" class="max-w-3xl ">
         <div class="bg-white">
             <!-- Header with Logo -->
             <div class="flex justify-center mb-6">

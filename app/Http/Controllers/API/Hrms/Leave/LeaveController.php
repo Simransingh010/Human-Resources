@@ -207,8 +207,165 @@ class LeaveController extends Controller
             'data'            => $lr->load('leave_type'),
         ], 201);
     }
-
     public function submitLeaveRequest(Request $request)
+    {
+        $user     = $request->user();
+        $employee = $user->employee;
+        $firmId   = $employee->firm_id;
+
+        $validated = $request->validate([
+            'leave_type_id' => 'required|integer|exists:leave_types,id',
+            'apply_from'    => 'required|date',
+            'apply_to'      => 'required|date|after_or_equal:apply_from',
+            'reason'        => 'nullable|string|max:1000',
+        ]);
+
+        $from = Carbon::parse($validated['apply_from']);
+        $to   = Carbon::parse($validated['apply_to']);
+        $days = $from->diffInDays($to) + 1;
+
+        DB::beginTransaction();
+        try {
+            // 1) Create the leave request
+            $lr = EmpLeaveRequest::create([
+                'firm_id'       => $firmId,
+                'employee_id'   => $employee->id,
+                'leave_type_id' => $validated['leave_type_id'],
+                'apply_from'    => $from,
+                'apply_to'      => $to,
+                'apply_days'    => $days,
+                'reason'        => $validated['reason'] ?? null,
+                'status'        => 'applied',
+            ]);
+
+            // 2) Fetch the *latest* active rule for THIS employee
+            $rules = LeaveApprovalRule::with('employees')
+                ->where('firm_id', $firmId)
+                ->where('approval_mode','!=','view_only')
+                ->where('is_inactive', false)
+                ->whereDate('period_start', '<=', now())
+                ->whereDate('period_end',   '>=', now())
+                ->where(function($q) use ($validated) {
+                    $q->whereNull('leave_type_id')
+                        ->orWhere('leave_type_id', $validated['leave_type_id']);
+                })
+                ->whereHas('employees', function($q) use ($employee) {
+                    $q->where('employee_id', $employee->id);
+                })
+                ->get();
+
+            if (! $rules) {
+                throw new \Exception('No applicable leave approval rule found for this employee');
+            }
+
+            // 3) Create a single approval record from that rule
+//            EmpLeaveRequestApproval::create([
+//                'emp_leave_request_id' => $lr->id,
+//                'approval_level'       => $rule->approval_level,
+//                'approver_id'          => $rule->approver_id ?? 0,
+//                'status'               => 'applied',
+//                'remarks'              => null,
+//                'acted_at'             => null,
+//                'firm_id'              => $firmId,
+//            ]);
+
+            // 4) Log the "created" event
+            LeaveRequestEvent::create([
+                'emp_leave_request_id' => $lr->id,
+                'user_id'              => $user->id,
+                'event_type'           => 'status_changed',
+                'from_status'          => null,
+                'to_status'            => 'applied',
+                'remarks'              => $validated['reason'] ?? null,
+                'firm_id'              => $firmId,
+                'created_at'           => now(),
+            ]);
+
+            DB::commit();
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'message_type'    => 'error',
+                'message_display' => 'popup',
+                'message'         => $e->getMessage(),
+            ], 422);
+        }
+
+        //
+        // ──────────────── STAGE NOTIFICATIONS ─────────────────
+        //
+
+        $now = now();
+
+        $fromFormatted = $from->format('j-M-Y');
+        $toFormatted   = $to->format('j-M-Y');
+
+        // Payload for applicant
+        $applicantPayload = [
+            'firm_id' => $firmId,
+            'subject' => 'Your leave request is submitted',
+            'message' => "You have applied for leave from {$fromFormatted} to {$toFormatted}.",
+            'company_name' => "{$employee->firm->name}",
+        ];
+
+        NotificationQueue::create([
+            'firm_id'         => $firmId,
+            'notifiable_type'=> User::class,
+            'notifiable_id'  => $user->id,
+            'channel'        => 'mail',
+            'data'           => json_encode($applicantPayload),
+            'status'         => 'pending',
+            'created_at'     => $now,
+            'updated_at'     => $now,
+        ]);
+
+        // Payload for approver
+
+
+
+        $approverPayload = [
+            'firm_id'      => $firmId,
+            'subject'      => 'New leave request pending your approval',
+            'message'      => "{$employee->fname} {$employee->lname} has requested leave ({$fromFormatted} → {$toFormatted}).",
+            'company_name' => "{$employee->firm->name}",
+        ];
+
+        // 1) Pull out all non‐empty approver IDs and make them unique
+        $approverIds = $rules
+            ->pluck('approver_id')   // get a Collection of [ approver_id, … ]
+            ->filter()               // remove any null/empty values
+            ->unique()               // in case multiple rules share the same approver
+            ->values()               // re‐index numerically (optional)
+            ->all();                 // toArray()
+
+// 2) Fetch all User models with those IDs in one shot
+        $approverUsers = User::whereIn('id', $approverIds)->get();
+
+// 3) Loop over the resulting Collection of Users to queue notifications
+        foreach ($approverUsers as $approver) {
+
+            NotificationQueue::create([
+                'firm_id'         => $firmId,
+                'notifiable_type' => User::class,
+                'notifiable_id'   => $approver->id,
+                'channel'         => 'mail',
+                'data'            => json_encode($approverPayload),
+                'status'          => 'pending',
+                'created_at'      => now(),
+                'updated_at'      => now(),
+            ]);
+        }
+
+        return response()->json([
+            'message_type'    => 'success',
+            'message_display' => 'popup',
+            'message'         => 'Leave request submitted',
+            'data'            => $lr->load('leave_type'),
+        ], 201);
+    }
+
+    public function submitLeaveRequestv2(Request $request)
     {
         try {
             $user     = $request->user();

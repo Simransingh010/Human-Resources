@@ -113,9 +113,10 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             'SR. NO.',
             'DATE',
             'STAFF',
+            'EMP ID',
             'NAME OF PARTY',
             'PAN NO.',
-            'Total Amount to be shown in Form 16',
+            'Gross Amount to be shown in Form 16',
             'Total TDS Amount to be shown in Form 16'
         ]];
     }
@@ -123,10 +124,20 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
     public function map($employee): array
     {
         static $serial = 1;
+        static $panArray = [];
         $job = $employee->emp_job_profile;
         
         // Get PAN number from personal details
-        $panNo = $employee->emp_personal_detail->panno ?? '';
+        $panNo = $employee->emp_personal_detail->panno ?? 'Not Available';
+        $panArray[] = [
+            'employee_id' => $employee->id,
+            'employee_code' => $job->employee_code ?? '',
+            'pan_no' => $panNo
+        ];
+        // If this is the last empl oyee, dump all PANs
+        // if ($serial === count($this->data)) {
+        //     // dd($panArray);
+        // }
         
         // Calculate total earnings for the month
         $totalEarnings = PayrollComponentsEmployeesTrack::where('employee_id', $employee->id)
@@ -143,7 +154,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             ->sum('amount_payable');
 
         // Calculate monthly gross salary
-        $monthlyGrossSalary = $totalEarnings - $totalDeductions;
+        $monthlyGrossSalary = $totalEarnings ;
         
         // Calculate monthly TDS specifically using component_type='tds'
         $monthlyTds = PayrollComponentsEmployeesTrack::where('employee_id', $employee->id)
@@ -163,26 +174,38 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             $serial++,
             $this->end->format('d.m.Y'),
             $staffType,
+            $job->employee_code ?? '',
             trim("{$employee->fname} {$employee->mname} {$employee->lname}"),
             strtoupper($panNo),
             $monthlyGrossSalary,
             $monthlyTds
         ];
-
+        
         return $row;
     }
+    
 
     public function bindValue(Cell $cell, $value)
     {
-        // Only apply numeric formatting for data rows (not the header row)
+        // Only apply custom formatting for data rows (not the header row)
         // Header is on row 4 (after 3 inserted rows)
-        if ($cell->getRow() > 4 && in_array($cell->getColumn(), ['F', 'G'])) {
-            if (is_numeric($value)) {
-                $cell->setValueExplicit((float)$value, DataType::TYPE_NUMERIC);
+        $row = $cell->getRow();
+        $col = $cell->getColumn();
+        if ($row > 4) {
+            // PAN NO. column (F) should always be string
+            if ($col === 'F') {
+                $cell->setValueExplicit((string)$value, DataType::TYPE_STRING);
                 return true;
             }
-            $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
-            return true;
+            // Gross Amount and TDS Amount columns (G, H) should be numeric
+            if (in_array($col, ['G', 'H'])) {
+                if (is_numeric($value)) {
+                    $cell->setValueExplicit((float)$value, DataType::TYPE_NUMERIC);
+                    return true;
+                }
+                $cell->setValueExplicit(0, DataType::TYPE_NUMERIC);
+                return true;
+            }
         }
         return parent::bindValue($cell, $value);
     }
@@ -234,8 +257,27 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
                 $sheet->getStyle("A{$dataRowStart}:{$highestColumn}{$dataRowEnd}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
 
                 // Format numeric columns (F and G)
-                foreach (['F', 'G'] as $col) {
+                foreach (['G', 'H'] as $col) {
                     $sheet->getStyle("{$col}{$dataRowStart}:{$col}{$dataRowEnd}")
+                        ->getNumberFormat()
+                        ->setFormatCode('#,##0.00');
+                }
+
+                // Add Grand Total row
+                $totalsRow = $dataRowEnd + 1;
+                $sheet->setCellValue("A{$totalsRow}", 'Grand Total');
+                $sheet->getStyle("A{$totalsRow}:{$highestColumn}{$totalsRow}")->getFont()->setBold(true);
+                $sheet->getStyle("A{$totalsRow}:{$highestColumn}{$totalsRow}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM);
+
+                // Calculate totals for columns G and H (Gross Amount and TDS Amount)
+                // Note: Columns shifted due to new EMP ID column
+                foreach (['G', 'H'] as $col) {
+                    $sheet->setCellValueExplicit(
+                        "{$col}{$totalsRow}",
+                        "=SUM({$col}{$dataRowStart}:{$col}{$dataRowEnd})",
+                        \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_FORMULA
+                    );
+                    $sheet->getStyle("{$col}{$totalsRow}")
                         ->getNumberFormat()
                         ->setFormatCode('#,##0.00');
                 }

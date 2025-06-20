@@ -41,7 +41,7 @@ class Holidays extends Component
         'start_date' => ['label' => 'Start Date', 'type' => 'date'],
         'end_date' => ['label' => 'End Date', 'type' => 'date'],
         'repeat_annually' => ['label' => 'Repeat Annually', 'type' => 'boolean'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'boolean'],
+        'is_inactive' => ['label' => 'is_Inactive', 'type' => 'boolean'],
         'day_status_main' => ['label' => 'Work Status', 'type' => 'select', 'listKey' => 'work_statuses'],
     ];
 

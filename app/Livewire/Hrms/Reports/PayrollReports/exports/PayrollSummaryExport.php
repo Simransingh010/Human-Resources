@@ -14,8 +14,12 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use PhpOffice\PhpSpreadsheet\Cell\Cell;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 
-class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents
+class PayrollSummaryExport extends DefaultValueBinder implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, WithCustomValueBinder
 {
     protected $filters;
     protected $start;
@@ -51,7 +55,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
                 }
             }
         }
-        
+
         // Only fetch the components that are actually used by the selected employees
         if (!empty($componentIds)) {
             $this->allComponents = SalaryComponent::whereIn('id', array_keys($componentIds))
@@ -102,8 +106,9 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
         $empFields = [
             'S.No',
             'Employee Code',
+            'Paylevel',
             'Employee Name',
-            'Department',p
+            'Department',
             'Designation'
         ];
 
@@ -118,7 +123,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
 
         // Row 2: Component titles
         $subHeaders = array_merge(
-            array_fill(0, 5, ''), // Empty cells for employee fields (will be merged)
+            array_fill(0, 6, ''), // Empty cells for employee fields (will be merged)
             $this->earnings->pluck('title')->toArray(),
             [''],  // Empty cell for Total Earnings (will be merged)
             $this->deductions->pluck('title')->toArray(),
@@ -141,6 +146,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
         $row = [
             $serial++,
             $job->employee_code ?? '',
+            $job->paylevel ?? '',
             trim("{$employee->fname} {$employee->lname}"),
             $job->department->title ?? '',
             $job->designation->title ?? '',
@@ -183,7 +189,7 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
                 $sheet->insertNewRowBefore(1, 2);
 
                 // Dynamic column counts
-                $empColCount = 5;
+                $empColCount = 6;
                 $earnCount = $this->earnings->count();
                 $dedCount = $this->deductions->count();
                 $totalCols = $empColCount + $earnCount + 1 + $dedCount + 2;
@@ -342,5 +348,16 @@ class PayrollSummaryExport implements FromCollection, WithHeadings, WithMapping,
                 $sheet->freezePane('A5');
             }
         ];
+    }
+
+    // Ensure Paylevel column is always text in Excel
+    public function bindValue(Cell $cell, $value)
+    {
+        // Paylevel is column C (3rd column)
+        if ($cell->getColumn() === 'C' && $cell->getRow() > 4) {
+            $cell->setValueExplicit((string)$value, DataType::TYPE_STRING);
+            return true;
+        }
+        return parent::bindValue($cell, $value);
     }
 }

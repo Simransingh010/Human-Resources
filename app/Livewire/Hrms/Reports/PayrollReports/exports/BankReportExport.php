@@ -17,12 +17,12 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Cell\Cell;
-use PhpOffice\PhpSpreadsheet\Cell\DefaultValueBinder;
+use PhpOffice\PhpSpreadsheet\Cell\StringValueBinder;
 use Maatwebsite\Excel\Concerns\WithCustomValueBinder;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use App\Models\Saas\Firm;
 
-class BankReportExport extends DefaultValueBinder implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithCustomValueBinder
+class BankReportExport extends StringValueBinder implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents, ShouldAutoSize, WithCustomValueBinder
 {
     protected $filters; 
     protected $start;
@@ -113,17 +113,6 @@ class BankReportExport extends DefaultValueBinder implements FromCollection, Wit
         ];
     }
 
-    public function bindValue(Cell $cell, $value)
-    {
-        // Only apply text formatting for data rows (not the header row)
-        // Data starts at row 5 after 3 inserted rows
-        if ($cell->getRow() > 4 && $cell->getColumn() === 'D') {
-            $cell->setValueExplicit($value, DataType::TYPE_STRING);
-            return true;
-        }
-        return parent::bindValue($cell, $value);
-    }
-
     public function registerEvents(): array
     {
         return [
@@ -154,10 +143,10 @@ class BankReportExport extends DefaultValueBinder implements FromCollection, Wit
                 $dataRowStart = $headerRow + 1;
                 $dataRowEnd = $sheet->getHighestRow();
                 $sheet->getStyle("A{$dataRowStart}:{$highestColumn}{$dataRowEnd}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
-                // Format Net Pay Amount column (F) as '#,##0.00'
+                // Format Net Pay Amount column (F) as Indian currency '#,##,##0.00'
                 $sheet->getStyle("F{$dataRowStart}:F{$dataRowEnd}")
                     ->getNumberFormat()
-                    ->setFormatCode('#,##0.00');
+                    ->setFormatCode('#,##,##0.00');
                 // Auto width for all columns
                 foreach (range('A', $highestColumn) as $col) {
                     $sheet->getColumnDimension($col)->setAutoSize(true);
@@ -165,9 +154,13 @@ class BankReportExport extends DefaultValueBinder implements FromCollection, Wit
                 // Grand Total row
                 $grandTotalRow = $dataRowEnd + 1;
                 $sheet->setCellValue("E{$grandTotalRow}", 'Grand Total');
-                $sheet->setCellValue("F{$grandTotalRow}", "=SUM(F{$dataRowStart}:F{$dataRowEnd})");
+                $sheet->setCellValueExplicit(
+                    "F{$grandTotalRow}",
+                    "=SUM(F{$dataRowStart}:F{$dataRowEnd})",
+                    \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_FORMULA
+                );
                 $sheet->getStyle("E{$grandTotalRow}:F{$grandTotalRow}")->getFont()->setBold(true);
-                $sheet->getStyle("F{$grandTotalRow}")->getNumberFormat()->setFormatCode('#,##0.00');
+                $sheet->getStyle("F{$grandTotalRow}")->getNumberFormat()->setFormatCode('#,##,##0.00');
                 $sheet->getStyle("E{$grandTotalRow}:F{$grandTotalRow}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
                 // Freeze panes to keep header visible when scrolling
                 $sheet->freezePane('A5');
@@ -197,5 +190,22 @@ class BankReportExport extends DefaultValueBinder implements FromCollection, Wit
                 ]);
             },
         ];
+    }
+
+    // Add this method to control value binding for each column
+    public function bindValue(Cell $cell, $value)
+    {
+        // Bank Account No. (D) as string
+        if ($cell->getColumn() === 'D') {
+            $cell->setValueExplicit($value, DataType::TYPE_STRING);
+            return true;
+        }
+        // Net Payable (F) as number, but only for data rows (not header or grand total)
+        if ($cell->getColumn() === 'F' && is_numeric($value) && $cell->getRow() > 1) {
+            $cell->setValueExplicit($value, DataType::TYPE_NUMERIC);
+            return true;
+        }
+        // Default: treat as string
+        return parent::bindValue($cell, $value);
     }
 }

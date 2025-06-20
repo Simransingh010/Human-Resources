@@ -230,6 +230,14 @@
                                         </flux:tooltip>
                                     @endif
 
+                                    @if($step->step_code_main == 'salary_arrears')
+                                        <flux:tooltip content="View Arrears">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryArrears({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
+
                                     @if($step->step_code_main == 'tds_calculation')
 
                                         <flux:tooltip content="Mark Complete">
@@ -348,6 +356,9 @@
                                 elseif($step->step_code_main == 'salary_advances') {
                                     $icon = 'banknotes';
                                 }
+                                elseif($step->step_code_main == 'salary_arrears') {
+                                    $icon = 'minus-circle'; // Using minus-circle icon for arrears
+                                }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
                                 <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
@@ -442,6 +453,14 @@
                                         <flux:tooltip content="View Advances">
                                             <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
                                                          wire:click="viewSalaryAdvances({{ $payrollSlotDetails->id }})">
+                                            </flux:button>
+                                        </flux:tooltip>
+                                    @endif
+
+                                    @if($step->step_code_main == 'salary_arrears')
+                                        <flux:tooltip content="View Arrears">
+                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
+                                                         wire:click="viewSalaryArrears({{ $payrollSlotDetails->id }})">
                                             </flux:button>
                                         </flux:tooltip>
                                     @endif
@@ -576,7 +595,7 @@
             @endforeach
         </ul>
     </flux:modal>
-    <flux:modal name="salary-tracks" title="Salary Tracks" class="max-w-3xl">
+    <flux:modal name="salary-tracks" title="Salary Tracks" class="max-w-7xl">
         @if($selectedSlotId)
             <livewire:hrms.payroll.emp-salary-tracks :slot-id="$selectedSlotId"
                                                      :wire:key="'emp-salary-tracks-'.$selectedSlotId"/>
@@ -666,6 +685,14 @@
         @if($selectedSlotId)
             <livewire:hrms.payroll.salary-advances-step :payroll-slot-id="$selectedSlotId"
                                                       :wire:key="'salary-advances-step-'.$selectedSlotId"/>
+        @endif
+    </flux:modal>
+
+    <!-- Add Salary Arrears Modal -->
+    <flux:modal name="salary-arrears" title="Salary Arrears" class="max-w-6xl">
+        @if($selectedSlotId)
+            <livewire:hrms.payroll.salary-arrears-step :payroll-slot-id="$selectedSlotId"
+                                                      :wire:key="'salary-arrears-step-'.$selectedSlotId"/>
         @endif
     </flux:modal>
 
