@@ -150,6 +150,7 @@
                 @else
                     <h2 class="text-xl font-bold">PAYSLIP</h2>
                 @endif
+                
             </div>
 
             @if($selectedEmployee)
