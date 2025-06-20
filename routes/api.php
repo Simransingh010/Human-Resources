@@ -32,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/attendance/available-week-offs', [AttendanceController::class, 'availableWeekOffs']);
     Route::post('/attendance/apply-week-off', [AttendanceController::class, 'applyWeekOff']);
 
+    
     Route::get('hrms/leave/leave-balances', [LeaveController::class, 'leavesBalances']);
     Route::post('hrms/leave/submitleaverequest', [LeaveController::class, 'submitLeaveRequest']);
     Route::post('hrms/leave/submitleaverequestv2', [LeaveController::class, 'submitLeaveRequestv2']);
