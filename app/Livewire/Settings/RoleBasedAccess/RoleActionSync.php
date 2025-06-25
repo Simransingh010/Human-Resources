@@ -88,7 +88,7 @@ class RoleActionSync extends Component
         
     }
 
-    public function save()
+    public function save($closeModal = true)
     {
         $firmId = Session::get('firm_id');
         $existingActionIds = $this->role->actions()->pluck('actions.id')->toArray();
@@ -121,7 +121,9 @@ class RoleActionSync extends Component
                 ->delete();
         }
         
-        Flux::modal('role-action-sync')->close();
+        if ($closeModal) {
+            Flux::modal('role-action-sync')->close();
+        }
         Flux::toast(
             variant: 'success',
             heading: 'Changes saved.',
@@ -147,6 +149,15 @@ class RoleActionSync extends Component
 
     protected function initListsForFields(): void
     {
+        $ACTION_TYPE_BG = [
+            'G' => 'bg-blue-50',
+            'RL' => 'bg-yellow-50',
+            'BR' => 'bg-green-50',
+            'PR' => 'bg-pink-50',
+            'INDEPENDENT' => 'bg-gray-100',
+        ];
+        $ACTION_TYPE_LABELS = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT;
+        $ACTION_TYPE_LABELS['INDEPENDENT'] = 'Independent with no Type';
         $apps = AppModel::with([
             'modules.components.actions.actioncluster' => function ($q) {
                 $q->where('is_inactive', false);
@@ -158,60 +169,63 @@ class RoleActionSync extends Component
             foreach ($app->modules as $module) {
                 foreach ($module->components as $component) {
                     $grouped[$app->name][$module->name][$component->name] = [];
-                    // Group actions by cluster name
-                    $actionsByCluster = collect($component->actions)->groupBy(function($action) {
-                        return $action->actioncluster ? $action->actioncluster->name : 'Independent';
-                    });
-                    foreach ($actionsByCluster as $clusterName => $actionsInCluster) {
-                        // Group by type
-                        $actionsByType = $actionsInCluster->groupBy('action_type');
-                        $typeGroups = [];
-                        foreach ($actionsByType as $type => $actions) {
-                            $typeLabel = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT[$type] ?? $type ?? 'Independent';
-                            $parentActions = $actions->where('parent_action_id', null);
-                            $childActions = $actions->where('parent_action_id', '!=', null);
-                            $typeGroup = [];
+                    // For each action type
+                    foreach ($ACTION_TYPE_LABELS as $typeKey => $typeLabel) {
+                        if ($typeKey === 'INDEPENDENT') {
+                            $actionsOfType = collect($component->actions)->filter(function($a){ return empty($a->action_type); });
+                        } else {
+                            $actionsOfType = collect($component->actions)->where('action_type', $typeKey);
+                        }
+                        if ($actionsOfType->isEmpty()) continue;
+                        // Group by cluster
+                        $actionsByCluster = $actionsOfType->groupBy(function($action) {
+                            return $action->actioncluster ? $action->actioncluster->name : 'Independent';
+                        });
+                        $clusters = [];
+                        foreach ($actionsByCluster as $clusterName => $actionsInCluster) {
+                            $parentActions = $actionsInCluster->where('parent_action_id', null);
+                            $childActions = $actionsInCluster->where('parent_action_id', '!=', null);
+                            $clusterGroups = [];
                             foreach ($parentActions as $parent) {
                                 $children = $childActions->where('parent_action_id', $parent->id)->values()->all();
-                                $typeGroup[] = [
+                                $clusterGroups[] = [
                                     'parent' => [
                                         'id' => $parent->id,
                                         'name' => $parent->name,
                                         'code' => $parent->code,
                                         'type' => $typeLabel,
                                     ],
-                                    'children' => collect($children)->map(function($child) {
+                                    'children' => collect($children)->map(function($child) use ($typeLabel) {
                                         return [
                                             'id' => $child->id,
                                             'name' => $child->name,
                                             'code' => $child->code,
-                                            'type' => \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT[$child->action_type] ?? $child->action_type ?? 'No Type',
+                                            'type' => $typeLabel,
                                         ];
                                     })->values()->all(),
-                                    'type_label' => $typeLabel,
                                 ];
                             }
                             $orphaned = $childActions->filter(function($child) use ($parentActions) {
                                 return !$parentActions->contains('id', $child->parent_action_id);
                             });
                             foreach ($orphaned as $orphan) {
-                                $typeGroup[] = [
+                                $clusterGroups[] = [
                                     'parent' => [
                                         'id' => $orphan->id,
                                         'name' => $orphan->name,
                                         'code' => $orphan->code,
-                                        'type' => \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT[$orphan->action_type] ?? $orphan->action_type ?? 'No Type',
+                                        'type' => $typeLabel,
                                     ],
                                     'children' => [],
-                                    'type_label' => $typeLabel,
                                 ];
                             }
-                            $typeGroups[$type ?? 'No Type'] = [
-                                'type_label' => $typeLabel,
-                                'groups' => $typeGroup
-                            ];
+                            $clusters[$clusterName] = $clusterGroups;
                         }
-                        $grouped[$app->name][$module->name][$component->name][$clusterName] = $typeGroups;
+                        $grouped[$app->name][$module->name][$component->name][$typeKey] = [
+                            'type_label' => $typeLabel,
+                            'type_bg' => $ACTION_TYPE_BG[$typeKey] ?? 'bg-gray-50',
+                            'clusters' => $clusters
+                        ];
                     }
                 }
             }
@@ -294,12 +308,12 @@ class RoleActionSync extends Component
 
     public function updatedSelectedActions()
     {
-        $this->save();
+        $this->save(false);
     }
 
     public function updatedActionRecordScopes()
     {
-        $this->save();
+        $this->save(false);
     }
 } 
 

@@ -55,62 +55,63 @@
                                                             </flux:button>
                                                         </div>
                                                         <div class="flex flex-row flex-wrap gap-2">
-                                                            @foreach ($actions as $clusterName => $types)
-                                                                <div class="mb-4">
-                                                                    <div class="text-sm font-bold text-purple-700 mb-2">{{ $clusterName }}
-                                                                    </div>
-                                                                    @foreach ($types as $type => $typeData)
-                                                                        <div class="mb-2">
-                                                                            <div
-                                                                                class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                                                                                {{ $typeData['type_label'] ?? ($type ?? 'No Type') }}
-                                                                            </div>
-                                                                            @foreach ($typeData['groups'] as $group)
-                                                                                <div class="flex items-center space-x-1 mb-1">
-                                                                                    <flux:checkbox wire:model="selectedActions"
-                                                                                        label="{{ $group['parent']['name'] }}"
-                                                                                        value="{{ $group['parent']['id'] }}"
-                                                                                        class="truncate font-semibold" />
-                                                                                    <flux:dropdown position="top" align="start">
-                                                                                        <flux:button size="xs" variant="outline"
-                                                                                            icon:trailing="chevron-down">
-                                                                                            {{ $actionRecordScopes[$group['parent']['id']] ?? 'all' }}
-                                                                                        </flux:button>
-                                                                                        <flux:menu>
-                                                                                            @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
-                                                                                                <flux:menu.item
-                                                                                                    wire:click="$set('actionRecordScopes.{{ $group['parent']['id'] }}', '{{ $value }}')">
-                                                                                                    {{ $label }}
-                                                                                                </flux:menu.item>
-                                                                                            @endforeach
-                                                                                        </flux:menu>
-                                                                                    </flux:dropdown>
-                                                                                </div>
-                                                                                @foreach ($group['children'] as $child)
-                                                                                    <div class="flex items-center space-x-1 mb-1 pl-6">
+                                                            @foreach ($actions as $typeKey => $typeData)
+                                                                @if(!empty($typeData['clusters']))
+                                                                    <div class="mb-6 p-2 rounded {{ $typeData['type_bg'] }}">
+                                                                        <div class="text-xs font-bold uppercase tracking-wide mb-2">{{ $typeData['type_label'] }}</div>
+                                                                        @foreach ($typeData['clusters'] as $clusterName => $groups)
+                                                                            <div class="mb-2">
+                                                                                <div class="text-sm font-bold text-purple-700 mb-2">{{ $clusterName }}</div>
+                                                                                @foreach ($groups as $group)
+                                                                                    <div class="flex items-center space-x-1 mb-1">
                                                                                         <flux:checkbox wire:model="selectedActions"
-                                                                                            label="{{ $child['name'] }}" value="{{ $child['id'] }}"
-                                                                                            class="truncate" />
-                                                                                        <flux:dropdown position="top" align="start">
-                                                                                            <flux:button size="xs" variant="outline"
-                                                                                                icon:trailing="chevron-down">
-                                                                                                {{ $actionRecordScopes[$child['id']] ?? 'all' }}
-                                                                                            </flux:button>
-                                                                                            <flux:menu>
-                                                                                                @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
-                                                                                                    <flux:menu.item
-                                                                                                        wire:click="$set('actionRecordScopes.{{ $child['id'] }}', '{{ $value }}')">
-                                                                                                        {{ $label }}
-                                                                                                    </flux:menu.item>
-                                                                                                @endforeach
-                                                                                            </flux:menu>
-                                                                                        </flux:dropdown>
+                                                                                            label="{{ $group['parent']['name'] }}"
+                                                                                            value="{{ $group['parent']['id'] }}"
+                                                                                            class="truncate font-semibold" />
+                                                                                        @if(in_array($typeKey, ['RL','BR']))
+                                                                                            <flux:dropdown position="top" align="start">
+                                                                                                <flux:button size="xs" variant="outline" icon:trailing="chevron-down">
+                                                                                                    {{ in_array($group['parent']['id'], $selectedActions) ? ($actionRecordScopes[$group['parent']['id']] ?? 'none') : 'none' }}
+                                                                                                </flux:button>
+                                                                                                <flux:menu>
+                                                                                                    @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
+                                                                                                        <flux:menu.item
+                                                                                                            wire:click="$set('actionRecordScopes.{{ $group['parent']['id'] }}', '{{ $value }}'); if (!selectedActions.includes({{ $group['parent']['id'] }})) selectedActions.push({{ $group['parent']['id'] }});">
+                                                                                                            {{ $label }}
+                                                                                                        </flux:menu.item>
+                                                                                                    @endforeach
+                                                                                                </flux:menu>
+                                                                                            </flux:dropdown>
+                                                                                        @endif
                                                                                     </div>
+                                                                                    @foreach ($group['children'] as $child)
+                                                                                        <div class="flex items-center space-x-1 mb-1 pl-6">
+                                                                                            <flux:checkbox wire:model="selectedActions"
+                                                                                                label="{{ $child['name'] }}"
+                                                                                                value="{{ $child['id'] }}"
+                                                                                                class="truncate" />
+                                                                                            @if(in_array($typeKey, ['RL','BR']))
+                                                                                                <flux:dropdown position="top" align="start">
+                                                                                                    <flux:button size="xs" variant="outline" icon:trailing="chevron-down">
+                                                                                                        {{ in_array($child['id'], $selectedActions) ? ($actionRecordScopes[$child['id']] ?? 'none') : 'none' }}
+                                                                                                    </flux:button>
+                                                                                                    <flux:menu>
+                                                                                                        @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
+                                                                                                            <flux:menu.item
+                                                                                                                wire:click="$set('actionRecordScopes.{{ $child['id'] }}', '{{ $value }}'); if (!selectedActions.includes({{ $child['id'] }})) selectedActions.push({{ $child['id'] }});">
+                                                                                                                {{ $label }}
+                                                                                                            </flux:menu.item>
+                                                                                                        @endforeach
+                                                                                                    </flux:menu>
+                                                                                                </flux:dropdown>
+                                                                                            @endif
+                                                                                        </div>
+                                                                                    @endforeach
                                                                                 @endforeach
-                                                                            @endforeach
-                                                                        </div>
-                                                                    @endforeach
-                                                                </div>
+                                                                            </div>
+                                                                        @endforeach
+                                                                    </div>
+                                                                @endif
                                                             @endforeach
                                                         </div>
                                                     </div>
@@ -172,62 +173,63 @@
                                                                 </flux:button>
                                                             </div>
                                                             <flux:checkbox.group class="space-y-1">
-                                                                @foreach ($actions as $clusterName => $types)
-                                                                    <div class="mb-4">
-                                                                        <div class="text-sm font-bold text-purple-700 mb-2">
-                                                                            {{ $clusterName }}</div>
-                                                                        @foreach ($types as $type => $typeData)
-                                                                            <div class="mb-2">
-                                                                                <div
-                                                                                    class="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">
-                                                                                    {{ $typeData['type_label'] ?? ($type ?? 'No Type') }}
-                                                                                </div>
-                                                                                @foreach ($typeData['groups'] as $group)
-                                                                                    <div class="flex items-center space-x-1 mb-1">
-                                                                                        <flux:checkbox wire:model="selectedActions"
-                                                                                            label="{{ $group['parent']['name'] }}"
-                                                                                            value="{{ $group['parent']['id'] }}"
-                                                                                            class="truncate font-semibold" />
-                                                                                        <flux:dropdown position="top" align="start">
-                                                                                            <flux:button size="xs" variant="outline"
-                                                                                                icon:trailing="chevron-down">
-                                                                                                {{ $actionRecordScopes[$group['parent']['id']] ?? 'all' }}
-                                                                                            </flux:button>
-                                                                                            <flux:menu>
-                                                                                                @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
-                                                                                                    <flux:menu.item
-                                                                                                        wire:click="$set('actionRecordScopes.{{ $group['parent']['id'] }}', '{{ $value }}')">
-                                                                                                        {{ $label }}
-                                                                                                    </flux:menu.item>
-                                                                                                @endforeach
-                                                                                            </flux:menu>
-                                                                                        </flux:dropdown>
-                                                                                    </div>
-                                                                                    @foreach ($group['children'] as $child)
-                                                                                        <div class="flex items-center space-x-1 mb-1 pl-6">
+                                                                @foreach ($actions as $typeKey => $typeData)
+                                                                    @if(!empty($typeData['clusters']))
+                                                                        <div class="mb-6 p-2 rounded {{ $typeData['type_bg'] }}">
+                                                                            <div class="text-xs font-bold uppercase tracking-wide mb-2">{{ $typeData['type_label'] }}</div>
+                                                                            @foreach ($typeData['clusters'] as $clusterName => $groups)
+                                                                                <div class="mb-2">
+                                                                                    <div class="text-sm font-bold text-purple-700 mb-2">{{ $clusterName }}</div>
+                                                                                    @foreach ($groups as $group)
+                                                                                        <div class="flex items-center space-x-1 mb-1">
                                                                                             <flux:checkbox wire:model="selectedActions"
-                                                                                                label="{{ $child['name'] }}" value="{{ $child['id'] }}"
-                                                                                                class="truncate" />
-                                                                                            <flux:dropdown position="top" align="start">
-                                                                                                <flux:button size="xs" variant="outline"
-                                                                                                    icon:trailing="chevron-down">
-                                                                                                    {{ $actionRecordScopes[$child['id']] ?? 'all' }}
-                                                                                                </flux:button>
-                                                                                                <flux:menu>
-                                                                                                    @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
-                                                                                                        <flux:menu.item
-                                                                                                            wire:click="$set('actionRecordScopes.{{ $child['id'] }}', '{{ $value }}')">
-                                                                                                            {{ $label }}
-                                                                                                        </flux:menu.item>
-                                                                                                    @endforeach
-                                                                                                </flux:menu>
-                                                                                            </flux:dropdown>
+                                                                                                label="{{ $group['parent']['name'] }}"
+                                                                                                value="{{ $group['parent']['id'] }}"
+                                                                                                class="truncate font-semibold" />
+                                                                                            @if(in_array($typeKey, ['RL','BR']))
+                                                                                                <flux:dropdown position="top" align="start">
+                                                                                                    <flux:button size="xs" variant="outline" icon:trailing="chevron-down">
+                                                                                                        {{ in_array($group['parent']['id'], $selectedActions) ? ($actionRecordScopes[$group['parent']['id']] ?? 'none') : 'none' }}
+                                                                                                    </flux:button>
+                                                                                                    <flux:menu>
+                                                                                                        @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
+                                                                                                            <flux:menu.item
+                                                                                                                wire:click="$set('actionRecordScopes.{{ $group['parent']['id'] }}', '{{ $value }}'); if (!selectedActions.includes({{ $group['parent']['id'] }})) selectedActions.push({{ $group['parent']['id'] }});">
+                                                                                                                {{ $label }}
+                                                                                                            </flux:menu.item>
+                                                                                                        @endforeach
+                                                                                                    </flux:menu>
+                                                                                                </flux:dropdown>
+                                                                                            @endif
                                                                                         </div>
+                                                                                        @foreach ($group['children'] as $child)
+                                                                                            <div class="flex items-center space-x-1 mb-1 pl-6">
+                                                                                                <flux:checkbox wire:model="selectedActions"
+                                                                                                    label="{{ $child['name'] }}"
+                                                                                                    value="{{ $child['id'] }}"
+                                                                                                    class="truncate" />
+                                                                                                @if(in_array($typeKey, ['RL','BR']))
+                                                                                                    <flux:dropdown position="top" align="start">
+                                                                                                        <flux:button size="xs" variant="outline" icon:trailing="chevron-down">
+                                                                                                            {{ in_array($child['id'], $selectedActions) ? ($actionRecordScopes[$child['id']] ?? 'none') : 'none' }}
+                                                                                                        </flux:button>
+                                                                                                        <flux:menu>
+                                                                                                            @foreach(\App\Models\Saas\ActionRole::RECORDS_SCOPE_MAIN_SELECT as $value => $label)
+                                                                                                                <flux:menu.item
+                                                                                                                    wire:click="$set('actionRecordScopes.{{ $child['id'] }}', '{{ $value }}'); if (!selectedActions.includes({{ $child['id'] }})) selectedActions.push({{ $child['id'] }});">
+                                                                                                                    {{ $label }}
+                                                                                                                </flux:menu.item>
+                                                                                                            @endforeach
+                                                                                                        </flux:menu>
+                                                                                                    </flux:dropdown>
+                                                                                                @endif
+                                                                                            </div>
+                                                                                        @endforeach
                                                                                     @endforeach
-                                                                                @endforeach
-                                                                            </div>
-                                                                        @endforeach
-                                                                    </div>
+                                                                                </div>
+                                                                            @endforeach
+                                                                        </div>
+                                                                    @endif
                                                                 @endforeach
                                                             </flux:checkbox.group>
                                                         </flux:accordion.content>

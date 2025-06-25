@@ -67,6 +67,7 @@ class EmpSalaryTracks extends Component
 
     public function mount($slotId = null)
     {
+        $this->resetPage();
         $this->slotId = $slotId;
         $this->initListsForFields();
 
@@ -134,53 +135,52 @@ class EmpSalaryTracks extends Component
         }
     }
 
+    /**
+     * Returns paginated salary tracks, grouped and aggregated in SQL for optimal performance.
+     * Uses Eloquent's paginate() so Livewire pagination works natively.
+     */
     #[Computed]
-    public function list()
+    public function salaryTracks()
     {
+        $firmId = Session::get('firm_id');
         $query = PayrollComponentsEmployeesTrack::query()
-            ->where('firm_id', Session::get('firm_id'))
-            ->when($this->slotId, fn($query) =>
-                $query->where('payroll_slot_id', $this->slotId))
-            ->when($this->filters['employee_id'], fn($query, $value) =>
-                $query->where('employee_id', $value))
-            ->with(['employee', 'salary_component', 'payroll_slot']);
+            ->selectRaw('
+                employee_id,
+                payroll_slot_id,
+                MIN(salary_period_from) as from_date,
+                MAX(salary_period_to) as to_date,
+                SUM(CASE WHEN nature = "earning" THEN amount_payable ELSE 0 END) as income,
+                SUM(CASE WHEN nature = "deduction" THEN amount_payable ELSE 0 END) as deduction
+            ')
+            ->where('firm_id', $firmId)
+            ->when($this->slotId, fn($q) => $q->where('payroll_slot_id', $this->slotId))
+            ->when($this->filters['employee_id'], fn($q, $value) => $q->where('employee_id', $value))
+            ->groupBy('employee_id', 'payroll_slot_id', 'salary_period_from', 'salary_period_to')
+            ->orderByRaw('MIN(salary_period_from) DESC, employee_id')
+            ->with(['employee']);
 
-        // Group by employee and period after fetching paginated results
-        $tracks = $query->get()
-            ->groupBy(function ($track) {
-                return $track->employee_id . '_' . $track->salary_period_from->format('Y-m-d') . '_' . $track->salary_period_to->format('Y-m-d');
-            })
-            ->map(function ($employeeTracks) {
-                $firstTrack = $employeeTracks->first();
-                $income = $employeeTracks->where('nature', 'earning')->sum('amount_payable');
-                $deduction = $employeeTracks->where('nature', 'deduction')->sum('amount_payable');
-                $netSalary = $income - $deduction;
+        // Paginate the grouped/aggregated results
+        $paginated = $query->paginate($this->perPage);
 
-                return [
-                    'id' => $firstTrack->employee_id . '_' . $firstTrack->salary_period_from->format('Y-m-d') . '_' . $firstTrack->salary_period_to->format('Y-m-d'),
-                    'employee_name' => $firstTrack->employee->fname . ' ' . $firstTrack->employee->lname,
-                    'income' => $income,
-                    'deduction' => $deduction,
-                    'net_salary' => $netSalary,
-                    'period' => $firstTrack->salary_period_from->format('jS F Y') . ' to ' . $firstTrack->salary_period_to->format('jS F Y'),
-                    'employee_id' => $firstTrack->employee_id,
-                    'from_date' => $firstTrack->salary_period_from,
-                    'to_date' => $firstTrack->salary_period_to,
-                    'payroll_slot_id' => $firstTrack->payroll_slot_id
-                ];
-            })
-            ->values();
-
-        // Paginate the grouped results manually using Laravel's paginator
-        $page = $this->page ?? 1;
-        $perPage = $this->perPage;
-        $paginated = new \Illuminate\Pagination\LengthAwarePaginator(
-            $tracks->forPage($page, $perPage),
-            $tracks->count(),
-            $perPage,
-            $page,
-            ['path' => request()->url()]
-        );
+        // Transform each row to match the previous structure
+        $paginated->getCollection()->transform(function ($row) {
+            $employee = $row->employee;
+            $fromDate = $row->from_date instanceof \Carbon\Carbon ? $row->from_date : \Carbon\Carbon::parse($row->from_date);
+            $toDate = $row->to_date instanceof \Carbon\Carbon ? $row->to_date : \Carbon\Carbon::parse($row->to_date);
+            $netSalary = $row->income - $row->deduction;
+            return [
+                'id' => $row->employee_id . '_' . $fromDate->format('Y-m-d') . '_' . $toDate->format('Y-m-d'),
+                'employee_name' => $employee ? ($employee->fname . ' ' . $employee->lname) : '',
+                'income' => (float) $row->income,
+                'deduction' => (float) $row->deduction,
+                'net_salary' => (float) $netSalary,
+                'period' => $fromDate->format('jS F Y') . ' to ' . $toDate->format('jS F Y'),
+                'employee_id' => $row->employee_id,
+                'from_date' => $fromDate,
+                'to_date' => $toDate,
+                'payroll_slot_id' => $row->payroll_slot_id,
+            ];
+        });
 
         return $paginated;
     }
