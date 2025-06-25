@@ -264,35 +264,70 @@
             <div class="flex-1 overflow-y-auto custom-scrollbar p-2 h-64">
                 @if($selectedComponent)
                     <div class="space-y-4">
-                        @if(count($actionsForComponent) > 0)
-                            <ul id="actions-list" class="space-y-2">
-                                @foreach($actionsForComponent as $action)
-                                    @php
-                                        $actionId = is_array($action) ? ($action['id'] ?? null) : ($action->id ?? null);
-                                        $actionName = is_array($action) ? ($action['name'] ?? '') : ($action->name ?? '');
-                                        $actionDesc = is_array($action) ? ($action['description'] ?? '') : ($action->description ?? '');
-                                        $actionIcon = is_array($action) ? ($action['icon'] ?? '') : ($action->icon ?? '');
-                                    @endphp
-                                    <li class="p-3 bg-purple-50 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors border-l-4 border-purple-200 card-hover"
-                                        data-id="{{ $actionId }}">
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex items-center space-x-3">
-                                                <i class="fas fa-grip-vertical text-gray-400"></i>
-                                                <div class="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-                                                    <i class="{{ $actionIcon ?? 'fas fa-bolt' }} text-white text-sm"></i>
-                                                </div>
-                                                <div>
-                                                    <div class="font-medium text-gray-900">{{ $actionName }}</div>
-                                                    <div class="text-xs text-gray-500">{{ $actionDesc }}</div>
-                                                </div>
+                        @if($this->organizedActions->isNotEmpty())
+                            <div class="space-y-3">
+                                @foreach($this->organizedActions as $clusterName => $actionsByType)
+                                    @if($actionsByType->isNotEmpty())
+                                        <!-- Cluster Header -->
+                                        <div class="bg-gray-100 rounded-lg p-2 mb-2">
+                                            <div class="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                                                {{ $clusterName }}
                                             </div>
-                                            <flux:modal.trigger name="item-details-modal" wire:click.stop="openItemDetailsModal('action', '{{ $actionId }}')">
-                                                <flux:button size="xs" variant="ghost" icon="arrows-pointing-out" tooltip="View and Edit Details"  class="text-gray-500 hover:text-gray-700"/>
-                                            </flux:modal.trigger>
                                         </div>
-                                    </li>
+                                        
+                                        <!-- Actions by Type within Cluster -->
+                                        @foreach($actionsByType as $actionType => $hierarchicalActions)
+                                            @if($hierarchicalActions->isNotEmpty())
+                                                <!-- Action Type Header -->
+                                                <div class="ml-2 mb-1">
+                                                    <div class="text-xs font-medium text-gray-500">
+                                                        {{ $actionType ?: 'No Type' }}
+                                                    </div>
+                                                </div>
+                                                
+                                                <!-- Actions List -->
+                                                <ul id="actions-list" class="space-y-1 ml-2">
+                                                    @foreach($hierarchicalActions as $actionData)
+                                                        @php
+                                                            $action = $actionData['action'];
+                                                            $level = $actionData['level'];
+                                                            $isParent = $actionData['is_parent'];
+                                                            $actionId = $action->id;
+                                                            $actionName = $action->name;
+                                                            $actionDesc = $action->description ?? '';
+                                                            $actionIcon = $action->icon ?? 'fas fa-bolt';
+                                                        @endphp
+                                                        <li class="p-2 bg-purple-50 rounded-lg hover:bg-purple-100 cursor-pointer transition-colors border-l-4 border-purple-200 card-hover"
+                                                            data-id="{{ $actionId }}"
+                                                            style="margin-left: {{ $level * 16 }}px;">
+                                                            <div class="flex items-center justify-between">
+                                                                <div class="flex items-center space-x-3">
+                                                                    <i class="fas fa-grip-vertical text-gray-400"></i>
+                                                                    <div class="w-6 h-6 bg-purple-600 rounded-lg flex items-center justify-center">
+                                                                        <i class="{{ $actionIcon }} text-white text-xs"></i>
+                                                                    </div>
+                                                                    <div class="flex-1 min-w-0">
+                                                                        <div class="font-medium text-gray-900 text-sm">{{ $actionName }}</div>
+                                                                        @if($actionDesc)
+                                                                            <div class="text-xs text-gray-500 truncate">{{ $actionDesc }}</div>
+                                                                        @endif
+                                                                        @if($isParent)
+                                                                            <div class="text-xs text-purple-600 font-medium">Parent Action</div>
+                                                                        @endif
+                                                                    </div>
+                                                                </div>
+                                                                <flux:modal.trigger name="item-details-modal" wire:click.stop="openItemDetailsModal('action', '{{ $actionId }}')">
+                                                                    <flux:button size="xs" variant="ghost" icon="arrows-pointing-out" tooltip="View and Edit Details" class="text-gray-500 hover:text-gray-700"/>
+                                                                </flux:modal.trigger>
+                                                            </div>
+                                                        </li>
+                                                    @endforeach
+                                                </ul>
+                                            @endif
+                                        @endforeach
+                                    @endif
                                 @endforeach
-                            </ul>
+                            </div>
                         @else
                             <div class="text-center text-gray-400 mt-10">No actions available for this component</div>
                         @endif
@@ -371,7 +406,7 @@
                                                 <label class="block text-sm font-medium text-gray-700">{{ $cfg['label'] }}</label>
                                                 <flux:dropdown>
                                                     <flux:button variant="outline" class="w-full justify-between">
-                                                        {{ count($modalItem->selectedClusters ?? []) > 0 ? count($modalItem->selectedClusters) . ' clusters selected' : 'Select clusters' }}
+                                                        {{ is_array($modalItem->selectedClusters ?? null) && count($modalItem->selectedClusters) > 0 ? count($modalItem->selectedClusters) . ' clusters selected' : 'Select clusters' }}
                                                         <i class="fas fa-chevron-down ml-2"></i>
                                                     </flux:button>
                                                     <flux:menu keep-open>
@@ -380,7 +415,7 @@
                                                                 <flux:menu.checkbox 
                                                                     wire:model.live="modalItem.selectedClusters" 
                                                                     value="{{ $cluster->id }}"
-                                                                    :checked="in_array($cluster->id, $modalItem->selectedClusters ?? [])">
+                                                                    :checked="in_array($cluster->id, is_array($modalItem->selectedClusters ?? null) ? $modalItem->selectedClusters : [])">
                                                                     {{ $cluster->name }}
                                                                 </flux:menu.checkbox>
                                                             @endforeach
@@ -389,7 +424,7 @@
                                                                 <flux:menu.checkbox 
                                                                     wire:model.live="modalItem.selectedClusters" 
                                                                     value="{{ $cluster->id }}"
-                                                                    :checked="in_array($cluster->id, $modalItem->selectedClusters ?? [])">
+                                                                    :checked="in_array($cluster->id, is_array($modalItem->selectedClusters ?? null) ? $modalItem->selectedClusters : [])">
                                                                     {{ $cluster->name }}
                                                                 </flux:menu.checkbox>
                                                             @endforeach
@@ -398,7 +433,7 @@
                                                                 <flux:menu.checkbox 
                                                                     wire:model.live="modalItem.selectedClusters" 
                                                                     value="{{ $cluster->id }}"
-                                                                    :checked="in_array($cluster->id, $modalItem->selectedClusters ?? [])">
+                                                                    :checked="in_array($cluster->id, is_array($modalItem->selectedClusters ?? null) ? $modalItem->selectedClusters : [])">
                                                                     {{ $cluster->name }}
                                                                 </flux:menu.checkbox>
                                                             @endforeach
@@ -409,6 +444,15 @@
                                         @else
                                             <flux:select label="{{ $cfg['label'] }}" wire:model.live="modalItem.{{ $field }}">
                                                 <option value="">Select {{ $cfg['label'] }}</option>
+                                                @if($field === 'action_type')
+                                                    @foreach($actionTypes as $key => $value)
+                                                        <option value="{{ $key }}">{{ $value }}</option>
+                                                    @endforeach
+                                                @elseif($field === 'parent_action_id')
+                                                    @foreach($this->availableParentActions as $action)
+                                                        <option value="{{ $action->id }}">{{ $action->name }}</option>
+                                                    @endforeach
+                                                @endif
                                             </flux:select>
                                         @endif
                                         @break
@@ -493,7 +537,7 @@
 
 <!-- Add New Module Modal -->
 <flux:modal name="add-module-modal" class="w-full">
-    <form wire:submit.prevent="addNewModule">
+    <form wire:submit.prevent="addNewModule ">
         <div class="space-y-6">
             <div>
                 <flux:heading size="lg">Add New Module</flux:heading>
@@ -514,6 +558,25 @@
                 <flux:switch label="Inactive" wire:model.live="newModule.is_inactive"/>
                 <div class="col-span-2">
                     <flux:textarea label="Description" wire:model.live="newModule.description" rows="3"/>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Module Clusters</label>
+                    <flux:dropdown>
+                        <flux:button variant="outline" class="w-full justify-between">
+                            {{ is_array($newModule['selectedClusters'] ?? null) && count($newModule['selectedClusters']) > 0 ? count($newModule['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
+                            <i class="fas fa-chevron-down ml-2"></i>
+                        </flux:button>
+                        <flux:menu keep-open>
+                            @foreach($moduleClusters as $cluster)
+                                <flux:menu.checkbox 
+                                    wire:model.live="newModule.selectedClusters" 
+                                    value="{{ $cluster->id }}"
+                                    :checked="in_array($cluster->id, is_array($newModule['selectedClusters'] ?? null) ? $newModule['selectedClusters'] : [])">
+                                    {{ $cluster->name }}
+                                </flux:menu.checkbox>
+                            @endforeach
+                        </flux:menu>
+                    </flux:dropdown>
                 </div>
             </div>
 
@@ -551,6 +614,25 @@
                 <div class="col-span-2">
                     <flux:textarea label="Description" wire:model.live="newComponent.description" rows="3"/>
                 </div>
+                <div class="col-span-2">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Component Clusters</label>
+                    <flux:dropdown>
+                        <flux:button variant="outline" class="w-full justify-between">
+                            {{ is_array($newComponent['selectedClusters'] ?? null) && count($newComponent['selectedClusters']) > 0 ? count($newComponent['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
+                            <i class="fas fa-chevron-down ml-2"></i>
+                        </flux:button>
+                        <flux:menu keep-open>
+                            @foreach($componentClusters as $cluster)
+                                <flux:menu.checkbox 
+                                    wire:model.live="newComponent.selectedClusters" 
+                                    value="{{ $cluster->id }}"
+                                    :checked="in_array($cluster->id, is_array($newComponent['selectedClusters'] ?? null) ? $newComponent['selectedClusters'] : [])">
+                                    {{ $cluster->name }}
+                                </flux:menu.checkbox>
+                            @endforeach
+                        </flux:menu>
+                    </flux:dropdown>
+                </div>
             </div>
 
             <div class="flex justify-end pt-4 space-x-2">
@@ -583,8 +665,28 @@
                 <flux:input label="Custom CSS" wire:model.live="newAction.custom_css"/>
                 <flux:input type="number" label="Order" wire:model.live="newAction.order" value="0"/>
                 <flux:switch label="Inactive" wire:model.live="newAction.is_inactive"/>
+                <flux:select label="Action Type" wire:model.live="newAction.action_type">
+                    <option value="">Select Action Type</option>
+                    @foreach($actionTypes as $key => $value)
+                        <option value="{{ $key }}">{{ $value }}</option>
+                    @endforeach
+                </flux:select>
+                <flux:select label="Parent Action" wire:model.live="newAction.parent_action_id">
+                    <option value="">Select Parent Action (Optional)</option>
+                    @foreach($this->availableParentActions as $action)
+                        <option value="{{ $action->id }}">{{ $action->name }}</option>
+                    @endforeach
+                </flux:select>
                 <div class="col-span-2">
                     <flux:textarea label="Description" wire:model.live="newAction.description" rows="3"/>
+                </div>
+                <div class="col-span-2">
+                    <flux:select variant="listbox" label="Action Cluster" wire:model.live="newAction.actioncluster_id" :disabled="!empty($newAction['parent_action_id'])">
+                        <option value="">No Cluster</option>
+                        @foreach($actionClusters as $cluster)
+                            <option value="{{ $cluster->id }}">{{ $cluster->name }}</option>
+                        @endforeach
+                    </flux:select>
                 </div>
             </div>
 
@@ -599,7 +701,7 @@
 </flux:modal>
 
 <!-- Edit Item Modal -->
-<flux:modal name="edit-item-modal" :open="$isEditModalOpen" @cancel="closeEditModal" class="max-w-3xl w-full" variant="flyout">
+<flux:modal name="edit-item-modal" :open="$isEditModalOpen" @cancel="closeEditModal" class="max-w-3xl w-full" >
     @if($editItem)
     <form wire:submit.prevent="saveEditItem">
         <div class="space-y-6">
@@ -608,18 +710,14 @@
                 <flux:subheading>Update {{ $editItemType }} details below.</flux:subheading>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <flux:input label="Name" wire:model.live="editItem.name" />
-                </div>
-                <div>
-                    <flux:input label="Code" wire:model.live="editItem.code" />
-                </div>
+               
+                
                 @if($editItemType === 'module')
                     <div class="col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Module Clusters</label>
                         <flux:dropdown>
                             <flux:button variant="outline" class="w-full justify-between">
-                                {{ count($editItem['selectedClusters'] ?? []) > 0 ? count($editItem['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
+                                {{ is_array($editItem['selectedClusters'] ?? null) && count($editItem['selectedClusters']) > 0 ? count($editItem['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
                                 <i class="fas fa-chevron-down ml-2"></i>
                             </flux:button>
                             <flux:menu keep-open>
@@ -627,7 +725,7 @@
                                     <flux:menu.checkbox 
                                         wire:model.live="editItem.selectedClusters" 
                                         value="{{ $cluster->id }}"
-                                        :checked="in_array($cluster->id, $editItem['selectedClusters'] ?? [])">
+                                        :checked="in_array($cluster->id, is_array($editItem['selectedClusters'] ?? null) ? $editItem['selectedClusters'] : [])">
                                         {{ $cluster->name }}
                                     </flux:menu.checkbox>
                                 @endforeach
@@ -640,7 +738,7 @@
                         <label class="block text-sm font-medium text-gray-700 mb-1">Component Clusters</label>
                         <flux:dropdown>
                             <flux:button variant="outline" class="w-full justify-between">
-                                {{ count($editItem['selectedClusters'] ?? []) > 0 ? count($editItem['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
+                                {{ is_array($editItem['selectedClusters'] ?? null) && count($editItem['selectedClusters']) > 0 ? count($editItem['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
                                 <i class="fas fa-chevron-down ml-2"></i>
                             </flux:button>
                             <flux:menu keep-open>
@@ -648,7 +746,7 @@
                                     <flux:menu.checkbox 
                                         wire:model.live="editItem.selectedClusters" 
                                         value="{{ $cluster->id }}"
-                                        :checked="in_array($cluster->id, $editItem['selectedClusters'] ?? [])">
+                                        :checked="in_array($cluster->id, is_array($editItem['selectedClusters'] ?? null) ? $editItem['selectedClusters'] : [])">
                                         {{ $cluster->name }}
                                     </flux:menu.checkbox>
                                 @endforeach
@@ -658,31 +756,30 @@
                 @endif
                 @if($editItemType === 'action')
                     <div class="col-span-2">
-                        <label class="block text-sm font-medium text-gray-700 mb-1">Action Clusters</label>
-                        <flux:dropdown>
-                            <flux:button variant="outline" class="w-full justify-between">
-                                {{ count($editItem['selectedClusters'] ?? []) > 0 ? count($editItem['selectedClusters']) . ' clusters selected' : 'Select clusters' }}
-                                <i class="fas fa-chevron-down ml-2"></i>
-                            </flux:button>
-                            <flux:menu keep-open>
-                                @foreach($actionClusters as $cluster)
-                                    <flux:menu.checkbox 
-                                        wire:model.live="editItem.selectedClusters" 
-                                        value="{{ $cluster->id }}"
-                                        :checked="in_array($cluster->id, $editItem['selectedClusters'] ?? [])">
-                                        {{ $cluster->name }}
-                                    </flux:menu.checkbox>
-                                @endforeach
-                            </flux:menu>
-                        </flux:dropdown>
+                        <flux:select label="Action Cluster" variant="listbox" wire:model.live="editItem.actioncluster_id" placeholder="Select a cluster..." :disabled="!empty($editItem['parent_action_id'])">
+                            <flux:select.option value="">No Cluster</flux:select.option>
+                            @foreach($actionClusters as $cluster)
+                                <flux:select.option value="{{ $cluster->id }}">{{ $cluster->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
                     </div>
                 @endif
                 @foreach($editFields as $field => $cfg)
                     <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
                         @switch($cfg['type'])
                             @case('select')
-                                <flux:select label="{{ $cfg['label'] }}" wire:model.live="editItem.{{ $field }}">
+                            
+                                <flux:select  label="{{ $cfg['label'] }}" wire:model.live="editItem.{{ $field }}">
                                     <option value="">Select {{ $cfg['label'] }}</option>
+                                    @if($field === 'action_type')
+                                        @foreach($actionTypes as $key => $value)
+                                            <option value="{{ $key }}">{{ $value }}</option>
+                                        @endforeach
+                                    @elseif($field === 'parent_action_id')
+                                        @foreach($this->availableParentActions as $action)
+                                            <option value="{{ $action->id }}">{{ $action->name }}</option>
+                                        @endforeach
+                                    @endif
                                 </flux:select>
                                 @break
                             @case('switch')
@@ -711,7 +808,7 @@
 </flux:modal>
 
 <!-- Assign Existing Item Modal -->
-<flux:modal name="assign-existing-item-modal" :open="$isAssignModalOpen" @cancel="closeAssignModal" class="w-full max-w-2xl" variant="flyout">
+<flux:modal name="assign-existing-item-modal" :open="$isAssignModalOpen" @cancel="closeAssignModal" class="w-full max-w-2xl" >
     @if(!$isAssignModalLoading)
     <div class="space-y-6">
         <div>

@@ -3,6 +3,7 @@
     namespace App\Livewire\Hrms\Leave;
 
     use Livewire\Component;
+    use Illuminate\Support\Facades\Session;
 
     use App\Models\Saas\App as SaasApp;
     use App\Models\Saas\Module;
@@ -65,6 +66,7 @@
             'badge' => '',
             'custom_css' => '',
             'is_inactive' => 0,
+            'selectedClusters' => [],
         ];
 
         public $newComponent = [
@@ -80,6 +82,7 @@
             'badge' => '',
             'custom_css' => '',
             'is_inactive' => 0,
+            'selectedClusters' => [],
         ];
 
         public $newAction = [
@@ -94,6 +97,9 @@
             'badge' => '',
             'custom_css' => '',
             'is_inactive' => 0,
+            'action_type' => '',
+            'parent_action_id' => null,
+            'actioncluster_id' => null,
         ];
 
         // Add these properties after the existing properties
@@ -135,9 +141,107 @@
             return $component ? $component->name : '';
         }
 
+        public function getAvailableParentActionsProperty()
+        {
+            if (!$this->selectedComponent) return collect();
+            $component = SaasComponent::find($this->selectedComponent);
+            return $component ? $component->actions()->where('is_inactive', 0)->orderBy('name')->get() : collect();
+        }
+
+        public function getOrganizedActionsProperty()
+        {
+            if (!$this->selectedComponent) return collect();
+            
+            $component = SaasComponent::find($this->selectedComponent);
+            if (!$component) return collect();
+            
+            $actions = $component->actions()
+                ->with(['actioncluster', 'parentAction'])
+                ->where('is_inactive', 0)
+                ->orderBy('order')
+                ->get();
+            
+            // Group by cluster first, then by action type
+            $organized = collect();
+            
+            // Get all clusters that have actions
+            $clustersWithActions = $actions->filter(function($action) {
+                return $action->actioncluster !== null;
+            })->map(function($action) {
+                return $action->actioncluster;
+            })->unique('id')->sortBy('name');
+            
+            foreach ($clustersWithActions as $cluster) {
+                $clusterActions = $actions->filter(function($action) use ($cluster) {
+                    return $action->actioncluster && $action->actioncluster->id === $cluster->id;
+                });
+                
+                // Group actions by action type within this cluster and organize with hierarchy
+                $actionsByType = $clusterActions->groupBy('action_type')->map(function($typeActions) {
+                    return $this->organizeActionsWithHierarchy($typeActions);
+                });
+                
+                $organized->put($cluster->name, $actionsByType);
+            }
+            
+            // Also handle actions without clusters
+            $actionsWithoutClusters = $actions->filter(function($action) {
+                return !$action->actioncluster;
+            });
+            
+            if ($actionsWithoutClusters->isNotEmpty()) {
+                $organized->put('No Cluster', $actionsWithoutClusters->groupBy('action_type')->map(function($typeActions) {
+                    return $this->organizeActionsWithHierarchy($typeActions);
+                }));
+            }
+            
+            return $organized;
+        }
+
+        protected function organizeActionsWithHierarchy($actions)
+        {
+            $organized = collect();
+            $parentActions = $actions->whereNull('parent_action_id');
+            $childActions = $actions->whereNotNull('parent_action_id');
+            
+            foreach ($parentActions as $parentAction) {
+                $organized->push([
+                    'action' => $parentAction,
+                    'level' => 0,
+                    'is_parent' => true
+                ]);
+                
+                // Add children of this parent
+                $children = $childActions->where('parent_action_id', $parentAction->id);
+                foreach ($children as $childAction) {
+                    $organized->push([
+                        'action' => $childAction,
+                        'level' => 1,
+                        'is_parent' => false
+                    ]);
+                }
+            }
+            
+            // Add orphaned child actions (children without parents)
+            $orphanedChildren = $childActions->filter(function($childAction) use ($actions) {
+                return !$actions->contains('id', $childAction->parent_action_id);
+            });
+            
+            foreach ($orphanedChildren as $orphanedChild) {
+                $organized->push([
+                    'action' => $orphanedChild,
+                    'level' => 0,
+                    'is_parent' => false
+                ]);
+            }
+            
+            return $organized;
+        }
+
         public $moduleClusters = [];
         public $componentClusters = [];
         public $actionClusters = [];
+        public $actionTypes = [];
 
         public $editItemType = null;
         public $editFields = [];
@@ -149,6 +253,10 @@
 
             // Load clusters
             $this->loadClusters();
+            
+            // Load action types
+            $this->actionTypes = SaasAction::ACTION_TYPE_MAIN_SELECT;
+            
             $this->isEditingApp = true;
             $this->isEditingModule = true;
             $this->isEditingComponent = true;
@@ -160,6 +268,7 @@
             $this->moduleClusters = Modulecluster::where('is_inactive', 0)
                 ->orderBy('name')
                 ->get();
+
 
             $this->componentClusters = Componentcluster::where('is_inactive', 0)
                 ->orderBy('name')
@@ -234,12 +343,13 @@
                         'badge' => ['label' => 'Badge', 'type' => 'text'],
                         'custom_css' => ['label' => 'Custom CSS', 'type' => 'text'],
                         'order' => ['label' => 'Order', 'type' => 'number'],
-                        'is_inactive' => ['label' => 'Inactive', 'type' => 'switch']
+                        'is_inactive' =>     ['label' => 'Inactive', 'type' => 'switch']
                     ];
                     break;
                 case 'module':
                     $this->modalItem = Module::find($id);
                     $this->modalItem->selectedClusters = ($this->modalItem->moduleclusters ?? collect())->pluck('id')->toArray();
+                    $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'module');
                     $this->modalFields = [
                         'name' => ['label' => 'Name', 'type' => 'text'],
                         'code' => ['label' => 'Code', 'type' => 'text'],
@@ -257,6 +367,7 @@
                 case 'component':
                     $this->modalItem = SaasComponent::find($id);
                     $this->modalItem->selectedClusters = ($this->modalItem->componentclusters ?? collect())->pluck('id')->toArray();
+                    $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'component');
                     $this->modalFields = [
                         'name' => ['label' => 'Name', 'type' => 'text'],
                         'code' => ['label' => 'Code', 'type' => 'text'],
@@ -273,7 +384,13 @@
                     break;
                 case 'action':
                     $this->modalItem = SaasAction::find($id);
-                    $this->modalItem->selectedClusters = ($this->modalItem->actionclusters ?? collect())->pluck('id')->toArray();
+                    // Handle cluster relationship
+                    if ($this->modalItem->actioncluster) {
+                        $this->modalItem->selectedClusters = [$this->modalItem->actioncluster->id];
+                    } else {
+                        $this->modalItem->selectedClusters = [];
+                    }
+                    $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'action');
                     $this->modalFields = [
                         'name' => ['label' => 'Name', 'type' => 'text'],
                         'code' => ['label' => 'Code', 'type' => 'text'],
@@ -285,6 +402,8 @@
                         'custom_css' => ['label' => 'Custom CSS', 'type' => 'text'],
                         'order' => ['label' => 'Order', 'type' => 'number'],
                         'is_inactive' => ['label' => 'Inactive', 'type' => 'switch'],
+                        'action_type' => ['label' => 'Action Type', 'type' => 'select'],
+                        'parent_action_id' => ['label' => 'Parent Action', 'type' => 'select'],
                         'cluster_id' => ['label' => 'Action Clusters', 'type' => 'select']
                     ];
                     break;
@@ -308,16 +427,26 @@
                 switch ($this->modalItemType) {
                     case 'app':
                         $this->modalItem = \App\Models\Saas\App::find($this->modalItem->id);
-                        dd($this->modalItem);
                         break;
                     case 'module':
                         $this->modalItem = \App\Models\Saas\Module::find($this->modalItem->id);
+                        $this->modalItem->selectedClusters = ($this->modalItem->moduleclusters ?? collect())->pluck('id')->toArray();
+                        $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'module');
                         break;
                     case 'component':
                         $this->modalItem = \App\Models\Saas\Component::find($this->modalItem->id);
+                        $this->modalItem->selectedClusters = ($this->modalItem->componentclusters ?? collect())->pluck('id')->toArray();
+                        $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'component');
                         break;
                     case 'action':
                         $this->modalItem = \App\Models\Saas\Action::find($this->modalItem->id);
+                        // Handle cluster relationship for actions
+                        if ($this->modalItem->actioncluster) {
+                            $this->modalItem->selectedClusters = [$this->modalItem->actioncluster->id];
+                        } else {
+                            $this->modalItem->selectedClusters = [];
+                        }
+                        $this->modalItem = $this->ensureSelectedClustersIsArray($this->modalItem, 'action');
                         break;
                 }
             }
@@ -335,8 +464,16 @@
 
             // Handle cluster relationships
             if (isset($item->selectedClusters)) {
-                $clusterMethod = $this->getClusterMethod();
-                $item->$clusterMethod()->sync($item->selectedClusters);
+                // Ensure selectedClusters is always an array
+                $selectedClusters = is_array($item->selectedClusters) ? $item->selectedClusters : [];
+                
+                if ($this->modalItemType === 'action') {
+                    // For actions, use the one-to-many relationship
+                    $item->actioncluster_id = !empty($selectedClusters) ? $selectedClusters[0] : null;
+                } else {
+                    $clusterMethod = $this->getClusterMethod();
+                    $item->$clusterMethod()->sync($selectedClusters);
+                }
             }
 
             $item->save();
@@ -382,7 +519,7 @@
             if ($this->modalItem) {
                 try {
                     $this->modalItem->delete();
-                    session()->flash('message', ucfirst($this->modalItemType) . ' deleted successfully.');
+                    Session::flash('message', ucfirst($this->modalItemType) . ' deleted successfully.');
                     $this->closeModal();
                     // Refresh lists
                     $this->mount();
@@ -393,7 +530,7 @@
                     $this->componentsForModule = collect();
                     $this->actionsForComponent = collect();
                 } catch (\Exception $e) {
-                    session()->flash('error', 'Cannot delete ' . $this->modalItemType . ': ' . $e->getMessage());
+                    Session::flash('error', 'Cannot delete ' . $this->modalItemType . ': ' . $e->getMessage());
                 }
             }
         }
@@ -417,13 +554,16 @@
             ]);
 
             try {
-                $app = SaasApp::create($validatedData['newApp']);
+                $appData = $validatedData['newApp'];
+                
+                $app = SaasApp::create($appData);
+                
                 $this->reset('newApp');
                 $this->mount(); // Refresh the apps list
                 $this->modal('add-app-modal')->close();
-                session()->flash('message', 'Application added successfully.');
+                Session::flash('message', 'Application added successfully.');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to add application: ' . $e->getMessage());
+                Session::flash('error', 'Failed to add application: ' . $e->getMessage());
             }
             $this->dispatch('sortable:init');
         }
@@ -431,7 +571,7 @@
         public function addNewModule()
         {
             if (!$this->selectedApplication) {
-                session()->flash('error', 'Please select an application first.');
+                Session::flash('error', 'Please select an application first.');
                 return;
             }
 
@@ -448,17 +588,28 @@
                 'newModule.badge' => 'nullable|string|max:255',
                 'newModule.custom_css' => 'nullable|string',
                 'newModule.is_inactive' => 'boolean',
+                'newModule.selectedClusters' => 'nullable|array',
             ]);
 
             try {
                 $app = SaasApp::where('code', $this->selectedApplication)->first();
-                $module = $app->modules()->create($validatedData['newModule']);
+                $moduleData = $validatedData['newModule'];
+                $selectedClusters = is_array($moduleData['selectedClusters'] ?? null) ? $moduleData['selectedClusters'] : [];
+                unset($moduleData['selectedClusters']);
+                
+                $module = $app->modules()->create($moduleData);
+                
+                // Handle cluster relationships if any clusters are selected
+                if (!empty($selectedClusters)) {
+                    $module->moduleclusters()->attach($selectedClusters);
+                }
+                
                 $this->reset('newModule');
                 $this->selectApplication($this->selectedApplication); // Refresh modules list
                 $this->modal('add-module-modal')->close();
-                session()->flash('message', 'Module added successfully.');
+                Session::flash('message', 'Module added successfully.');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to add module: ' . $e->getMessage());
+                Session::flash('error', 'Failed to add module: ' . $e->getMessage());
             }
             $this->dispatch('sortable:init');
         }
@@ -466,7 +617,7 @@
         public function addNewComponent()
         {
             if (!$this->selectedModule) {
-                session()->flash('error', 'Please select a module first.');
+                Session::flash('error', 'Please select a module first.');
                 return;
             }
 
@@ -483,17 +634,28 @@
                 'newComponent.badge' => 'nullable|string|max:255',
                 'newComponent.custom_css' => 'nullable|string',
                 'newComponent.is_inactive' => 'boolean',
+                'newComponent.selectedClusters' => 'nullable|array',
             ]);
 
             try {
                 $module = Module::find($this->selectedModule);
-                $component = $module->components()->create($validatedData['newComponent']);
+                $componentData = $validatedData['newComponent'];
+                $selectedClusters = is_array($componentData['selectedClusters'] ?? null) ? $componentData['selectedClusters'] : [];
+                unset($componentData['selectedClusters']);
+                
+                $component = $module->components()->create($componentData);
+                
+                // Handle cluster relationships if any clusters are selected
+                if (!empty($selectedClusters)) {
+                    $component->componentclusters()->attach($selectedClusters);
+                }
+                
                 $this->reset('newComponent');
                 $this->selectModule($this->selectedModule); // Refresh components list
                 $this->modal('add-component-modal')->close();
-                session()->flash('message', 'Component added successfully.');
+                Session::flash('message', 'Component added successfully.');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to add component: ' . $e->getMessage());
+                Session::flash('error', 'Failed to add component: ' . $e->getMessage());
             }
             $this->dispatch('sortable:init');
         }
@@ -501,7 +663,7 @@
         public function addNewAction()
         {
             if (!$this->selectedComponent) {
-                session()->flash('error', 'Please select a component first.');
+                Session::flash('error', 'Please select a component first.');
                 return;
             }
 
@@ -517,21 +679,26 @@
                 'newAction.badge' => 'nullable|string|max:255',
                 'newAction.custom_css' => 'nullable|string',
                 'newAction.is_inactive' => 'boolean',
+                'newAction.action_type' => 'nullable|string',
+                'newAction.parent_action_id' => 'nullable|integer',
+                'newAction.actioncluster_id' => 'nullable|integer',
             ]);
 
             try {
                 $component = SaasComponent::find($this->selectedComponent);
-                $action = $component->actions()->create(array_merge($validatedData['newAction'], [
+                $actionData = $validatedData['newAction'];
+
+                $action = $component->actions()->create(array_merge($actionData, [
                     'component_id' => $this->selectedComponent
                 ]));
+
                 $this->reset('newAction');
-                $this->selectComponent($this->selectedComponent); // Refresh actions list
                 $this->modal('add-action-modal')->close();
-                session()->flash('message', 'Action added successfully.');
+                Session::flash('message', 'Action added successfully.');
+                $this->refreshData('action');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to add action: ' . $e->getMessage());
+                Session::flash('error', 'Failed to add action: ' . $e->getMessage());
             }
-            $this->dispatch('sortable:init');
         }
 
         // Add these methods before the render method
@@ -594,9 +761,9 @@
                         break;
                 }
 
-                session()->flash('message', 'Order updated successfully.');
+                Session::flash('message', 'Order updated successfully.');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to update order: ' . $e->getMessage());
+                Session::flash('error', 'Failed to update order: ' . $e->getMessage());
             }
             $this->dispatch('sortable:init');
         }
@@ -626,6 +793,16 @@
             }
             if ($model) {
                 $this->editItem = $model->toArray();
+                
+                // Handle cluster relationships for different types
+                if ($type === 'module') {
+                    $this->editItem['selectedClusters'] = ($model->moduleclusters ?? collect())->pluck('id')->toArray();
+                    $this->editItem = $this->ensureEditItemSelectedClustersIsArray($this->editItem, 'module');
+                } elseif ($type === 'component') {
+                    $this->editItem['selectedClusters'] = ($model->componentclusters ?? collect())->pluck('id')->toArray();
+                    $this->editItem = $this->ensureEditItemSelectedClustersIsArray($this->editItem, 'component');
+                }
+                
                 $this->editFields = [
                     'name' => ['label' => 'Name', 'type' => 'text'],
                     'code' => ['label' => 'Code', 'type' => 'text'],
@@ -640,6 +817,13 @@
                     'custom_css' => ['label' => 'Custom CSS', 'type' => 'textarea'],
                     'is_inactive' => ['label' => 'Inactive', 'type' => 'switch'],
                 ];
+                
+                // Add action-specific fields
+                if ($type === 'action') {
+                    $this->editFields['action_type'] = ['label' => 'Action Type', 'type' => 'select'];
+                    $this->editFields['parent_action_id'] = ['label' => 'Parent Action', 'type' => 'select'];
+                }
+                
                 $this->isEditModalOpen = true;
             }
         }
@@ -672,23 +856,24 @@
                         $model = null;
                 }
                 if ($model) {
+                    // Handle cluster relationships before saving
+                    if (in_array($this->editItemType, ['module', 'component']) && isset($this->editItem['selectedClusters'])) {
+                        $selectedClusters = is_array($this->editItem['selectedClusters']) ? $this->editItem['selectedClusters'] : [];
+                        $clusterMethod = $this->editItemType . 'clusters';
+                        $model->$clusterMethod()->sync($selectedClusters);
+                        unset($this->editItem['selectedClusters']);
+                    }
+                    
                     $model->fill($this->editItem);
                     $model->save();
-                    session()->flash('message', ucfirst($this->editItemType) . ' updated successfully.');
-                }
-                $this->closeEditModal();
-                $this->mount();
-                if ($this->selectedApplication) {
-                    $this->selectApplication($this->selectedApplication);
-                }
-                if ($this->selectedModule) {
-                    $this->selectModule($this->selectedModule);
-                }
-                if ($this->selectedComponent) {
-                    $this->selectComponent($this->selectedComponent);
+                    Session::flash('message', ucfirst($this->editItemType) . ' updated successfully.');
+
+                    $itemType = $this->editItemType;
+                    $this->closeEditModal();
+                    $this->closeModal();
+                    $this->refreshData($itemType);
                 }
             }
-            $this->dispatch('sortable:init');
         }
 
         public function updatedSearchTerm()
@@ -835,9 +1020,9 @@
                         }
                         break;
                 }
-                session()->flash('message', ucfirst($this->assignType) . '(s) assigned successfully.');
+                Session::flash('message', ucfirst($this->assignType) . '(s) assigned successfully.');
             } catch (\Exception $e) {
-                session()->flash('error', 'Failed to assign items: ' . $e->getMessage());
+                Session::flash('error', 'Failed to assign items: ' . $e->getMessage());
             }
 
             $this->closeAssignModal();
@@ -863,6 +1048,93 @@
                     }
                     break;
             }
+        }
+
+        public function reset(...$properties)
+        {
+            $property = $properties[0] ?? null;
+            if (empty($properties)) {
+                // Reset all properties
+                parent::reset();
+                // Re-initialize selectedClusters arrays
+                $this->newModule['selectedClusters'] = [];
+                $this->newComponent['selectedClusters'] = [];
+                $this->newAction['actioncluster_id'] = null;
+            } else {
+                // Reset specific properties
+                parent::reset(...$properties);
+                // Re-initialize selectedClusters arrays if they were reset
+                foreach ($properties as $property) {
+                    if ($property === 'newModule') {
+                        $this->newModule['selectedClusters'] = [];
+                    } elseif ($property === 'newComponent') {
+                        $this->newComponent['selectedClusters'] = [];
+                    } elseif ($property === 'newAction') {
+                        $this->newAction['actioncluster_id'] = null;
+                    }
+                }
+            }
+        }
+
+        protected function ensureSelectedClustersIsArray($item, $type)
+        {
+            if (!isset($item->selectedClusters) || !is_array($item->selectedClusters)) {
+                $item->selectedClusters = [];
+            }
+            return $item;
+        }
+
+        protected function ensureEditItemSelectedClustersIsArray($item, $type)
+        {
+            if (!isset($item['selectedClusters']) || !is_array($item['selectedClusters'])) {
+                $item['selectedClusters'] = [];
+            }
+            return $item;
+        }
+
+        public function updatedNewActionParentActionId($value)
+        {
+            if (!empty($value)) {
+                $parentAction = SaasAction::find($value);
+                if ($parentAction) {
+                    $this->newAction['actioncluster_id'] = $parentAction->actioncluster_id;
+                }
+            }
+        }
+
+        public function updatedEditItemParentActionId($value)
+        {
+            if (!empty($value)) {
+                $parentAction = SaasAction::find($value);
+                if ($parentAction) {
+                    $this->editItem['actioncluster_id'] = $parentAction->actioncluster_id;
+                }
+            }
+        }
+
+        private function refreshData(string $type)
+        {
+            switch ($type) {
+                case 'app':
+                    $this->mount();
+                    break;
+                case 'module':
+                    if ($this->selectedApplication) {
+                        $this->selectApplication($this->selectedApplication);
+                    }
+                    break;
+                case 'component':
+                    if ($this->selectedModule) {
+                        $this->selectModule($this->selectedModule);
+                    }
+                    break;
+                case 'action':
+                    if ($this->selectedComponent) {
+                        $this->selectComponent($this->selectedComponent);
+                    }
+                    break;
+            }
+            $this->dispatch('sortable:init');
         }
 
         public function render()
