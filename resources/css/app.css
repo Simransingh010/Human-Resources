@@ -52,7 +52,44 @@
         border-color: var(--color-gray-200, currentColor);
     }
 }
+/* Custom tree connection lines */
+.app-branch:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    top: -32px;
+    left: 50%;
+    width: 1px;
+    height: 24px;
+    background: #d1d5db;
+    transform: translateX(-50%);
+}
 
+/* Horizontal connection lines for multiple branches */
+.app-branch:not(:only-child)::after {
+    content: '';
+    position: absolute;
+    top: -32px;
+    left: 50%;
+    height: 1px;
+    background: #d1d5db;
+    transform: translateY(-50%);
+}
+
+.app-branch:first-child::after {
+    width: 50%;
+    left: 50%;
+}
+
+.app-branch:last-child::after {
+    width: 50%;
+    right: 50%;
+    left: auto;
+}
+
+.app-branch:not(:first-child):not(:last-child)::after {
+    width: 100%;
+    left: 0;
+}
 [data-flux-field] {
     @apply grid gap-2;
 }

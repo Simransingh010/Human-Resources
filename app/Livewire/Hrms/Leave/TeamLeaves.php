@@ -902,7 +902,7 @@ class TeamLeaves extends Component
                 // 1) Fetch all applicable approval rules again (same logic as in submit)
                 $rules = LeaveApprovalRule::with('employees')
                     ->where('firm_id', Session::get('firm_id'))
-                    ->where('approval_mode', '!=', 'view_only')
+//                    ->where('approval_mode', '!=', 'view_only')
                     ->where('is_inactive', false)
                     ->whereDate('period_start', '<=', now())
                     ->whereDate('period_end',   '>=', now())

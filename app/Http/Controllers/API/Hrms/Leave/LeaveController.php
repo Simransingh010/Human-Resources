@@ -1269,7 +1269,7 @@ class LeaveController extends Controller
             // Send notification to all approvers
             $rules = LeaveApprovalRule::with('employees')
                 ->where('firm_id', $leaveRequest->firm_id)
-                ->where('approval_mode', '!=', 'view_only')
+//                ->where('approval_mode', '!=', 'view_only')
                 ->where('is_inactive', false)
                 ->whereDate('period_start', '<=', Carbon::now())
                 ->whereDate('period_end', '>=', Carbon::now())

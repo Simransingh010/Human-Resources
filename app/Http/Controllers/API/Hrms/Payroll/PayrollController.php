@@ -676,100 +676,83 @@ class PayrollController extends Controller
                 $isPayrollProcessed = $latestCommand && in_array($latestCommand->payroll_slot_status, $validStatusCodes);
             }
             
-            $totalEarnings = 0;
-            $totalDeductions = 0;
-            
-            if ($isPayrollProcessed) {
+            // Build the clean response structure
+            $response = [
+                'payroll_slot' => [
+                    'id' => $payrollSlot->id,
+                    'title' => $payrollSlot->title,
+                    'from_date' => $payrollSlot->from_date->format('Y-m-d'),
+                    'to_date' => $payrollSlot->to_date->format('Y-m-d'),
+                    'status' => $payrollSlot->payroll_slot_status,
+                    'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null,
+                ],
+                'employee' => [
+                    'id' => $employee->id,
+                    'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
+                    'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
+                    'department' => $employee->emp_job_profile && $employee->emp_job_profile->department ? $employee->emp_job_profile->department->title : null,
+                    'designation' => $employee->emp_job_profile && $employee->emp_job_profile->designation ? $employee->emp_job_profile->designation->title : null,
+                ],
+                'is_processed' => $isPayrollProcessed,
+                'latest_command' => $latestCommand ? [
+                    'status' => $latestCommand->payroll_slot_status,
+                    'status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$latestCommand->payroll_slot_status] ?? null,
+                    'remarks' => is_string($latestCommand->run_payroll_remarks) ? json_decode($latestCommand->run_payroll_remarks, true) : $latestCommand->run_payroll_remarks,
+                    'created_at' => $latestCommand->created_at->format('Y-m-d H:i:s')
+                ] : null,
+                'components' => [],
+                'summary' => [
+                    'total_earnings' => 0,
+                    'total_deductions' => 0,
+                    'net_salary' => 0,
+                    'components_count' => 0
+                ]
+            ];
+
+            if ($isPayrollProcessed && !$payrollComponents->isEmpty()) {
                 // Calculate totals
                 $totalEarnings = $payrollComponents->where('nature', 'earning')->sum('amount_payable');
                 $totalDeductions = $payrollComponents->where('nature', 'deduction')->sum('amount_payable');
-            } else {
-                // Payroll not processed yet
-                return response()->json([
-                    'message_type' => 'info',
-                    'message_display' => 'popup',
-                    'message' => 'Payroll has not been processed yet for this period.',
-                    'data' => [
-                        'payroll_slot' => [
-                            'id' => $payrollSlot->id,
-                            'title' => $payrollSlot->title,
-                            'from_date' => $payrollSlot->from_date->format('Y-m-d'),
-                            'to_date' => $payrollSlot->to_date->format('Y-m-d'),
-                            'status' => $payrollSlot->payroll_slot_status,
-                            'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null,
-                        ],
-                        'employee' => [
-                            'id' => $employee->id,
-                            'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
-                            'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
-                        ],
-                        'is_processed' => false,
-                        'components' => []
-                    ]
-                ], 200);
-            }
-            
-            // If payroll is not processed or no components, return empty array
-            if (!$isPayrollProcessed || $payrollComponents->isEmpty()) {
-                return response()->json([
-                    'message_type' => 'success',
-                    'message_display' => 'none',
-                    'message' => 'Payroll components fetched successfully',
-                    'data' => []
-                ], 200);
-            }
-
-            // Build the array of maps for each component
-            $data = $payrollComponents->map(function($component) use ($payrollSlot, $employee, $totalEarnings, $totalDeductions, $latestCommand, $isPayrollProcessed) {
-                return [
-                    'payroll_slot' => [
-                        'id' => $payrollSlot->id,
-                        'title' => $payrollSlot->title,
-                        'from_date' => $payrollSlot->from_date->format('Y-m-d'),
-                        'to_date' => $payrollSlot->to_date->format('Y-m-d'),
-                        'status' => $payrollSlot->payroll_slot_status,
-                        'status_label' => PayrollSlot::PAYROLL_SLOT_STATUS[$payrollSlot->payroll_slot_status] ?? null
-                    ],
-                    'employee' => [
-                        'id' => $employee->id,
-                        'name' => trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname),
-                        'employee_code' => $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null,
-                        'department' => $employee->emp_job_profile && $employee->emp_job_profile->department ? $employee->emp_job_profile->department->title : null,
-                        'designation' => $employee->emp_job_profile && $employee->emp_job_profile->designation ? $employee->emp_job_profile->designation->title : null,
-                    ],
-                    'component' => [
+                
+                // Build clean components array
+                $components = $payrollComponents->map(function($component) {
+                    return [
                         'id' => $component->id,
                         'component_id' => $component->salary_component_id,
-                        'component_name' => $component->salary_component->title ?? 'Unknown Component',
+                        'name' => $component->salary_component->title ?? 'Unknown Component',
                         'nature' => $component->nature,
-                        'component_type' => $component->component_type,
+                        'type' => $component->component_type,
                         'amount_type' => $component->amount_type,
                         'amount_full' => $component->amount_full,
                         'amount_payable' => $component->amount_payable,
                         'amount_paid' => $component->amount_paid,
                         'taxable' => (bool)$component->taxable,
                         'sequence' => $component->sequence
-                    ],
-                    'totals' => [
-                        'earnings' => $totalEarnings,
-                        'deductions' => $totalDeductions,
-                        'net_salary' => $totalEarnings - $totalDeductions
-                    ],
-                    'is_processed' => $isPayrollProcessed,
-                    'latest_command' => $latestCommand ? [
-                        'status' => $latestCommand->payroll_slot_status,
-                        'status_label' => PayrollSlotsCmd::PAYROLL_SLOT_STATUS[$latestCommand->payroll_slot_status] ?? null,
-                        'remarks' => is_string($latestCommand->run_payroll_remarks) ? json_decode($latestCommand->run_payroll_remarks, true) : $latestCommand->run_payroll_remarks,
-                        'created_at' => $latestCommand->created_at->format('Y-m-d H:i:s')
-                    ] : []
+                    ];
+                })->values()->toArray();
+
+                $response['components'] = $components;
+                $response['summary'] = [
+                    'total_earnings' => $totalEarnings,
+                    'total_deductions' => $totalDeductions,
+                    'net_salary' => $totalEarnings - $totalDeductions,
+                    'components_count' => count($components)
                 ];
-            })->values()->toArray();
+            } else {
+                // Payroll not processed yet
+                return response()->json([
+                    'message_type' => 'info',
+                    'message_display' => 'popup',
+                    'message' => 'Payroll has not been processed yet for this period.',
+                    'data' => $response
+                ], 200);
+            }
 
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',
                 'message' => 'Payroll components fetched successfully',
-                'data' => $data
+                'data' => $response
             ], 200);
             
         } catch (\Throwable $e) {

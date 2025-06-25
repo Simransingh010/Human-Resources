@@ -7,6 +7,9 @@ use Livewire\Volt\Volt;
 Route::get('/', function () {
     return view('welcome');
 })->name('home');
+Route::get('iim-sirmaur', function (){
+    return view('index-page');
+})->name('iim-sirmaur');
 Route::redirect('/', '/login');
 
 Route::view('dashboard', 'dashboard')
@@ -15,6 +18,7 @@ Route::view('dashboard', 'dashboard')
 
 Route::middleware(['auth'])->group(function () {
 
+    Route::get('onboard-dashboard',App\Livewire\Hrms\Onboard\OnboardDashboard::class)->name('onboard-dashboard');
     Route::get('/hrms/onboard/employees',App\Livewire\Hrms\Onboard\Employees::class)->name('hrms.onboard.employee');
     Route::get('/agencies',App\Livewire\Saas\Agencies\Index::class)->name('agencies.index');
     Route::get('/hrms/employee-addresses', App\Livewire\Hrms\EmployeesMeta\EmployeeAddresses::class)->name('employee-addresses.index');
@@ -26,7 +30,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/hrms/employee-relations', App\Livewire\Hrms\EmployeesMeta\EmployeeRelations::class)->name('employee-relations.index');
     Route::get('/hrms/attendance/attendance-policies', App\Livewire\Hrms\Attendance\AttendancePolicies::class)->name('attendance-policies.index');
     Route::get('/hrms/attendance/leave-types', App\Livewire\Hrms\Attendance\LeaveTypes::class)->name('leave-types.index');
-    Route::get('/hrms/attendance/leaves-quota-templates', App\Livewire\Hrms\Attendance\LeavesQuotaTemplates::class)->name('leaves-quota-templates.index');
     Route::get('/hrms/attendance/leaves-quota-template-setups', App\Livewire\Hrms\Attendance\LeavesQuotaTemplateSetups::class)->name('leaves-quota-template-setups.index');
     Route::get('/hrms/attendance/emp-leave-allocations', App\Livewire\Hrms\Attendance\EmpLeaveAllocations::class)->name('emp-leave-allocations.index');
     Route::get('/hrms/attendance//emp-leave-request-logs', App\Livewire\Hrms\Attendance\EmpLeaveRequestLogs::class)->name('emp-leave-request-logs.index');
@@ -49,11 +52,14 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/saas/apps', App\Livewire\Saas\Apps::class)->name('saas.apps');
     Route::get('/saas/versions', App\Livewire\Saas\Versions::class)->name('saas.versions');
     Route::get('/saas/module-groups', App\Livewire\Saas\ModuleGroups::class)->name('saas.module-groups');
+    Route::get('/saas/actionclusters', App\Livewire\Saas\Actionclusters::class)->name('saas.actionclusters');
+    Route::get('/saas/moduleclusters', App\Livewire\Saas\Moduleclusters::class)->name('saas.moduleclusters');
+    Route::get('/saas/componentclusters', App\Livewire\Saas\Componentclusters::class)->name('saas.componentclusters');
+    Route::get('/saas/panel-structuring', App\Livewire\Saas\PanelStructuring::class)->name('saas.panel-structuring');
     Route::get('/saas/permissions', App\Livewire\Saas\Components::class)->name('saas.permissions');
     Route::get('/saas/permission-groups', App\Livewire\Saas\PermissionGroups::class)->name('saas.permission-groups');
     Route::get('/saas/app-modules', App\Livewire\Saas\AppsMeta\AppModules::class)->name('saas.app-modules');
     Route::get('/saas/firm-branding', App\Livewire\Saas\FirmBrandings::class)->name('saas.firm-branding');
-
     Route::redirect('settings', 'settings/profile');
 
     Volt::route('settings/profile', 'settings.profile')->name('settings.profile');

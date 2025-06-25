@@ -25,12 +25,19 @@ class Panels extends Component
     ];
 
     public $isEditing = false;
+    public $appOpen = [];
+    public $moduleOpen = [];
+    public $componentOpen = [];
 
     public function mount()
     {
+//        debugTreeStructure();
         $this->resetPage();
         $this->refreshStatuses();
         $this->initListsForFields();
+        $this->appOpen = [];
+        $this->moduleOpen = [];
+        $this->componentOpen = [];
     }
 
     public function refreshStatuses()
@@ -142,8 +149,58 @@ class Panels extends Component
         $this->modal('component-sync')->show();
     }
 
+    /**
+     * Get the hierarchy for the selected panel only: Apps → Modules → Components → Actions
+     */
+    public function getPanelTreeHierarchyProperty()
+    {
+        if (!$this->selectedPanelId) {
+            return collect();
+        }
+        $panel = \App\Models\Saas\Panel::with([
+            'apps.modules.components.actions',
+        ])->find($this->selectedPanelId);
+        if (!$panel) return collect();
+        return $panel->apps->map(function($app) {
+            return [
+                'id' => $app->id,
+                'name' => $app->name,
+                'type' => 'app',
+                'modules' => $app->modules->map(function($module) {
+                    return [
+                        'id' => $module->id,
+                        'name' => $module->name,
+                        'type' => 'module',
+                        'components' => $module->components->map(function($component) {
+                            return [
+                                'id' => $component->id,
+                                'name' => $component->name,
+                                'type' => 'component',
+                                'actions' => $component->actions->map(function($action) {
+                                    return [
+                                        'id' => $action->id,
+                                        'name' => $action->name,
+                                        'type' => 'action',
+                                    ];
+                                }),
+                            ];
+                        }),
+                    ];
+                }),
+            ];
+        });
+    }
+
+    public function showPanelStructure($panelId)
+    {
+        $this->selectedPanelId = $panelId;
+        $this->modal('panel-structure')->show();
+    }
+
     public function render()
     {
-        return view()->file(app_path('Livewire/Saas/blades/panels.blade.php'));
+        return view()->file(app_path('Livewire/Saas/blades/panels.blade.php'), [
+            'panelTreeHierarchy' => $this->panelTreeHierarchy,
+        ]);
     }
 }

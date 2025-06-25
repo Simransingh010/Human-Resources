@@ -1,17 +1,16 @@
 <?php
 
-    namespace App\Livewire\Hrms\Leave;
+    namespace App\Livewire\Saas;
 
-    use Livewire\Component;
-    use Illuminate\Support\Facades\Session;
-
-    use App\Models\Saas\App as SaasApp;
-    use App\Models\Saas\Module;
-    use App\Models\Saas\Component as SaasComponent;
     use App\Models\Saas\Action as SaasAction;
-    use App\Models\Saas\Modulecluster;
-    use App\Models\Saas\Componentcluster;
     use App\Models\Saas\Actioncluster;
+    use App\Models\Saas\App as SaasApp;
+    use App\Models\Saas\Component as SaasComponent;
+    use App\Models\Saas\Componentcluster;
+    use App\Models\Saas\Module;
+    use App\Models\Saas\Modulecluster;
+    use Illuminate\Support\Facades\Session;
+    use Livewire\Component;
 
     class PanelStructuring extends Component
     {
@@ -1139,6 +1138,6 @@
 
         public function render()
         {
-            return \view()->file(\app_path('Livewire/Hrms/Leave/blades/panel-structuring.blade.php'));
+            return view()->file(app_path('Livewire/Saas/blades/panel-structuring.blade.php'));
         }
     }

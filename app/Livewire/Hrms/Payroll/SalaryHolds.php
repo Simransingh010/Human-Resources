@@ -47,7 +47,7 @@ class SalaryHolds extends Component
     public $payrollSlotId;
     public $salaryHolds;
 
-    public function mount($payrollSlotId)
+    public function mount($payrollSlotId = null)
     {
         $this->payrollSlotId = $payrollSlotId;
         $this->loadSalaryHolds();
@@ -93,10 +93,14 @@ class SalaryHolds extends Component
 
     protected function loadSalaryHolds()
     {
-        $this->salaryHolds = SalaryHold::where('firm_id', Session::get('firm_id'))
-            ->where('payroll_slot_id', $this->payrollSlotId)
-            ->with(['employee'])
-            ->get();
+        $query = SalaryHold::where('firm_id', Session::get('firm_id'));
+        
+        // Only filter by payroll slot if one is provided
+        if ($this->payrollSlotId) {
+            $query->where('payroll_slot_id', $this->payrollSlotId);
+        }
+        
+        $this->salaryHolds = $query->with(['employee'])->get();
     }
 
     public function applyFilters()
@@ -137,6 +141,12 @@ class SalaryHolds extends Component
     public function openHoldModal()
     {
         $this->reset(['selectedEmployee', 'selectedPayrollSlots', 'remarks']);
+        
+        // If a specific payroll slot ID is provided, pre-select it
+        if ($this->payrollSlotId) {
+            $this->selectedPayrollSlots = [$this->payrollSlotId];
+        }
+        
         $this->showHoldModal = true;
     }
 
@@ -198,6 +208,7 @@ class SalaryHolds extends Component
                 );
             }
             $this->closeHoldModal();
+            $this->loadSalaryHolds(); // Refresh the data
         } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
@@ -218,6 +229,7 @@ class SalaryHolds extends Component
                 heading: 'Success',
                 text: 'Salary hold removed successfully.',
             );
+            $this->loadSalaryHolds(); // Refresh the data
         } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
@@ -231,8 +243,15 @@ class SalaryHolds extends Component
     public function list()
     {
         // Aggregate by employee and payroll period (grouped)
-        $holds = SalaryHold::query()
-            ->where('firm_id', Session::get('firm_id'))
+        $query = SalaryHold::query()
+            ->where('firm_id', Session::get('firm_id'));
+            
+        // Only filter by payroll slot if one is provided
+        if ($this->payrollSlotId) {
+            $query->where('payroll_slot_id', $this->payrollSlotId);
+        }
+        
+        $holds = $query
             ->when($this->filters['employee_id'], fn($query, $value) =>
                 $query->where('employee_id', $value))
             ->when($this->filters['payroll_slot_id'], fn($query, $value) =>
@@ -267,6 +286,7 @@ class SalaryHolds extends Component
 
     public function render()
     {
-        return view('livewire.hrms.payroll.salary-holds');
+        return view()->file(app_path('Livewire/Hrms/Payroll/blades/salary-holds.blade.php'));
+ ;
     }
 } 

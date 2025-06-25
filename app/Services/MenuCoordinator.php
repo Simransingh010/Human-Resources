@@ -8,38 +8,42 @@ use App\Services\MenuService;
 class MenuCoordinator
 {
     protected static array $staticApps = [
-        [ 'id' => 1, 'name' => 'SaaS', 'wire' => null, 'icon' => '' ],
+        ['id' => 1, 'name' => 'SaaS', 'wire' => null, 'icon' => ''],
     ];
 
     protected static array $staticModulesByApp = [
         1 => [
-            [ 'id' => 11, 'name' => 'Auth', 'wire' => null, 'icon' => '' ],
-            [ 'id' => 12, 'name' => 'Organization', 'wire' => null, 'icon' => '' ],
-            [ 'id' => 13, 'name' => 'Clusters', 'wire' => null, 'icon' => '' ],
-            [ 'id' => 14, 'name' => 'Menus', 'wire' => null, 'icon' => '' ],
+            ['id' => 11, 'name' => 'Auth', 'wire' => null, 'icon' => ''],
+            ['id' => 12, 'name' => 'Organization', 'wire' => null, 'icon' => ''],
+            ['id' => 13, 'name' => 'Clusters', 'wire' => null, 'icon' => ''],
+            ['id' => 14, 'name' => 'Menus', 'wire' => null, 'icon' => ''],
         ],
     ];
 
     protected static array $staticWiresByModule = [
         11 => [
-            [ 'name' => 'Users', 'wire' => 'saas.users', 'icon'=> '' ],
+            ['name' => 'Users', 'wire' => 'saas.users', 'icon' => ''],
         ],
         12 => [
-            [ 'name' => 'Firm', 'wire' => 'saas.firms', 'icon'=> '' ],
-            [ 'name' => 'Agency', 'wire' => 'saas.agencies.index', 'icon'=> '' ],
+            ['name' => 'Firm', 'wire' => 'saas.firms', 'icon' => ''],
+            ['name' => 'Agency', 'wire' => 'saas.agencies.index', 'icon' => ''],
 
         ],
         13 => [
-            [ 'name' => 'Module Clusters', 'wire' => 'saas.module-groups', 'icon'=> '' ],
-            [ 'name' => 'Component Clusters', 'wire' => 'saas.panels', 'icon'=> '' ],
-            [ 'name' => 'Action Clusters', 'wire' => 'saas.users', 'icon'=> '' ],
+            //            D:\HRMS_12\app\Livewire\Saas\Actionclusters.php
+            ['name' => 'Module Clusters', 'wire' => 'saas.moduleclusters', 'icon' => ''],
+            ['name' => 'Component Clusters', 'wire' => 'saas.componentclusters', 'icon' => ''],
+            ['name' => 'Action Clusters', 'wire' => 'saas.actionclusters', 'icon' => ''],
+
         ],
         14 => [
-            [ 'name' => 'Panels', 'wire' => 'saas.panels', 'icon'=> 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png' ],
-            [ 'name' => 'Apps', 'wire' => 'saas.apps', 'icon'=> '' ],
-            [ 'name' => 'Modules', 'wire' => 'saas.modules', 'icon'=> '' ],
-            [ 'name' => 'Components', 'wire' => 'saas.components', 'icon'=> '' ],
-            [ 'name' => 'Actions', 'wire' => 'saas.actions', 'icon'=> '' ],
+            ['name' => 'Panels', 'wire' => 'saas.panels', 'icon' => 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png'],
+            ['name' => 'Apps', 'wire' => 'saas.apps', 'icon' => ''],
+            ['name' => 'Modules', 'wire' => 'saas.modules', 'icon' => ''],
+            ['name' => 'Components', 'wire' => 'saas.components', 'icon' => ''],
+            ['name' => 'Actions', 'wire' => 'saas.actions', 'icon' => ''],
+            ['name' => 'Panel Structuring', 'wire' => 'saas.panel-structuring', 'icon' => ''],
+
         ],
     ];
 

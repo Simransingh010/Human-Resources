@@ -9,19 +9,18 @@
     <div class="space-y-4 overflow-y-auto max-h-[70vh] pr-2">
         <flux:accordion class="w-full">
             @foreach ($groupedComponents as $appName => $modules)
-                <flux:accordion.item>
+                <flux:accordion.item expanded>
                     <flux:accordion.heading>
                         {{ $appName }}
-
                     </flux:accordion.heading>
                     <flux:accordion.content class="pl-4">
                         <div class="flex justify-end space-x-2 mb-2">
                             <flux:button size="xs" variant="outline" wire:click="selectApp('{{ $appName }}')">Select All</flux:button>
                             <flux:button size="xs" variant="ghost" wire:click="deselectApp('{{ $appName }}')">Deselect</flux:button>
                         </div>
-                        <flux:accordion variant="reverse">
+                        <flux:accordion  variant="reverse">
                             @foreach ($modules as $moduleName => $components)
-                                <flux:accordion.item>
+                                <flux:accordion.item >
                                     <flux:accordion.heading>
                                         {{ $moduleName }}
 

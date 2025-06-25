@@ -26,6 +26,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $custom_css
  * @property int $component_id
  * @property int|null $actioncluster_id
+ * @property string|null $wire
+ * @property string|null $action_type
  * @property bool $is_inactive
  * @property string|null $deleted_at
  * @property Carbon|null $created_at
@@ -53,7 +55,7 @@ class Action extends Model
 	protected $fillable = [
 		'name',
 		'code',
-        'wire',
+		'wire',
 		'description',
 		'icon',
 		'color',
@@ -63,8 +65,18 @@ class Action extends Model
 		'custom_css',
 		'component_id',
 		'actioncluster_id',
-		'is_inactive'
+		'is_inactive',
+		'action_type',
+		'parent_action_id'
 	];
+
+
+    public const ACTION_TYPE_MAIN_SELECT = [
+       'G' => 'General',
+        'RL' => 'Row Level',
+        'BR' =>'Bulk Row Level',
+        'PR'=>'Process'
+           ];
 
 	public function actioncluster()
 	{
@@ -86,5 +98,15 @@ class Action extends Model
 	{
 		return $this->belongsToMany(User::class)
 					->withPivot('id', 'firm_id', 'records_scope');
+	}
+
+	public function parentAction()
+	{
+		return $this->belongsTo(Action::class, 'parent_action_id');
+	}
+
+	public function childActions()
+	{
+		return $this->hasMany(Action::class, 'parent_action_id');
 	}
 }

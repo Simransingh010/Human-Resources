@@ -7,13 +7,16 @@
     <flux:separator />
 
     <div class="space-y-4">
-        <flux:checkbox.group wire:model="selectedModules" label="Modules">
-            <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 gap-6">
-                @foreach ($this->listsForFields['modulelist'] as $id => $name)
-                    <flux:checkbox label="{{ $name }}" size="lg" value="{{ $id }}" />
-                @endforeach
-            </div>
-        </flux:checkbox.group>
+        <flux:modal name="selectedModules" variant >
+            <flux:checkbox.group wire:model="selectedModules" label="Modules">
+                <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 gap-6">
+                    @foreach ($this->listsForFields['modulelist'] as $id => $name)
+                        <flux:checkbox label="{{ $name }}" size="lg" value="{{ $id }}" />
+                    @endforeach
+                </div>
+            </flux:checkbox.group>
+        </flux:modal>
+
     </div>
 
     <div class="mt-4 flex justify-end space-x-2">
