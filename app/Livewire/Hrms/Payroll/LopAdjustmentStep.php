@@ -24,7 +24,10 @@ class LopAdjustmentStep extends Component
     public $selectedRecord = null;
     public $editForm = [
         'void_days_count' => 0,
-        'lop_days_count' => 0
+        'lop_days_count' => 0,
+        'lop_details' => '',
+        'void_dates' => [], // for UI only
+        'lop_dates' => [],  // for UI only
     ];
 
     // Field configuration for form and table
@@ -32,7 +35,8 @@ class LopAdjustmentStep extends Component
         'employee_name' => ['label' => 'Employee', 'type' => 'text'],
         'cycle_days' => ['label' => 'Cycle Days', 'type' => 'number'],
         'void_days_count' => ['label' => 'Void Days', 'type' => 'number'],
-        'lop_days_count' => ['label' => 'LOP Days', 'type' => 'number']
+        'lop_days_count' => ['label' => 'LOP Days', 'type' => 'number'],
+        'lop_details' => ['label' => 'LOP Details', 'type' => 'textarea']
     ];
 
     // Filter fields configuration
@@ -56,6 +60,7 @@ class LopAdjustmentStep extends Component
             'cycle_days',
             'void_days_count',
             'lop_days_count'
+            
         ];
 
         $this->visibleFilterFields = [
@@ -131,22 +136,11 @@ class LopAdjustmentStep extends Component
                 'employee_name' => $record->employee->fname . ' ' . $record->employee->lname,
                 'cycle_days' => $record->cycle_days,
                 'void_days_count' => $record->void_days_count,
-                'lop_days_count' => $record->lop_days_count
+                'lop_days_count' => $record->lop_days_count,
+                'lop_details' => $record->lop_details,
             ];
         });
         return $paginated;
-        // Convert to paginator
-//        $page = $this->page ?? 1;
-//        $perPage = $this->perPage;
-//        $items = $records->slice(($page - 1) * $perPage, $perPage);
-//
-//        return new \Illuminate\Pagination\LengthAwarePaginator(
-//            $items,
-//            $records->count(),
-//            $perPage,
-//            $page,
-//            ['path' => request()->url()]
-//        );
     }
 
     public function editLopDays($id)
@@ -158,21 +152,72 @@ class LopAdjustmentStep extends Component
                 'employee_name' => $record->employee->fname . ' ' . $record->employee->lname,
                 'cycle_days' => $record->cycle_days,
                 'void_days_count' => $record->void_days_count,
-                'lop_days_count' => $record->lop_days_count
+                'lop_days_count' => $record->lop_days_count,
+                'lop_details' => $record->lop_details,
             ];
+            $details = $this->decodeLopDetails($record->lop_details, $record->cycle_days);
             $this->editForm = [
                 'void_days_count' => $record->void_days_count,
-                'lop_days_count' => $record->lop_days_count
+                'lop_days_count' => $record->lop_days_count,
+                'lop_details' => $record->lop_details,
+                'void_dates' => $details['void'],
+                'lop_dates' => $details['lop'],
             ];
             $this->showEditModal = true;
         }
     }
 
+    private function decodeLopDetails($json, $cycle_days)
+    {
+        $month = null;
+        $void = [];
+        $lop = [];
+        if ($json) {
+            $data = json_decode($json, true);
+            $month = $data['month'] ?? null;
+            $void = $data['void'] ?? [];
+            $lop = $data['lop'] ?? [];
+        }
+        return [
+            'month' => $month,
+            'void' => $void,
+            'lop' => $lop,
+        ];
+    }
+
+    private function encodeLopDetails($month, $void, $lop)
+    {
+        return json_encode([
+            'month' => $month,
+            'void' => array_values($void),
+            'lop' => array_values($lop),
+        ]);
+    }
+
     public function updateLopDays()
     {
+        // Auto-calculate days count from selected dates
+        $this->editForm['void_days_count'] = is_array($this->editForm['void_dates']) ? count($this->editForm['void_dates']) : 0;
+        $this->editForm['lop_days_count'] = is_array($this->editForm['lop_dates']) ? count($this->editForm['lop_dates']) : 0;
+
+        // Always generate lop_details JSON from selected dates
+        $month = null;
+        if (!empty($this->editForm['void_dates'])) {
+            $month = substr($this->editForm['void_dates'][0], 0, 7);
+        } elseif (!empty($this->editForm['lop_dates'])) {
+            $month = substr($this->editForm['lop_dates'][0], 0, 7);
+        } else {
+            $month = now()->format('Y-m');
+        }
+        $lop_details_json = $this->encodeLopDetails($month, $this->editForm['void_dates'], $this->editForm['lop_dates']);
+        $this->editForm['lop_details'] = $lop_details_json;
+
         $this->validate([
             'editForm.void_days_count' => 'required|integer|min:0|max:' . $this->selectedRecord['cycle_days'],
             'editForm.lop_days_count' => 'required|integer|min:0|max:' . $this->selectedRecord['cycle_days'],
+            'editForm.lop_details' => 'nullable|string',
+            'editForm.void_dates' => 'array',
+            'editForm.lop_dates' => 'array',
         ]);
 
         try {
@@ -180,7 +225,8 @@ class LopAdjustmentStep extends Component
             if ($record) {
                 $record->update([
                     'void_days_count' => $this->editForm['void_days_count'],
-                    'lop_days_count' => $this->editForm['lop_days_count']
+                    'lop_days_count' => $this->editForm['lop_days_count'],
+                    'lop_details' => $lop_details_json,
                 ]);
 
                 Flux::toast(
@@ -206,7 +252,10 @@ class LopAdjustmentStep extends Component
         $this->selectedRecord = null;
         $this->editForm = [
             'void_days_count' => 0,
-            'lop_days_count' => 0
+            'lop_days_count' => 0,
+            'lop_details' => '',
+            'void_dates' => [],
+            'lop_dates' => [],
         ];
     }
 

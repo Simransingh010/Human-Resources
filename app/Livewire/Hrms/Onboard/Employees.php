@@ -32,6 +32,7 @@ class Employees extends Component
     public $sortDirection = 'desc';
     public $isEditing = false;
     public $selectedEmpId = null;
+    public $viewMode = 'card'; // default to card view
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -56,6 +57,12 @@ class Employees extends Component
     public array $visibleFields = [];
     public array $visibleFilterFields = [];
 
+    protected $listeners = [
+        'employee-updated' => '$refresh',
+        'employee-saved' => '$refresh',
+        'close-modal' => 'closeModal'
+    ];
+
     public function mount()
     {
         $this->loadEmployeeStatuses();
@@ -63,7 +70,9 @@ class Employees extends Component
         $this->initListsForFields();
         $this->visibleFields = ['fname', 'lname', 'email', 'phone'];
         $this->visibleFilterFields = ['fname', 'lname', 'email', 'phone'];
-        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        $this->filters = array_fill_keys(array_merge(array_keys($this->filterFields), ['employees']), '');
+     
+        $this->viewMode = session('employees_view_mode', $this->viewMode);
     }
 
     private function loadEmployeeStatuses()
@@ -89,14 +98,60 @@ class Employees extends Component
     public function employeeslist()
     {
         return Employee::query()
+            ->with([
+                'emp_personal_detail',
+                'emp_job_profile.department',
+                'emp_job_profile.designation',
+            ])
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
+            ->when($this->filters['employees'], function($query, $value) {
+                $query->where(function($q) use ($value) {
+                    $q->where('fname', 'like', "%{$value}%")
+                      ->orWhere('mname', 'like', "%{$value}%")
+                      ->orWhere('lname', 'like', "%{$value}%");
+                });
+            })
             ->when($this->filters['fname'], fn($query, $value) => $query->where('fname', 'like', "%{$value}%"))
             ->when($this->filters['lname'], fn($query, $value) => $query->where('lname', 'like', "%{$value}%"))
             ->when($this->filters['email'], fn($query, $value) => $query->where('email', 'like', "%{$value}%"))
             ->when($this->filters['phone'], fn($query, $value) => $query->where('phone', 'like', "%{$value}%"))
             ->when($this->filters['gender'], fn($query, $value) => $query->where('gender', $value))
             ->where('firm_id', session('firm_id'))
-            ->paginate(10);
+            ->paginate(12);
+    }
+
+    /**
+     * Get employee profile image URL (from Spatie Media Library)
+     */
+    public function getEmployeeImageUrl($employee)
+    {
+        if ($employee->emp_personal_detail) {
+            $media = $employee->emp_personal_detail->getMedia('employee_images')->first();
+            if ($media) {
+                return $media->getUrl();
+            }
+        }
+        // Return a default avatar if not found
+    }
+
+    /**
+     * Get department name for employee
+     */
+    public function getEmployeeDepartment($employee)
+    {
+        return $employee->emp_job_profile && $employee->emp_job_profile->department
+            ? $employee->emp_job_profile->department->title
+            : '-';
+    }
+
+    /**
+     * Get designation name for employee
+     */
+    public function getEmployeeDesignation($employee)
+    {
+        return $employee->emp_job_profile && $employee->emp_job_profile->designation
+            ? $employee->emp_job_profile->designation->title
+            : '-';
     }
 
     public function fetchEmployee($id)
@@ -174,6 +229,7 @@ class Employees extends Component
             $user->passcode='1111';
             $user->email = $validatedDataUsr['employeeData']['email'];
             $user->phone = $validatedDataUsr['employeeData']['phone'];
+            $user->role_main = 'L0_emp';
             // Add other user attributes as needed
             $user->save();
 
@@ -200,128 +256,128 @@ class Employees extends Component
         );
     }
 
-    public function saveEmployee()
-    {
-        // If the ID is null, it's a new employee
-        if ($this->employeeData['id']) {
-            // If employee ID exists, find the employee
-            $employee = Employee::findOrFail($this->employeeData['id']);
-        } else {
-            // If no ID, create a new Employee instance
-            $employee = new Employee();
-        }
-
-        $validatedData = $this->validate([
-            'employeeData.fname' => 'required|string|max:255',
-            'employeeData.mname' => 'nullable|string|max:255',
-            'employeeData.lname' => 'nullable|string|max:255',
-            'employeeData.email' => [
-                'required', 'string', 'email', 'max:255',
-                Rule::unique('employees', 'email')->ignore($this->employeeData['id']),
-            ],
-            'employeeData.phone' => [
-                'required',
-                Rule::unique('employees', 'phone')->ignore($this->employeeData['id']),
-            ],
-            'employeeData.gender' => 'required|in:1,2,3',
-        ]);
-
-        $validatedDataUsr = $this->validate([
-            'employeeData.email' => [
-                'required', 'string', 'email', 'max:255',
-                Rule::unique('users', 'email')->ignore($employee->user_id),
-            ],
-            'employeeData.phone' => [
-                'required',
-                Rule::unique('users', 'phone')->ignore($employee->user_id),
-            ],
-        ]);
-
-        if ($this->isEditing) {
-            // Update existing employee and user
-            $employee->update($validatedData['employeeData']);
-            $user = User::findOrFail($employee->user_id);
-            $user->update($validatedDataUsr['employeeData']);
-
-            // Assign the employee role (or update it)
-            $role = Role::where('name', 'employee')->first();
-            if ($role) {
-                $user->roles()->sync([
-                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
-                ]);
-            }
-
-
-//            // Sync firm_user pivot table
+//    public function saveEmployee()
+//    {
+//        // If the ID is null, it's a new employee
+//        if ($this->employeeData['id']) {
+//            // If employee ID exists, find the employee
+//            $employee = Employee::findOrFail($this->employeeData['id']);
+//        } else {
+//            // If no ID, create a new Employee instance
+//            $employee = new Employee();
+//        }
+//
+//        $validatedData = $this->validate([
+//            'employeeData.fname' => 'required|string|max:255',
+//            'employeeData.mname' => 'nullable|string|max:255',
+//            'employeeData.lname' => 'nullable|string|max:255',
+//            'employeeData.email' => [
+//                'required', 'string', 'email', 'max:255',
+//                Rule::unique('employees', 'email')->ignore($this->employeeData['id']),
+//            ],
+//            'employeeData.phone' => [
+//                'required',
+//                Rule::unique('employees', 'phone')->ignore($this->employeeData['id']),
+//            ],
+//            'employeeData.gender' => 'required|in:1,2,3',
+//        ]);
+//
+//        $validatedDataUsr = $this->validate([
+//            'employeeData.email' => [
+//                'required', 'string', 'email', 'max:255',
+//                Rule::unique('users', 'email')->ignore($employee->user_id),
+//            ],
+//            'employeeData.phone' => [
+//                'required',
+//                Rule::unique('users', 'phone')->ignore($employee->user_id),
+//            ],
+//        ]);
+//
+//        if ($this->isEditing) {
+//            // Update existing employee and user
+//            $employee->update($validatedData['employeeData']);
+//            $user = User::findOrFail($employee->user_id);
+//            $user->update($validatedDataUsr['employeeData']);
+//
+//            // Assign the employee role (or update it)
+//            $role = Role::where('name', 'employee')->first();
+//            if ($role) {
+//                $user->roles()->sync([
+//                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
+//                ]);
+//            }
+//
+//
+////            // Sync firm_user pivot table
+////            $firm_user_data = [
+////                'firm_id' => session('firm_id'),
+////                'is_default' => true, // You can adjust this based on your requirements
+////            ];
+////            $user->firms()->syncWithoutDetaching([$firm_user_data]);
+//
+//            $firmId = session('firm_id');
+//
+//            if (! $user->firms()->where('firm_id', $firmId)->exists()) {
+//                // only attach if not present
+//                $user->firms()->attach($firmId, [
+//                    'is_default' => true,
+//                ]);
+//            }
+//
+//
+//
+//            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
+//            $panel_id = 1; // Employee panel for App
+//            $user->panels()->syncWithoutDetaching([$panel_id]);
+//
+//            $toast = 'Employee updated successfully.';
+//        } else {
+//            // Add new employee and user
+//            $validatedData['employeeData']['firm_id'] = session('firm_id');
+//            $employee = Employee::create($validatedData['employeeData']);
+//
+//            // Create new user
+//            $user = new User();
+//            $user->name = $validatedData['employeeData']['fname']." ".$validatedData['employeeData']['lname'];
+//            $user->password = 'iqwing@1947';
+//            $user->passcode = '1111';
+//            $user->email = $validatedDataUsr['employeeData']['email'];
+//            $user->phone = $validatedDataUsr['employeeData']['phone'];
+//            $user->save();
+//
+//            // Assign the employee role to the newly created user
+//            $role = Role::where('name', 'employee')->first();
+//            if ($role) {
+//                $user->roles()->sync([
+//                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
+//                ]);
+//            }
+//
+//            // Link user to the employee
+//            $employee->user_id = $user->id;
+//            $employee->save();
+//
+//            // Sync firm_user pivot table for the new user
 //            $firm_user_data = [
 //                'firm_id' => session('firm_id'),
 //                'is_default' => true, // You can adjust this based on your requirements
 //            ];
 //            $user->firms()->syncWithoutDetaching([$firm_user_data]);
-
-            $firmId = session('firm_id');
-
-            if (! $user->firms()->where('firm_id', $firmId)->exists()) {
-                // only attach if not present
-                $user->firms()->attach($firmId, [
-                    'is_default' => true,
-                ]);
-            }
-            
-
-
-            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
-            $panel_id = 1; // Employee panel for App
-            $user->panels()->syncWithoutDetaching([$panel_id]);
-
-            $toast = 'Employee updated successfully.';
-        } else {
-            // Add new employee and user
-            $validatedData['employeeData']['firm_id'] = session('firm_id');
-            $employee = Employee::create($validatedData['employeeData']);
-
-            // Create new user
-            $user = new User();
-            $user->name = $validatedData['employeeData']['fname']." ".$validatedData['employeeData']['lname'];
-            $user->password = 'iqwing@1947';
-            $user->passcode = '1111';
-            $user->email = $validatedDataUsr['employeeData']['email'];
-            $user->phone = $validatedDataUsr['employeeData']['phone'];
-            $user->save();
-
-            // Assign the employee role to the newly created user
-            $role = Role::where('name', 'employee')->first();
-            if ($role) {
-                $user->roles()->sync([
-                    $role->id => ['firm_id' => session('firm_id')] // Include firm_id as pivot data
-                ]);
-            }
-
-            // Link user to the employee
-            $employee->user_id = $user->id;
-            $employee->save();
-
-            // Sync firm_user pivot table for the new user
-            $firm_user_data = [
-                'firm_id' => session('firm_id'),
-                'is_default' => true, // You can adjust this based on your requirements
-            ];
-            $user->firms()->syncWithoutDetaching([$firm_user_data]);
-
-            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
-            $panel_id = 1; // Employee panel for App
-            $user->panels()->syncWithoutDetaching([$panel_id]);
-
-            $toast = 'Employee added successfully.';
-        }
-
-        $this->resetForm();
-        $this->modal('mdl-employee')->close();
-        Flux::toast(
-            heading: 'Changes saved.',
-            text: $toast,
-        );
-    }
+//
+//            // Sync panel_user pivot table (assumes a panel ID exists, change as necessary)
+//            $panel_id = 1; // Employee panel for App
+//            $user->panels()->syncWithoutDetaching([$panel_id]);
+//
+//            $toast = 'Employee added successfully.';
+//        }
+//
+//        $this->resetForm();
+//        $this->modal('mdl-employee')->close();
+//        Flux::toast(
+//            heading: 'Changes saved.',
+//            text: $toast,
+//        );
+//    }
 
 
     protected function initListsForFields(): void
@@ -353,7 +409,7 @@ class Employees extends Component
     }
     public function clearFilters()
     {
-        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        $this->filters = array_fill_keys(array_merge(array_keys($this->filterFields), ['employees']), '');
         $this->resetPage();
     }
     public function toggleStatus($employeeId)
@@ -391,6 +447,12 @@ class Employees extends Component
             heading: 'Employee Deleted',
             text: "Employee {$employeeName} has been deleted successfully."
         );
+    }
+
+    public function showemployeeModal($employeeId = null)
+    {
+        $this->selectedEmpId = $employeeId;
+        $this->modal('edit-employee')->show();
     }
 
     public function showmodal_addresses($employeeId)
@@ -473,8 +535,73 @@ class Employees extends Component
         }
     }
 
+    public function getProfileCompletionPercentage($employeeId)
+    {
+        $employee = Employee::find($employeeId);
+        if (!$employee) return 0;
+
+        $totalSteps = 10; // Total number of steps in onboarding
+        $completedSteps = 0;
+
+        // Check each step's completion
+        if ($employee->fname && $employee->email) $completedSteps++; // Basic Info
+        if ($employee->emp_address()->exists()) $completedSteps++; // Address
+        if ($employee->bank_account()->exists()) $completedSteps++; // Bank Accounts
+        if ($employee->emp_emergency_contact()->exists()) $completedSteps++; // Contacts
+        if ($employee->emp_job_profile()->exists()) $completedSteps++; // Job Profile
+        if ($employee->emp_personal_detail()->exists()) $completedSteps++; // Personal Details
+        if ($employee->documents()->exists()) $completedSteps++; // Documents
+        if ($employee->relations()->exists()) $completedSteps++; // Relations
+        if ($employee->emp_work_shifts()->exists()) $completedSteps++; // Work Shift
+        if ($employee->attendance_policy()->exists()) $completedSteps++; // Attendance Policy
+
+        return ($completedSteps / $totalSteps) * 100;
+    }
+
+    public function getProfileCompletionData($employeeId)
+    {
+        $employee = Employee::find($employeeId);
+        if (!$employee) return [];
+
+        $data = [];
+        
+        // Basic Info
+        $data[] = $employee->fname && $employee->email ? 100 : 0;
+        // Address
+        $data[] = $employee->emp_address()->exists() ? 100 : 0;
+        // Bank Accounts
+        $data[] = $employee->bank_account()->exists() ? 100 : 0;
+        // Contacts
+        $data[] = $employee->emp_emergency_contact()->exists() ? 100 : 0;
+        // Job Profile
+        $data[] = $employee->emp_job_profile()->exists() ? 100 : 0;
+        // Personal Details
+        $data[] = $employee->emp_personal_detail()->exists() ? 100 : 0;
+        // Documents
+        $data[] = $employee->documents()->exists() ? 100 : 0;
+        // Relations
+        $data[] = $employee->relations()->exists() ? 100 : 0;
+        // Work Shift
+        $data[] = $employee->emp_work_shifts()->exists() ? 100 : 0;
+        // Attendance Policy
+        $data[] = $employee->attendance_policy()->exists() ? 100 : 0;
+
+        return $data;
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Onboard/blades/employees.blade.php'));
+    }
+
+    public function closeModal($modalName)
+    {
+        $this->modal($modalName)->close();
+    }
+
+    public function setViewMode($mode)
+    {
+        $this->viewMode = $mode;
+        session(['employees_view_mode' => $mode]);
     }
 }

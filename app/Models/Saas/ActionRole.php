@@ -29,9 +29,9 @@ class ActionRole extends Model
 	public $timestamps = false;
 
 	protected $casts = [
-		'firm_id' => 'int',
-		'role_id' => 'int',
-		'action_id' => 'int'
+		'firm_id' => 'integer',
+		'role_id' => 'integer',
+		'action_id' => 'integer'
 	];
 
 	protected $fillable = [
@@ -43,12 +43,12 @@ class ActionRole extends Model
 
 
 	public const RECORDS_SCOPE_MAIN_SELECT = [
-		'all' => 'all',
-		'added' => 'added',
-		'owned' => 'owned',
-		'added&owned' => 'added&owned',
-		'team' => 'team',
-		'department' => 'department',
+		'all' => 'All',
+		'added' => 'Added',
+		'owned' => 'Owned',
+		'added&owned' => 'Added & Owned',
+		'team' => 'Team',
+		'department' => 'Department',
 		'None' => 'None'
 	];
 

@@ -6,15 +6,14 @@
     <title>Salary Slip</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: system-ui, ui-sans-serif, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
             margin: 0;
             padding: 20px;
         }
 
         .logo-container {
-
             text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
         .logo-container img {
@@ -25,19 +24,19 @@
             text-align: center;
             font-size: 18px;
             font-weight: bold;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 8px;
         }
 
         td,
         th {
             border: 1px solid #000;
-            padding: 8px;
+            padding: 4px 6px;
         }
 
         .text-right {
@@ -50,18 +49,46 @@
 
         .note {
             font-size: 12px;
-            margin-top: 20px;
+            margin-top: 8px;
+        }
+
+        /* Remove inner borders for employee details table */
+        .employee-details-table {
+            border: 1px solid #000;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .employee-details-table td, .employee-details-table th {
+            border: none;
+            padding: 4px 6px;
+        }
+
+        .employee-details-table tr:first-child td, .employee-details-table tr:first-child th {
+            border-top: none;
+        }
+
+        .employee-details-table tr:last-child td, .employee-details-table tr:last-child th {
+            border-bottom: none;
+        }
+
+        .employee-details-table tr td:first-child, .employee-details-table tr th:first-child {
+            border-left: none;
+        }
+
+        .employee-details-table tr td:last-child, .employee-details-table tr th:last-child {
+            border-right: none;
         }
     </style>
 </head>
 
 <body>
     <!-- Header with Logo -->
-    <div class="h-16 w-16 object-contain justify-center logo-container">
+    <div class="logo-container">
         @if($firmSquareLogo)
-            <img src="{{ $firmSquareLogo }}" alt="Company Square Logo" />
+            <img src="{{ $firmSquareLogo }}" alt="Company Square Logo" style="height:64px;width:64px;object-fit:contain;" />
         @elseif ($firmWideLogo)
-            <img src="{{ $firmWideLogo }}" alt="Company Wide Logo" />
+            <img src="{{ $firmWideLogo }}" alt="Company Wide Logo" style="height:64px;width:192px;object-fit:contain;" />
         @endif
     </div>
     <div class="title">
@@ -74,16 +101,18 @@
 
     @if($selectedEmployee)
         <!-- Employee Details Section -->
-        <table>
-            <tr>
-                <td class="font-bold" style="width: 25%">EMPLOYEE CODE</td>
-                <td>: {{ $selectedEmployee->emp_job_profile->employee_code}}</td>
-                <td class="font-bold" style="width: 25%">DATE OF JOINING</td>
-                <td>: {{ optional($selectedEmployee->emp_job_profile)->doh?->format('jS M Y') }}</td>
-            </tr>
+        <table class="employee-details-table">
             <tr>
                 <td class="font-bold">NAME</td>
                 <td>: {{ $selectedEmployee->fname }} {{ $selectedEmployee->lname }}</td>
+
+                <td class="font-bold" style="width: 25%">DATE OF JOINING</td>
+                <td>: {{ optional($selectedEmployee->emp_job_profile)->doh?->format('d-M-Y')}}</td>
+            </tr>
+            <tr>
+                <td class="font-bold" style="width: 25%">EMPLOYEE CODE</td>
+                <td>: {{ $selectedEmployee->emp_job_profile->employee_code}}</td>
+
                 <td class="font-bold">MONTH</td>
                 <td>:
                     {{ $rawComponents && $rawComponents->count() > 0 ? date('M-y', strtotime($rawComponents->first()->salary_period_from)) : '' }}
@@ -147,9 +176,14 @@
             <!-- Net Salary -->
             <tr>
                 <td colspan="2" class="font-bold">NET SALARY</td>
-                    <td colspan="2" class="text-right font-bold">{{ number_format($netSalary, 0) }}</td>
-                </tr>
-
+                <td colspan="2" class="text-right font-bold">{{ number_format($netSalary, 0) }}</td>
+            </tr>
+            <!-- Net Salary in Words -->
+            <tr>
+                <td colspan="4" class="font-bold text-sm">
+                    Net Salary (in words): <span class="font-bold">{{ $netSalaryInWords }}</span>
+                </td>
+            </tr>
            </table>
 
             <!-- Note -->

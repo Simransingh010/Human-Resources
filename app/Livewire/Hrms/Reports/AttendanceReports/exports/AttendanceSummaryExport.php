@@ -17,6 +17,12 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
     protected $data = [];
     protected $start;
     protected $end;
+    // Add statuses array for easy reuse
+    protected $statuses = [
+        'P', 'A', 'HD', 'PW', 'L',
+        'WFR', 'CW', 'OD', 'H', 'W',
+        'S', 'POW', 'LM'
+    ];
 
     public function __construct($filters)
     {
@@ -108,6 +114,13 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 
         $headers[] = 'Total Present';
 
+        // Use full status names for status count columns
+        $statusLabels = \App\Models\Hrms\EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT;
+        foreach ($this->statuses as $status) {
+            $label = $statusLabels[$status] ?? $status;
+            $headers[] = $label . ' Count';
+        }
+
         return $headers;
     }
 
@@ -124,16 +137,23 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 
         $attendances = $employee->emp_attendances->keyBy(fn($a) => $a->work_date->format('Y-m-d'));
         $totalPresent = 0;
+        $statusCounts = array_fill_keys($this->statuses, 0);
 
         foreach ($this->dateRange as $date) {
             $status = $attendances[$date]->attendance_status_main ?? '';
             if ($status === 'P') $totalPresent++;
+            if (isset($statusCounts[$status])) {
+                $statusCounts[$status]++;
+            }
             $row[] = $status;
         }
 
         $row[] = $totalPresent;
 
-       
+        // Add each status count
+        foreach ($this->statuses as $status) {
+            $row[] = $statusCounts[$status];
+        }
 
         return $row;
     }

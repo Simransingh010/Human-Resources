@@ -19,8 +19,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $employee_id
  * @property Carbon $work_date
  * @property int|null $work_shift_day_id
- * @property string|null $attend_status
- * @property string|null $attend_location
+ * @property int|null $emp_attendance_status_id
+ * @property int|null $attend_location_id
  * @property float $ideal_working_hours
  * @property float $actual_worked_hours
  * @property float $final_day_weightage
@@ -56,6 +56,7 @@ class EmpAttendance extends Model
 		'work_date',
 		'work_shift_day_id',
 		'attendance_status_main',
+		'emp_attendance_status_id',
 		'attend_location_id',
 		'ideal_working_hours',
 		'actual_worked_hours',

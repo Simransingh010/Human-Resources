@@ -774,8 +774,18 @@ class LeaveController extends Controller
             // Get all results without pagination for mobile API
             $leaveRequests = $query->get();
 
+            // Filter: Only show leaves where user can approve or has approved
+            $filteredLeaveRequests = $leaveRequests->filter(function($leaveRequest) use ($user) {
+                $canApprove = $this->canUserApproveLeave($user, $leaveRequest);
+                $hasApproved = $leaveRequest->emp_leave_request_approvals
+                    ->where('approver_id', $user->id)
+                    ->where('status', 'approved')
+                    ->isNotEmpty();
+                return $canApprove || $hasApproved;
+            })->values();
+
             // Format the response data - only what's shown in the table
-            $formattedRequests = $leaveRequests->map(function($leaveRequest) use ($user) {
+            $formattedRequests = $filteredLeaveRequests->map(function($leaveRequest) use ($user) {
                 // Check if current user can approve this request
                 $canApprove = $this->canUserApproveLeave($user, $leaveRequest);
                 
@@ -1314,5 +1324,245 @@ class LeaveController extends Controller
             // Log error but don't fail the main operation
             Log::error('Failed to send leave action notifications: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Process bulk leave actions (approve/reject) for multiple leave requests
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function handleBulkLeaveAction(Request $request)
+    {
+        try {
+            // 1. Validate request
+            $validated = $request->validate([
+                'leave_request_ids' => 'required|array|min:1',
+                'leave_request_ids.*' => 'required|integer|exists:emp_leave_requests,id',
+                'action' => 'required|in:approve,reject',
+                'remarks' => 'required|string|min:3',
+            ]);
+
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthorized access'
+                ], 401);
+            }
+
+            // 2. Get all leave requests with necessary relations
+            $leaveRequests = EmpLeaveRequest::whereIn('id', $validated['leave_request_ids'])
+                ->where('firm_id', $user->employee->firm_id)
+                ->with(['employee', 'leave_type'])
+                ->get();
+
+            // 3. Validate permissions and state for all leaves
+            $validationResult = $this->validateBulkLeaveAction($user, $leaveRequests);
+            if (!$validationResult['valid']) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => $validationResult['message'],
+                    'invalid_leaves' => $validationResult['invalid_leaves']
+                ], 403);
+            }
+
+            // 4. Process leaves in transaction
+            DB::beginTransaction();
+            try {
+                $processedLeaves = $this->processBulkLeaveAction(
+                    $leaveRequests,
+                    $user,
+                    $validated['action'],
+                    $validated['remarks']
+                );
+
+                DB::commit();
+
+                return Response::json([
+                    'message_type' => 'success',
+                    'message_display' => 'popup',
+                    'message' => count($processedLeaves) . ' leaves processed successfully',
+                    'processed_leaves' => $processedLeaves
+                ], 200);
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Bulk leave action failed: ' . $e->getMessage(), [
+                    'trace' => $e->getTraceAsString(),
+                    'leave_ids' => $validated['leave_request_ids']
+                ]);
+
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Failed to process leaves: ' . $e->getMessage()
+                ], 500);
+            }
+        } catch (\Exception $e) {
+            Log::error('Bulk leave action validation failed: ' . $e->getMessage());
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Invalid request: ' . $e->getMessage()
+            ], 422);
+        }
+    }
+
+    /**
+     * Validate bulk leave action permissions and state
+     * 
+     * @param User $user
+     * @param Collection $leaveRequests
+     * @return array
+     */
+    private function validateBulkLeaveAction($user, $leaveRequests)
+    {
+        $invalidLeaves = [];
+
+        foreach ($leaveRequests as $leave) {
+            // Check if user can approve this leave
+            if (!$this->canUserApproveLeave($user, $leave)) {
+                $invalidLeaves[] = [
+                    'id' => $leave->id,
+                    'reason' => 'Unauthorized to approve this leave'
+                ];
+                continue;
+            }
+
+            // Check if leave is in approvable state
+            if (in_array($leave->status, ['approved', 'rejected', 'cancelled_employee', 'cancelled_hr'])) {
+                $invalidLeaves[] = [
+                    'id' => $leave->id,
+                    'reason' => 'Leave is already ' . $leave->status
+                ];
+            }
+        }
+
+        return [
+            'valid' => empty($invalidLeaves),
+            'message' => empty($invalidLeaves) ? 'All leaves are valid' : 'Some leaves cannot be processed',
+            'invalid_leaves' => $invalidLeaves
+        ];
+    }
+
+    /**
+     * Process bulk leave actions
+     * 
+     * @param Collection $leaveRequests
+     * @param User $user
+     * @param string $action
+     * @param string $remarks
+     * @return array
+     */
+    private function processBulkLeaveAction($leaveRequests, $user, $action, $remarks)
+    {
+        $processedLeaves = [];
+
+        foreach ($leaveRequests->chunk(100) as $chunk) {
+            foreach ($chunk as $leave) {
+                $oldStatus = $leave->status;
+                $approvalLevel = $this->getApprovalLevelForUser($user, $leave);
+                $maxApprovalLevel = $this->getMaxApprovalLevel($leave);
+                
+                // Get current approval count
+                $approvalCount = EmpLeaveRequestApproval::where('emp_leave_request_id', $leave->id)
+                    ->where('status', 'approved')
+                    ->count();
+
+                // Determine new status
+                $newStatus = $this->determineNewLeaveStatus($action, $approvalCount + 1, $maxApprovalLevel);
+
+                // Update leave request
+                $leave->update(['status' => $newStatus]);
+
+                // Create approval record
+                $this->createLeaveApproval($leave, $user, $action, $approvalLevel, $remarks);
+
+                // Update balance if needed
+                if ($action === 'approve') {
+                    $this->updateLeaveBalance($leave);
+                }
+
+                // Log event
+                $this->createLeaveEvent($leave, $user, $oldStatus, $newStatus, $remarks);
+
+                // Send notifications
+                $this->sendLeaveActionNotifications($leave, $newStatus, $user);
+
+                $processedLeaves[] = [
+                    'id' => $leave->id,
+                    'old_status' => $oldStatus,
+                    'new_status' => $newStatus
+                ];
+            }
+        }
+
+        return $processedLeaves;
+    }
+
+    /**
+     * Determine new leave status based on action and approval counts
+     * 
+     * @param string $action
+     * @param int $currentApprovalCount
+     * @param int $maxApprovalLevel
+     * @return string
+     */
+    private function determineNewLeaveStatus($action, $currentApprovalCount, $maxApprovalLevel)
+    {
+        if ($action === 'approve') {
+            return ($currentApprovalCount >= $maxApprovalLevel) ? 'approved' : 'approved_further';
+        }
+        return 'rejected';
+    }
+
+    /**
+     * Create leave approval record
+     * 
+     * @param EmpLeaveRequest $leave
+     * @param User $user
+     * @param string $action
+     * @param int $approvalLevel
+     * @param string $remarks
+     * @return void
+     */
+    private function createLeaveApproval($leave, $user, $action, $approvalLevel, $remarks)
+    {
+        EmpLeaveRequestApproval::create([
+            'emp_leave_request_id' => $leave->id,
+            'approval_level' => $approvalLevel,
+            'approver_id' => $user->id,
+            'status' => $action === 'approve' ? 'approved' : 'rejected',
+            'remarks' => $remarks,
+            'acted_at' => now(),
+            'firm_id' => $leave->firm_id
+        ]);
+    }
+
+    /**
+     * Create leave event record
+     * 
+     * @param EmpLeaveRequest $leave
+     * @param User $user
+     * @param string $oldStatus
+     * @param string $newStatus
+     * @param string $remarks
+     * @return void
+     */
+    private function createLeaveEvent($leave, $user, $oldStatus, $newStatus, $remarks)
+    {
+        LeaveRequestEvent::create([
+            'emp_leave_request_id' => $leave->id,
+            'user_id' => $user->id,
+            'event_type' => 'status_changed',
+            'from_status' => $oldStatus,
+            'to_status' => $newStatus,
+            'remarks' => $remarks,
+            'firm_id' => $leave->firm_id,
+            'created_at' => now()
+        ]);
     }
 }

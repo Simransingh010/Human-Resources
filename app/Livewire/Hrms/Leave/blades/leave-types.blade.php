@@ -204,9 +204,9 @@
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
-                                    variant="primary"
-                                    size="sm"
-                                    icon="pencil"
+                                variant="primary"
+                                size="sm"
+                                icon="pencil"
                                 wire:click="edit({{ $item->id }})"
                             />
                             <flux:modal.trigger name="delete-{{ $item->id }}">

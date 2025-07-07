@@ -36,7 +36,7 @@ class Role extends Model
 	protected $table = 'roles';
 
 	protected $casts = [
-		'firm_id' => 'int',
+		'firm_id' => 'integer',
 		'is_inactive' => 'bool'
 	];
 
@@ -62,5 +62,10 @@ class Role extends Model
 	{
 		return $this->belongsToMany(User::class)
 					->withPivot('id', 'firm_id');
+	}
+
+	public function permissions()
+	{
+		return $this->belongsToMany(Permission::class, 'permission_role');
 	}
 }

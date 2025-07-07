@@ -123,6 +123,7 @@ class OnboardDashboard extends Component
     public function loadStats()
     {
         $date = Carbon::parse($this->selectedDate);
+        
 
         // Total active employees
         $this->totalEmployees = Employee::where('firm_id', session('firm_id'))
@@ -169,7 +170,7 @@ class OnboardDashboard extends Component
 
         // Fetch holidays for the calendar
         $holidays = Holiday::where('firm_id', session('firm_id'))
-           ->where('is_inactive', 1)
+           ->where('is_inactive', 0)
             ->where('deleted_at', null)
             ->get();
 
@@ -346,6 +347,30 @@ class OnboardDashboard extends Component
             ->whereDate('apply_from', '<=', $date)
             ->whereDate('apply_to', '>=', $date)
             ->latest()
+            ->get();
+    }
+
+    #[\Livewire\Attributes\Computed]
+    public function employeesNotMarked()
+    {
+        $date = Carbon::parse($this->selectedDate);
+
+        // Get IDs of employees with an attendance record for the selected date
+        $attendedEmployeeIds = EmpAttendance::where('firm_id', session('firm_id'))
+            ->whereDate('work_date', $date)
+            ->pluck('employee_id');
+
+        // Get IDs of employees on leave for the selected date from the existing computed property
+        $onLeaveEmployeeIds = $this->todayLeaveRequests()->pluck('employee_id');
+
+        // Combine all IDs of employees who are accounted for
+        $accountedForEmployeeIds = $attendedEmployeeIds->merge($onLeaveEmployeeIds)->unique();
+
+        // Get all active employees who are NOT in the "accounted for" list
+        return Employee::where('firm_id', session('firm_id'))
+            ->where('is_inactive', false)
+            ->whereNotIn('id', $accountedForEmployeeIds)
+            ->with(['emp_personal_detail.media'])
             ->get();
     }
 

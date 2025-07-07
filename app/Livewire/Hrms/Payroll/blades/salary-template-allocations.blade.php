@@ -51,6 +51,16 @@
     <flux:modal name="mdl-batch" @cancel="resetForm" position="right" class="max-w-6xl" variant="flyout">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
+                @if(!empty($allocationWarnings))
+                    <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4">
+                        <div class="font-bold mb-1">Some allocations were skipped:</div>
+                        <ul class="list-disc pl-5">
+                            @foreach($allocationWarnings as $warning)
+                                <li>{{ $warning }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
                 <div>
                     <flux:heading size="lg">New Template Allocation</flux:heading>
                     <flux:text class="text-gray-500">Allocate salary components to employees</flux:text>
@@ -105,22 +115,44 @@
                                         <div class="bg-white shadow overflow-hidden sm:rounded-md">
                                             <ul role="list" class="divide-y divide-gray-200">
                                                 @foreach($templateComponents as $component)
+                                                    @php
+                                                        $componentId = is_array($component) ? $component['salary_component_id'] : $component->salary_component_id;
+                                                        $componentTitle = is_array($component) ? $component['salary_component']['title'] : $component->salary_component->title;
+                                                        $componentGroup = is_array($component) ? ($component['salary_component_group']['title'] ?? null) : ($component->salary_component_group ? $component->salary_component_group->title : null);
+                                                        $sequence = is_array($component) ? $component['sequence'] : $component->sequence;
+                                                    @endphp
                                                     <li class="px-4 py-4 sm:px-6">
                                                         <div class="flex items-center justify-between">
                                                             <p class="text-sm font-medium text-indigo-600 truncate">
-                                                                {{ $component->salary_component->title }}
+                                                                {{ $componentTitle }}
                                                             </p>
                                                             <div class="ml-2 flex-shrink-0 flex">
                                                                 <p class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
-                                                                    Sequence: {{ $component->sequence }}
+                                                                    Sequence: {{ $sequence }}
                                                                 </p>
                                                             </div>
                                                         </div>
-                                                        @if($component->salary_component_group)
+                                                        <div class="mt-2 grid grid-cols-2 gap-4">
+                                                            <div>
+                                                                <label class="block text-xs font-medium text-gray-500 mb-1">Effective From</label>
+                                                                <flux:date-picker
+                                                                    wire:model.live="templateComponentDates.{{ $componentId }}.effective_from"
+                                                                    placeholder="Effective From"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label class="block text-xs font-medium text-gray-500 mb-1">Effective To</label>
+                                                                <flux:date-picker
+                                                                    wire:model.live="templateComponentDates.{{ $componentId }}.effective_to"
+                                                                    placeholder="Effective To"
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                        @if($componentGroup)
                                                             <div class="mt-2 sm:flex sm:justify-between">
                                                                 <div class="sm:flex">
                                                                     <p class="flex items-center text-sm text-gray-500">
-                                                                        Group: {{ $component->salary_component_group->title }}
+                                                                        Group: {{ $componentGroup }}
                                                                     </p>
                                                                 </div>
                                                             </div>
@@ -155,7 +187,7 @@
                             <div class="grid grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
-                                    <flux:date-picker 
+                                    <flux:date-picker selectable-header
                                         wire:model.live="effectiveFrom"
                                         selectable-header
                                         placeholder="Select start date"
@@ -163,7 +195,7 @@
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Effective To</label>
-                                    <flux:date-picker 
+                                    <flux:date-picker selectable-header
                                         wire:model.live="effectiveTo"
                                         selectable-header
                                         placeholder="Select end date"
@@ -352,7 +384,7 @@
         <flux:table.columns>
             <flux:table.column>Title</flux:table.column>
             <flux:table.column>Created At</flux:table.column>
-            <flux:table.column>Items</flux:table.column>
+{{--            <flux:table.column>Items</flux:table.column>--}}
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
@@ -361,7 +393,7 @@
                 <flux:table.row :key="$batch->id" class="table-cell-wrap">
                     <flux:table.cell>{{ $batch->title }}</flux:table.cell>
                     <flux:table.cell>{{ $batch->created_at->format('jS F Y h:i a') }}</flux:table.cell>
-                    <flux:table.cell>{{ $batch->items_count }}</flux:table.cell>
+{{--                    <flux:table.cell>{{ $batch->items_count }}</flux:table.cell>--}}
                     <flux:table.cell>
                         <div class="flex space-x-2">
                             <flux:button
@@ -468,12 +500,12 @@
                 <!-- Results Table -->
                 <flux:table :items="$this->filteredBatchItems->groupBy('salaryComponentEmployee.employee_id')" class="w-full">
                     <flux:table.columns>
-                        <flux:table.column>Employee</flux:table.column>
-                        <flux:table.column>Components</flux:table.column>
-                        <flux:table.column>Template</flux:table.column>
-                        <flux:table.column>Effective Period</flux:table.column>
-                        <flux:table.column>Operation</flux:table.column>
-                        <flux:table.column>Actions</flux:table.column>
+                        <flux:table.column class="table-cell-wrap">Employee</flux:table.column>
+                        <flux:table.column  class="table-cell-wrap">Components</flux:table.column>
+                        <flux:table.column class="table-cell-wrap">Template</flux:table.column>
+                        <flux:table.column class="table-cell-wrap">Effective Period</flux:table.column>
+                        <flux:table.column class="table-cell-wrap">Operation</flux:table.column>
+                        <flux:table.column class="table-cell-wrap">Actions</flux:table.column>
                     </flux:table.columns>
 
                     <flux:table.rows>
@@ -483,10 +515,10 @@
                                 $employee = $firstItem->salaryComponentEmployee->employee;
                             @endphp
                             <flux:table.row :key="$employeeId">
-                                <flux:table.cell>
+                                <flux:table.cell  class="table-cell-wrap">
                                     {{ $employee->fname }} {{ $employee->lname }}
                                 </flux:table.cell>
-                                <flux:table.cell>
+                                <flux:table.cell class="table-cell-wrap">
                                     <div class="flex flex-wrap gap-1">
                                         @foreach($items as $item)
                                             <flux:badge variant="outline">
@@ -495,21 +527,21 @@
                                         @endforeach
                                     </div>
                                 </flux:table.cell>
-                                <flux:table.cell>
+                                <flux:table.cell class="table-cell-wrap">
                                     {{ $firstItem->salaryComponentEmployee->salary_template ? 
                                        $firstItem->salaryComponentEmployee->salary_template->title : 
                                        'Direct Allocation' }}
                                 </flux:table.cell>
-                                <flux:table.cell>
+                                <flux:table.cell  class="table-cell-wrap">
                                     {{ Carbon\Carbon::parse($firstItem->salaryComponentEmployee->effective_from)->format('j M Y') }} - 
                                     {{ Carbon\Carbon::parse($firstItem->salaryComponentEmployee->effective_to)->format('j M Y') }}
                                 </flux:table.cell>
-                                <flux:table.cell>
+                                <flux:table.cell  class="table-cell-wrap">
                                     <flux:badge variant="{{ $firstItem->operation === 'insert' ? 'success' : 'info' }}">
                                         {{ ucfirst($firstItem->operation) }}
                                     </flux:badge>
                                 </flux:table.cell>
-                                <flux:table.cell>
+                                <flux:table.cell class="table-cell-wrap">
                                     <flux:modal.trigger name="rollback-employee-{{ $employeeId }}">
                                         <flux:button 
                                             variant="danger" 
@@ -547,7 +579,7 @@
                             </flux:table.row>
                         @empty
                             <flux:table.row>
-                                <flux:table.cell colspan="6" class="text-center py-4 text-gray-500">
+                                <flux:table.cell colspan="6" class="table-cell-wrap text-center py-4 text-gray-500">
                                     @if($batchItemSearch || $effectiveFromFilter || $effectiveToFilter)
                                         No records match the selected filters
                                     @else

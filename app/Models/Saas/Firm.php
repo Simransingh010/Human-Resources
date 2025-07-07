@@ -6,6 +6,7 @@
 
 namespace App\Models\Saas;
 
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -50,6 +51,7 @@ use Spatie\MediaLibrary\InteractsWithMedia;
  * @property Collection|WorkShiftDaysBreak[] $work_shift_days_breaks
  * @property Collection|WorkShift[] $work_shifts
  * @property Collection|WorkShiftsAlgo[] $work_shifts_algos
+ * @property Collection|Panel[] $panels
  *
  * @package App\Models\Saas
  */
@@ -155,6 +157,11 @@ class Firm extends Model implements HasMedia
 	public function firms()
 	{
 		return $this->hasMany(Firm::class, 'parent_firm_id');
+	}
+
+	public function panels()
+	{
+		return $this->belongsToMany(Panel::class, 'firm_panel');
 	}
 
 	public function leave_types()

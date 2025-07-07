@@ -9,6 +9,7 @@ use App\Models\Settings\Department;
 use App\Models\Hrms\SalaryTemplate;
 use App\Models\Hrms\SalaryTemplatesComponent;
 use App\Models\Hrms\SalaryComponentsEmployee;
+use App\Models\Hrms\EmployeesSalaryExecutionGroup;
 use App\Services\BulkOperationService;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -74,6 +75,10 @@ class SalaryTemplateAllocations extends Component
     ];
 
     public $selectedEmployeeId = null;
+
+    public $templateComponentDates = [];
+
+    public $allocationWarnings = [];
 
     public function mount()
     {
@@ -142,12 +147,29 @@ class SalaryTemplateAllocations extends Component
             // Set effective dates from template
             $this->effectiveFrom = $this->selectedTemplate->effective_from->format('Y-m-d');
             $this->effectiveTo = $this->selectedTemplate->effective_to ? $this->selectedTemplate->effective_to->format('Y-m-d') : null;
+
+            // Store per-component effective dates
+            $this->templateComponentDates = [];
+            foreach ($this->templateComponents as $component) {
+                $this->templateComponentDates[$component->salary_component_id] = [
+                    'effective_from' => $component->effective_from ? $component->effective_from->format('Y-m-d') : $this->effectiveFrom,
+                    'effective_to' => $component->effective_to ? $component->effective_to->format('Y-m-d') : $this->effectiveTo,
+                ];
+            }
         } else {
             $this->selectedTemplate = null;
             $this->templateComponents = collect();
             $this->selectedSalaryCycleId = null;
             $this->effectiveFrom = now()->format('Y-m-d');
             $this->effectiveTo = null;
+            $this->templateComponentDates = [];
+        }
+    }
+
+    public function updateComponentDate($componentId, $field, $value)
+    {
+        if (isset($this->templateComponentDates[$componentId])) {
+            $this->templateComponentDates[$componentId][$field] = $value;
         }
     }
 
@@ -368,6 +390,7 @@ class SalaryTemplateAllocations extends Component
 
     public function store()
     {
+        $this->allocationWarnings = [];
         try {
             $this->validate();
 
@@ -386,13 +409,12 @@ class SalaryTemplateAllocations extends Component
             $this->validateExistingAllocations(
                 $actualSelectedEmployeeIds,
                 $this->effectiveFrom,
-                $this->effectiveTo ?? $this->selectedTemplate->effective_to,
+                $this->effectiveTo ?? ($this->selectedTemplate ? $this->selectedTemplate->effective_to : null),
                 $this->allocationType === 'direct' ? $this->selectedComponents : []
             );
 
             DB::beginTransaction();
             try {
-                // Start the batch operation
                 $batchTitle = $this->allocationType === 'template'
                     ? "Salary Template Allocation - Template: {$this->selectedTemplate->title}"
                     : "Direct Component Allocation - Components: " . count($this->selectedComponents);
@@ -403,23 +425,69 @@ class SalaryTemplateAllocations extends Component
                     $batchTitle
                 );
 
-                // Process each selected employee
                 foreach ($actualSelectedEmployeeIds as $employeeId) {
+                    $employee = Employee::find($employeeId);
+                    $employeeExecutionGroup = EmployeesSalaryExecutionGroup::where('employee_id', $employeeId)->first();
+                    $executionGroupId = $employeeExecutionGroup ? $employeeExecutionGroup->salary_execution_group_id : null;
+                    
+                    if (!$executionGroupId) {
+                        $this->allocationWarnings[] = "Employee {$employee->fname} {$employee->lname} has no execution group.";
+                        continue;
+                    }
+                    $payrollSlots = \App\Models\Hrms\PayrollSlot::where('salary_execution_group_id', $executionGroupId)
+                        ->where('firm_id', Session::get('firm_id'))
+                        ->orderBy('from_date')
+                        ->get();
                     if ($this->allocationType === 'template') {
                         foreach ($this->templateComponents as $component) {
-                            $this->createEmployeeComponent($batch, $employeeId, $component);
+                            $componentId = is_array($component) ? $component['salary_component_id'] : $component->salary_component_id;
+                            $dates = $this->templateComponentDates[$componentId] ?? [];
+                            $intendedFrom = $dates['effective_from'] ?? $this->effectiveFrom;
+                            $intendedTo = $dates['effective_to'] ?? $this->effectiveTo;
+                            $slot = $payrollSlots->first(function($slot) use ($intendedFrom) {
+                                return $slot->to_date->format('Y-m-d') >= $intendedFrom;
+                            });
+                            // Move to next open slot if locked/published
+                            while ($slot && in_array($slot->payroll_slot_status, ['L', 'PB'])) {
+                                $slot = $payrollSlots->first(function($s) use ($slot) {
+                                    return $s->from_date->gt($slot->to_date);
+                                });
+                            }
+                            if (!$slot) {
+                                $this->allocationWarnings[] = "No open payroll slot found for {$employee->fname} {$employee->lname} (component: " . (is_array($component) ? $component['salary_component']['title'] : $component->salary_component->title) . "). Cannot assign the new head.";
+                                continue;
+                            }
+                            // If slot changed, set effective_from to slot's from_date
+                            if ($slot->from_date->format('Y-m-d') != $intendedFrom) {
+                                $intendedFrom = $slot->from_date->format('Y-m-d');
+                            }
+                            $this->createEmployeeComponent($batch, $employeeId, $component, $intendedFrom, $intendedTo);
                         }
                     } else {
-                        // For direct allocation, create components in selection order
                         foreach ($this->selectedComponents as $sequence => $componentId) {
-                            // Find component in the available components array
                             $component = collect($this->availableComponents)->firstWhere('id', $componentId);
-
                             if (!$component) {
-                                throw new \Exception("Component with ID {$componentId} not found.");
+                                $this->allocationWarnings[] = "Component with ID {$componentId} not found.";
+                                continue;
                             }
-
-                            $this->createDirectComponent($batch, $employeeId, $component, $sequence + 1);
+                            $intendedFrom = $this->effectiveFrom;
+                            $intendedTo = $this->effectiveTo;
+                            $slot = $payrollSlots->first(function($slot) use ($intendedFrom) {
+                                return $slot->to_date->format('Y-m-d') >= $intendedFrom;
+                            });
+                            while ($slot && in_array($slot->payroll_slot_status, ['L', 'PB'])) {
+                                $slot = $payrollSlots->first(function($s) use ($slot) {
+                                    return $s->from_date->gt($slot->to_date);
+                                });
+                            }
+                            if (!$slot) {
+                                $this->allocationWarnings[] = "No open payroll slot found for {$employee->fname} {$employee->lname} (component: " . (is_array($component) ? $component['title'] : $component->title) . "). Cannot assign the new head.";
+                                continue;
+                            }
+                            if ($slot->from_date->format('Y-m-d') != $intendedFrom) {
+                                $intendedFrom = $slot->from_date->format('Y-m-d');
+                            }
+                            $this->createDirectComponent($batch, $employeeId, $component, $sequence + 1, $intendedFrom, $intendedTo);
                         }
                     }
                 }
@@ -427,9 +495,13 @@ class SalaryTemplateAllocations extends Component
                 DB::commit();
                 $this->selectedBatchId = $batch->id;
 
+                $successMsg = 'Salary components allocated successfully.';
+                if (!empty($this->allocationWarnings)) {
+                    $successMsg .= ' Some allocations were skipped: ' . implode(' ', $this->allocationWarnings);
+                }
                 Flux::toast(
                     heading: 'Success',
-                    text: 'Salary components allocated successfully.',
+                    text: $successMsg,
                 );
 
                 $this->resetForm();
@@ -448,27 +520,29 @@ class SalaryTemplateAllocations extends Component
         }
     }
 
-    protected function createEmployeeComponent($batch, $employeeId, $templateComponent)
+    protected function createEmployeeComponent($batch, $employeeId, $templateComponent, $effectiveFrom, $effectiveTo)
     {
         // Get the salary component details
-        $salaryComponent = $templateComponent->salary_component;
+        $salaryComponent = is_array($templateComponent)
+            ? (isset($templateComponent['salary_component']) ? (object)$templateComponent['salary_component'] : null)
+            : $templateComponent->salary_component;
 
         $componentData = [
             'firm_id' => Session::get('firm_id'),
             'employee_id' => $employeeId,
             'salary_template_id' => $this->selectedTemplate->id,
             'salary_cycle_id' => $this->selectedTemplate->salary_cycle_id,
-            'salary_component_id' => $templateComponent->salary_component_id,
-            'salary_component_group_id' => $templateComponent->salary_component_group_id,
-            'sequence' => $templateComponent->sequence,
-            'nature' => $salaryComponent->nature,
-            'component_type' => $salaryComponent->component_type,
-            'amount_type' => $salaryComponent->amount_type,
+            'salary_component_id' => is_array($templateComponent) ? $templateComponent['salary_component_id'] : $templateComponent->salary_component_id,
+            'salary_component_group_id' => is_array($templateComponent) ? $templateComponent['salary_component_group_id'] : $templateComponent->salary_component_group_id,
+            'sequence' => is_array($templateComponent) ? $templateComponent['sequence'] : $templateComponent->sequence,
+            'nature' => $salaryComponent ? $salaryComponent->nature : null,
+            'component_type' => $salaryComponent ? $salaryComponent->component_type : null,
+            'amount_type' => $salaryComponent ? $salaryComponent->amount_type : null,
             'amount' => 0, // Default amount, can be updated later
-            'taxable' => $salaryComponent->taxable,
-            'calculation_json' => $salaryComponent->calculation_json,
-            'effective_from' => $this->selectedTemplate->effective_from,
-            'effective_to' => $this->selectedTemplate->effective_to,
+            'taxable' => $salaryComponent ? $salaryComponent->taxable : false,
+            'calculation_json' => $salaryComponent ? $salaryComponent->calculation_json : null,
+            'effective_from' => $effectiveFrom,
+            'effective_to' => $effectiveTo,
             'user_id' => Session::get('user_id'),
             'created_at' => now(),
             'updated_at' => now()
@@ -485,7 +559,7 @@ class SalaryTemplateAllocations extends Component
         ]);
     }
 
-    protected function createDirectComponent($batch, $employeeId, $component, $sequence)
+    protected function createDirectComponent($batch, $employeeId, $component, $sequence, $effectiveFrom = null, $effectiveTo = null)
     {
         if (!isset($component['id'])) {
             throw new \Exception("Invalid component data structure.");
@@ -508,8 +582,8 @@ class SalaryTemplateAllocations extends Component
             'amount' => 0,
             'taxable' => $component['taxable'],
             'calculation_json' => $component['calculation_json'],
-            'effective_from' => $this->effectiveFrom,
-            'effective_to' => $this->effectiveTo,
+            'effective_from' => $effectiveFrom ?? $this->effectiveFrom,
+            'effective_to' => $effectiveTo ?? $this->effectiveTo,
             'user_id' => Session::get('user_id'),
             'created_at' => now(),
             'updated_at' => now()

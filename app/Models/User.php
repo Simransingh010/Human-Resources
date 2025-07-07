@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Saas\Action;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -33,7 +34,15 @@ class User extends Authenticatable
         'password',
         'phone',
         'passcode',
-        'is_inactive'
+        'is_inactive',
+        'role_main',
+    ];
+
+    public const ROLE_MAIN_TYPES = [
+        'L0_emp' => 'L0 Employee',
+        'L1_firm' => 'L1 Firm',
+        'L2_agency' => 'L2 Agency',
+        'L3_company' => 'L3 Company',
     ];
 
     /**
@@ -103,5 +112,11 @@ class User extends Authenticatable
     public function roles()
     {
         return $this->belongsToMany(Role::class, 'role_user');
+    }
+
+    public function actions()
+    {
+        return $this->belongsToMany(Action::class, 'action_user')
+            ->withPivot('id', 'firm_id', 'records_scope');
     }
 }

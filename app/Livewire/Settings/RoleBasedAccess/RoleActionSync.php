@@ -14,6 +14,7 @@ class RoleActionSync extends Component
     public Role $role;
     public array $selectedActions = [];
     public array $actionRecordScopes = [];
+    private array $previousSelectedActions = [];
     public array $hierarchy = [];
     public $selectedAppId = null;
     public $selectedModuleId = null;
@@ -25,6 +26,7 @@ class RoleActionSync extends Component
     {
         $this->role = Role::findOrFail($roleId);
         $this->selectedActions = $this->role->actions()->select('actions.id')->pluck('id')->toArray();
+        $this->previousSelectedActions = $this->selectedActions;
         
         // Load existing record scopes for selected actions
         $existingActionRoles = ActionRole::where('role_id', $this->role->id)
@@ -133,6 +135,7 @@ class RoleActionSync extends Component
 
     public function render()
     {
+        $this->previousSelectedActions = $this->selectedActions;
         return view()->file(app_path('Livewire/Settings/RoleBasedAccess/blades/role-action-sync.blade.php'));
     }
 
@@ -235,55 +238,150 @@ class RoleActionSync extends Component
 
     public function selectApp($appName)
     {
-        $ids = collect($this->groupedActions[$appName] ?? [])
-            ->flatten(3)
-            ->pluck('id')
-            ->unique()
-            ->values()
-            ->all();
+        $ids = [];
+        foreach ($this->groupedActions[$appName] ?? [] as $modules) {
+            foreach ($modules as $componentName => $actionTypes) {
+                foreach ($actionTypes as $typeKey => $typeData) {
+                    if (!empty($typeData['clusters'])) {
+                        foreach ($typeData['clusters'] as $clusters) {
+                            foreach ($clusters as $group) {
+                                $ids[] = $group['parent']['id'];
+                                // Set record scope for parent if it's a RL or BR type
+                                if (in_array($typeKey, ['RL', 'BR'])) {
+                                    $this->actionRecordScopes[$group['parent']['id']] = 'all';
+                                }
+                                foreach ($group['children'] as $child) {
+                                    $ids[] = $child['id'];
+                                    // Set record scope for child if it's a RL or BR type
+                                    if (in_array($typeKey, ['RL', 'BR'])) {
+                                        $this->actionRecordScopes[$child['id']] = 'all';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $ids = array_unique($ids);
         $this->selectedActions = array_unique(array_merge($this->selectedActions, $ids));
+        $this->save(false);
     }
 
     public function deselectApp($appName)
     {
-        $ids = collect($this->groupedActions[$appName] ?? [])
-            ->flatten(3)
-            ->pluck('id')
-            ->unique()
-            ->values()
-            ->all();
+        $ids = [];
+        foreach ($this->groupedActions[$appName] ?? [] as $modules) {
+            foreach ($modules as $componentName => $actionTypes) {
+                foreach ($actionTypes as $typeKey => $typeData) {
+                    if (!empty($typeData['clusters'])) {
+                        foreach ($typeData['clusters'] as $clusters) {
+                            foreach ($clusters as $group) {
+                                $ids[] = $group['parent']['id'];
+                                // Set record scope to none for parent
+                                if (in_array($typeKey, ['RL', 'BR'])) {
+                                    $this->actionRecordScopes[$group['parent']['id']] = 'none';
+                                }
+                                foreach ($group['children'] as $child) {
+                                    $ids[] = $child['id'];
+                                    // Set record scope to none for child
+                                    if (in_array($typeKey, ['RL', 'BR'])) {
+                                        $this->actionRecordScopes[$child['id']] = 'none';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $ids = array_unique($ids);
         $this->selectedActions = array_values(array_diff($this->selectedActions, $ids));
+        $this->save(false);
     }
 
     public function toggleModule($appName, $moduleName)
     {
-        $ids = collect($this->groupedActions[$appName][$moduleName] ?? [])
-            ->flatten(2)
-            ->pluck('id')
-            ->unique()
-            ->values()
-            ->all();
+        $ids = [];
+        $typeKeys = [];
+        foreach ($this->groupedActions[$appName][$moduleName] ?? [] as $components) {
+            foreach ($components as $typeKey => $typeData) {
+                if (!empty($typeData['clusters'])) {
+                    foreach ($typeData['clusters'] as $clusters) {
+                        foreach ($clusters as $group) {
+                            $ids[] = $group['parent']['id'];
+                            $typeKeys[$group['parent']['id']] = $typeKey;
+                            foreach ($group['children'] as $child) {
+                                $ids[] = $child['id'];
+                                $typeKeys[$child['id']] = $typeKey;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        $ids = array_unique($ids);
         $allSelected = !array_diff($ids, $this->selectedActions);
+        
         if ($allSelected) {
             $this->selectedActions = array_values(array_diff($this->selectedActions, $ids));
+            // Set record scopes to none for deselected actions
+            foreach ($ids as $id) {
+                if (in_array($typeKeys[$id], ['RL', 'BR'])) {
+                    $this->actionRecordScopes[$id] = 'none';
+                }
+            }
         } else {
             $this->selectedActions = array_unique(array_merge($this->selectedActions, $ids));
+            // Set record scopes to all for selected actions
+            foreach ($ids as $id) {
+                if (in_array($typeKeys[$id], ['RL', 'BR'])) {
+                    $this->actionRecordScopes[$id] = 'all';
+                }
+            }
         }
+        $this->save(false);
     }
 
     public function toggleComponent($appName, $moduleName, $componentName)
     {
-        $ids = collect($this->groupedActions[$appName][$moduleName][$componentName] ?? [])
-            ->pluck('id')
-            ->unique()
-            ->values()
-            ->all();
+        $ids = [];
+        $typeKeys = [];
+        foreach ($this->groupedActions[$appName][$moduleName][$componentName] ?? [] as $typeKey => $typeData) {
+            if (!empty($typeData['clusters'])) {
+                foreach ($typeData['clusters'] as $clusters) {
+                    foreach ($clusters as $group) {
+                        $ids[] = $group['parent']['id'];
+                        $typeKeys[$group['parent']['id']] = $typeKey;
+                        foreach ($group['children'] as $child) {
+                            $ids[] = $child['id'];
+                            $typeKeys[$child['id']] = $typeKey;
+                        }
+                    }
+                }
+            }
+        }
+        $ids = array_unique($ids);
         $allSelected = !array_diff($ids, $this->selectedActions);
+        
         if ($allSelected) {
             $this->selectedActions = array_values(array_diff($this->selectedActions, $ids));
+            // Set record scopes to none for deselected actions
+            foreach ($ids as $id) {
+                if (in_array($typeKeys[$id], ['RL', 'BR'])) {
+                    $this->actionRecordScopes[$id] = 'none';
+                }
+            }
         } else {
             $this->selectedActions = array_unique(array_merge($this->selectedActions, $ids));
+            // Set record scopes to all for selected actions
+            foreach ($ids as $id) {
+                if (in_array($typeKeys[$id], ['RL', 'BR'])) {
+                    $this->actionRecordScopes[$id] = 'all';
+                }
+            }
         }
+        $this->save(false);
     }
 
     public function toggleAction($actionId)
@@ -295,6 +393,41 @@ class RoleActionSync extends Component
         }
     }
 
+    public function selectRecordScope($actionId, $scope)
+    {
+        $this->actionRecordScopes[$actionId] = $scope;
+
+        if ($scope === 'none') {
+            if (($key = array_search($actionId, $this->selectedActions)) !== false) {
+                unset($this->selectedActions[$key]);
+            }
+        } else {
+            if (!in_array($actionId, $this->selectedActions)) {
+                $this->selectedActions[] = $actionId;
+            }
+        }
+
+        $this->save(false);
+    }
+
+    public function updatedSelectedActions()
+    {
+        $newlySelected = array_diff($this->selectedActions, $this->previousSelectedActions);
+        $deselected = array_diff($this->previousSelectedActions, $this->selectedActions);
+
+        foreach ($newlySelected as $actionId) {
+            if (($this->actionRecordScopes[$actionId] ?? 'none') === 'none') {
+                $this->actionRecordScopes[$actionId] = 'all';
+            }
+        }
+
+        foreach ($deselected as $actionId) {
+            $this->actionRecordScopes[$actionId] = 'none';
+        }
+
+        $this->save(false);
+    }
+
     public function updatedSelectedAppName($appName)
     {
         $this->selectedModuleId = null;
@@ -304,16 +437,6 @@ class RoleActionSync extends Component
         } else {
             $this->selectedAppId = null;
         }
-    }
-
-    public function updatedSelectedActions()
-    {
-        $this->save(false);
-    }
-
-    public function updatedActionRecordScopes()
-    {
-        $this->save(false);
     }
 } 
 

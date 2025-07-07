@@ -76,24 +76,58 @@ use Carbon\Carbon;
         </flux:card>
 
         <!-- Not Marked Today Card -->
-        <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <div class="p-4">
-                <div class="flex items-center justify-between mb-2">
-                    <flux:text class="text-sm font-medium text-gray-500 dark:text-gray-400">Not Marked Today</flux:text>
-                    <flux:badge color="gray" class="bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300">
-                        <flux:icon name="question-mark-circle" class="w-4 h-4" />
-                    </flux:badge>
+        <flux:tooltip>
+            <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <div class="p-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <flux:text class="text-sm font-medium text-gray-500 dark:text-gray-400">Not Marked Today
+                        </flux:text>
+                        <flux:badge color="gray"
+                            class="bg-gray-100 dark:bg-gray-900/30 text-gray-700 dark:text-gray-300">
+                            <flux:icon name="question-mark-circle" class="w-4 h-4" />
+                        </flux:badge>
+                    </div>
+                    <div class="flex items-baseline justify-between">
+                        <flux:heading class="text-3xl font-bold text-gray-900 dark:text-white">
+                            {{ $notMarkedToday }}
+                        </flux:heading>
+                        <flux:text class="text-sm font-medium text-gray-600 dark:text-gray-400">
+                            {{ number_format(($notMarkedToday / max($totalEmployees, 1)) * 100, 1) }}%
+                        </flux:text>
+                    </div>
                 </div>
-                <div class="flex items-baseline justify-between">
-                    <flux:heading class="text-3xl font-bold text-gray-900 dark:text-white">
-                        {{ $notMarkedToday }}
-                    </flux:heading>
-                    <flux:text class="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        {{ number_format(($notMarkedToday / max($totalEmployees, 1)) * 100, 1) }}%
-                    </flux:text>
+            </flux:card>
+            <flux:tooltip.content
+                class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg p-4 w-72">
+                <flux:text class="text-lg font-bold dark:text-white mb-2">Employees Not Marked</flux:text>
+                <div class="space-y-2 max-h-60 overflow-y-auto">
+                    @forelse ($this->employeesNotMarked as $employee)
+                        <div class="flex items-center space-x-3 p-2 bg-gray-50 dark:bg-gray-700/50 rounded-md">
+                            @if ($employee->emp_personal_detail && $employee->emp_personal_detail->getFirstMediaUrl('employee_image'))
+                                <img src="{{ $employee->emp_personal_detail->getFirstMediaUrl('employee_image') }}"
+                                    alt="{{ $employee->fname }} {{ $employee->lname }}"
+                                    class="w-8 h-8 rounded-full object-cover">
+                            @else
+                                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-600 flex items-center justify-center">
+                                    <flux:icon name="user" class="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                                </div>
+                            @endif
+                            <div>
+                                <flux:text class="font-medium text-gray-800 dark:text-gray-200">
+                                    {{ $employee->fname }} {{ $employee->lname }}
+                                </flux:text>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="text-center py-4">
+                            <flux:text class="text-gray-500 dark:text-gray-400">
+                                All employees are accounted for.
+                            </flux:text>
+                        </div>
+                    @endforelse
                 </div>
-            </div>
-        </flux:card>
+            </flux:tooltip.content>
+        </flux:tooltip>
         <!-- Pending Leave Requests Card -->
         <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-sm">
             <div
@@ -413,7 +447,7 @@ use Carbon\Carbon;
 
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700/50 overflow-y-auto"
                     style="height: 400px;">
-                    <flux:accordion transition  class="w-full space-y-2">
+                    <flux:accordion transition class="w-full space-y-2">
                         <flux:accordion.item expanded>
                             <flux:accordion.heading>
                                 <div class="flex justify-between items-center w-full">
@@ -445,7 +479,7 @@ use Carbon\Carbon;
                                     @endforeach
                                 </div>
                             </flux:accordion.content>
-                        </flux:accordion.item >
+                        </flux:accordion.item>
                         <flux:accordion.item>
                             <flux:accordion.heading>
                                 <div class="flex justify-between items-center w-full">
@@ -489,8 +523,7 @@ use Carbon\Carbon;
                 <flux:text size="lg" class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4"> Calendar
                 </flux:text>
                 <div class="flex justify-center items-center h-full">
-                    <flux:calendar size="2xl" wire:model.live="selectedDate" unavailable="{{ $holidaysForCalendar }}"
-                        with-today selectable-header class="w-full max-w-sm" />
+                    <flux:calendar wire:model.live="selectedDate" size="2xl"  selectable-header class="w-full max-w-sm" />
                 </div>
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700/50">
                     <flux:text size="lg" class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Holidays

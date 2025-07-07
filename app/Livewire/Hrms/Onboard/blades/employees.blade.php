@@ -1,250 +1,231 @@
 <div class="w-full p-0 m-0">
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <div class="flex">
-            <flux:modal.trigger name="mdl-employee" class="flex justify-end">
-                <flux:button variant="primary" icon="plus" class="bg-blue-500 me-3 text-white px-4 py-2 rounded-md">
-                    @if($isEditing)
-                        Edit Employee Record
-                    @else
-                        <New></New>
-                    @endif
-                </flux:button>
-            </flux:modal.trigger>
-        </div>
+        {{--    --}}
     </div>
     <flux:separator class="mt-2 mb-2"/>
-    <flux:modal name="mdl-employee" @close="resetForm" position="right" class="max-w-none">
-        <form wire:submit.prevent="saveEmployee">
-            <div class="space-y-6">
+
+    <form wire:submit.prevent="applyFilters">
+        <flux:heading level="3" size="lg">Filter Records</flux:heading>
+        <flux:card size="sm"
+                   class="sm:p-2 !rounded-xl rounded-xl! mb-1 rounded-t-lg p-0 bg-zinc-50 hover:bg-zinc-50 dark:hover:bg-zinc-700">
+
+            <div class="grid md:grid-cols-3 gap-2 items-end">
+                <div class="">
+                    <flux:input type="text" placeholder="Employee Name" wire:model.debounce.500ms="filters.employees"
+                                wire:change="applyFilters"/>
+                </div>
                 <div>
-                    <flux:heading size="lg">
-                        @if($isEditing) Edit Employee @else Add Employee @endif
-                    </flux:heading>
-                    <flux:subheading>
-                        Make changes to the employee's details.
-                    </flux:subheading>
+                    <flux:input type="text" placeholder="Phone" wire:model.debounce.500ms="filters.phone"
+                                wire:change="applyFilters"/>
                 </div>
-
-                <!-- Grid layout for form fields -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <flux:input label="First Name" wire:model="employeeData.fname" placeholder="Employee First Name"/>
-                    <flux:input label="Middle Name" wire:model="employeeData.mname"
-                                placeholder="Employee Middle Name"/>
-                    <flux:input label="Last Name" wire:model="employeeData.lname" placeholder="Employee Last Name"/>
+                <div>
+                    <flux:input type="text" placeholder="Email" wire:model.debounce.500ms="filters.email"
+                                wire:change="applyFilters"/>
                 </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <flux:input type="email" label="Email" wire:model="employeeData.email"
-                                placeholder="Primary Email"/>
-                    <flux:input label="Phone" wire:model="employeeData.phone" placeholder="Primary Contact Number"/>
-                    <div>
-                        <flux:radio.group wire:model="employeeData.gender" label="Gender" variant="segmented">
-                            <flux:radio wire:model="employeeData.gender" value="1" label="Male" name="gender"/>
-                            <flux:radio wire:model="employeeData.gender" value="2" label="Female" name="gender"/>
-                            <flux:radio wire:model="employeeData.gender" value="3" label="Others" name="gender"/>
-                        </flux:radio.group>
-                    </div>
-                </div>
-
-                <!-- Submit Button -->
-                <div class="flex justify-end pt-4">
-                    <flux:button type="submit" variant="primary">
-                        Save Changes
-                    </flux:button>
+                <div class="flex flex-wrap gap-2">
+                    <flux:button variant="filled" class="w-full px-2" tooltip="Cancel Filter" icon="x-circle"
+                                 wire:click="clearFilters()"></flux:button>
+                    <flux:button
+                            variant="{{ $this->viewMode === 'card' ? 'primary' : 'outline' }}"
+                            wire:click="setViewMode('card')"
+                            icon="table-cells"
+                            class="mr-2"
+                    ></flux:button>
+                    <flux:button
+                            variant="{{ $this->viewMode === 'table' ? 'primary' : 'outline' }}"
+                            wire:click="setViewMode('table')"
+                            icon="adjustments-horizontal"
+                    ></flux:button>
                 </div>
             </div>
-        </form>
-    </flux:modal>
 
-            <!-- Filters Start -->
-    <flux:card>
-        <flux:heading>Filters</flux:heading>
-        <div class="flex flex-wrap gap-4">
-            @foreach($filterFields as $field => $cfg)
-                @if(in_array($field, $visibleFilterFields))
-                    <div class="w-1/4">
-                        @switch($cfg['type'])
-                            @case('select')
-                                <flux:select
-                                    variant="listbox"
-                                    searchable
-                                    placeholder="All {{ $cfg['label'] }}"
-                                    wire:model.live="filters.{{ $field }}"
-                                    wire:change="applyFilters"
-                                >
-                                    <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
-                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
-                                    @endforeach
-                                </flux:select>
-                                @break
-
-                            @default
-                                <flux:input
-                                    placeholder="Search {{ $cfg['label'] }}"
-                                    wire:model.live.debounce.500ms="filters.{{ $field }}"
-                                    wire:change="applyFilters"
-                                />
-                        @endswitch
-                    </div>
-                @endif
-            @endforeach
-
-            <flux:button.group>
-                <flux:button variant="outline" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
-                <flux:modal.trigger name="mdl-show-hide-filters">
-                    <flux:button variant="outline" tooltip="Set Filters" icon="bars-3"></flux:button>
-                </flux:modal.trigger>
-                <flux:modal.trigger name="mdl-show-hide-columns">
-                    <flux:button variant="outline" tooltip="Set Columns" icon="table-cells"></flux:button>
-                </flux:modal.trigger>
-            </flux:button.group>
-        </div>
-    </flux:card>
-
-    <!-- Filter Fields Show/Hide Modal -->
-    <flux:modal name="mdl-show-hide-filters" variant="flyout">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">Show/Hide Filters</flux:heading>
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-                <flux:checkbox.group>
-                    @foreach($filterFields as $field => $cfg)
-                        <flux:checkbox 
-                            :checked="in_array($field, $visibleFilterFields)" 
-                            label="{{ $cfg['label'] }}" 
-                            wire:click="toggleFilterColumn('{{ $field }}')" 
-                        />
-                    @endforeach
-                </flux:checkbox.group>
-            </div>
-        </div>
-    </flux:modal>
-
-    <!-- Columns Show/Hide Modal -->
-    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">Show/Hide Columns</flux:heading>
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-                <flux:checkbox.group>
-                    @foreach($fieldConfig as $field => $cfg)
-                        <flux:checkbox 
-                            :checked="in_array($field, $visibleFields)" 
-                            label="{{ $cfg['label'] }}" 
-                            wire:click="toggleColumn('{{ $field }}')" 
-                        />
-                    @endforeach
-                </flux:checkbox.group>
-            </div>
-        </div>
-    </flux:modal>
-
-    <flux:table :paginate="$this->employeeslist" class="w-full">
-        <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700 table-cell-wrap" >
-            <flux:table.column>Sr. No.</flux:table.column>
-            @foreach($fieldConfig as $field => $cfg)
-                @if(in_array($field, $visibleFields))
-                    <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
-                @endif
-            @endforeach
-            <flux:table.column>Status</flux:table.column>
-            <flux:table.column>Actions</flux:table.column>
-        </flux:table.columns>
-
-        <flux:table.rows>
+        </flux:card>
+    </form>
+    {{-- Employee Grid --}}
+    @if($this->viewMode === 'card')
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 mt-6">
             @foreach ($this->employeeslist as $employee)
-                <flux:table.row :key="$employee->id" class="border-b">
-                    <flux:table.cell class="table-cell-wrap">{{ ($this->employeeslist->currentPage() - 1) * $this->employeeslist->perPage() + $loop->iteration }}</flux:table.cell>
-                    @foreach($fieldConfig as $field => $cfg)
-                        @if(in_array($field, $visibleFields))
-                            <flux:table.cell class="table-cell-wrap">
-                                @switch($cfg['type'])
-                                    @case('select')
-                                        {{ $listsForFields[$cfg['listKey']][$employee->$field] ?? $employee->$field }}
-                                        @break
-                                    @default
-                                        {{ $employee->$field }}
-                                @endswitch
-                            </flux:table.cell>
-                        @endif
-                    @endforeach
-                    <flux:table.cell class="table-cell-wrap">
-                        <flux:switch wire:model="employeeStatuses.{{ $employee->id }}"
-                                     wire:click="toggleStatus({{ $employee->id }})" :checked="!$employee->is_inactive"/>
-                    </flux:table.cell>
-                    <flux:table.cell>
-                        <div class="flex space-x-2">
-                            <flux:dropdown>
-                                <flux:button icon="ellipsis-vertical" size="sm"></flux:button>
+                <div class="bg-white dark:bg-zinc-800 rounded-xl shadow p-3 flex flex-col gap-3 hover:shadow-lg transition-all border border-zinc-100 dark:border-zinc-700">
+                    <div class="flex items-center gap-4">
+                        <div>
+                            @if($this->getEmployeeImageUrl($employee))
+                                <img src="{{ $this->getEmployeeImageUrl($employee) }}" alt="Avatar"
+                                     class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                            @elseif(in_array($employee->gender, ['male', 1, '1']))
+                                <img src="{{ asset('images/male-img.png') }}" alt="Avatar"
+                                     class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                            @elseif(in_array($employee->gender, ['female', 2, '2']))
+                                <img src="{{ asset('images/female-img.png') }}" alt="Avatar"
+                                     class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                            @else
+                                <img src="{{ asset('images/human-img.png') }}" alt="Avatar"
+                                     class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                            @endif
+                        </div>
 
-                                <flux:menu>
-                                    <flux:modal.trigger wire:click="showmodal_jobprofile({{ $employee->id }})">
-                                        <flux:menu.item icon="newspaper" class="mt-0.5">Job Profiles</flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_addprofile({{ $employee->id }})">
-                                        <flux:menu.item icon="user-circle" class="mt-0.5">Personal Details
-                                        </flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger
-                                            wire:click="showmodal_employeebankaccounts({{ $employee->id }})">
-                                        <flux:menu.item icon="building-library" class="mt-0.5">Bank Accounts
-                                        </flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_addresses({{ $employee->id }})">
-                                        <flux:menu.item icon="map-pin" class="">Addresses</flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_contacts({{ $employee->id }})">
-                                        <flux:menu.item icon="phone-arrow-up-right" class="mt-0.5">Contacts
-                                        </flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_adddoc({{ $employee->id }})">
-                                        <flux:menu.item icon="document-text" class="mt-0.5">Documents</flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_addrelatons({{ $employee->id }})">
-                                        <flux:menu.item icon="user-group" class="mt-0.5">Relations</flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_attendance_policy({{ $employee->id }})">
-                                        <flux:menu.item icon="clock" class="mt-0.5">Attendance Policy</flux:menu.item>
-                                    </flux:modal.trigger>
-                                    <flux:modal.trigger wire:click="showmodal_work_shift({{ $employee->id }})">
-                                        <flux:menu.item icon="calendar" class="mt-0.5">Work Shift</flux:menu.item>
-                                    </flux:modal.trigger>
-                                </flux:menu>
-                            </flux:dropdown>
+                        <div class="flex flex-col">
+                            <span class="font-semibold text-lg">{{ $employee->fname }} {{ $employee->mname }} {{ $employee->lname }}</span>
+                            <span class="text-xs text-gray-500">
+                                {{ $this->getEmployeeDepartment($employee) }}
+                                @if($this->getEmployeeDepartment($employee) !== '-' && $this->getEmployeeDesignation($employee) !== '-')
+                                &bull;
+                                @endif
+                                {{ $this->getEmployeeDesignation($employee) }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-1 mt-2">
+                        <span class="text-sm text-gray-700 dark:text-gray-200"><b>Phone:</b> {{ $employee->phone }}</span>
+                        <span class="text-sm text-gray-700 dark:text-gray-200"><b>Email:</b> {{ $employee->email }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+                            <div class="bg-green-500 h-2.5 rounded-full"
+                                 style="width: {{ number_format($this->getProfileCompletionPercentage($employee->id), 0) }}%"></div>
+                        </div>
+                        <span class="text-xs font-medium">{{ number_format($this->getProfileCompletionPercentage($employee->id), 0) }}%</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-2">
+                        <div class="flex items-center gap-2">
+                            <flux:switch wire:model="employeeStatuses.{{ $employee->id }}"
+                                         wire:click="toggleStatus({{ $employee->id }})"
+                                         :checked="!$employee->is_inactive"/>
+                            <span class="text-xs">{{ $employee->is_inactive ? 'Inactive' : 'Active' }}</span>
+                        </div>
+                        <div class="flex gap-2">
                             <flux:button variant="primary" size="sm" icon="pencil"
-                                         wire:click="fetchEmployee({{ $employee->id }})"></flux:button>
+                                         wire:click="showemployeeModal({{ $employee->id }})"></flux:button>
                             <flux:modal.trigger name="delete-employee-{{ $employee->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"></flux:button>
                             </flux:modal.trigger>
                         </div>
-                        <flux:modal name="delete-employee-{{ $employee->id }}" class="min-w-[22rem]">
-                            <div class="space-y-6">
+                    </div>
+                    <flux:modal name="delete-employee-{{ $employee->id }}" class="min-w-[22rem]">
+                        <div class="space-y-6">
+                            <div>
+                                <flux:heading size="lg">Delete employee?</flux:heading>
+                                <flux:text class="mt-2">
+                                    <p>You're about to delete this employee.</p>
+                                    <p>This action cannot be reversed.</p>
+                                </flux:text>
+                            </div>
+                            <div class="flex gap-2">
+                                <flux:spacer/>
+                                <flux:modal.close>
+                                    <flux:button variant="ghost">Cancel</flux:button>
+                                </flux:modal.close>
+                                <flux:button type="submit" variant="danger" icon="trash"
+                                             wire:click="deleteEmployee({{ $employee->id }})"></flux:button>
+                            </div>
+                        </div>
+                    </flux:modal>
+                </div>
+            @endforeach
+        </div>
+    @else
+        {{-- Table view --}}
+        <flux:table :paginate="$this->employeeslist" class="w-full">
+            <flux:table.columns class="bg-zinc-200 dark:bg-zinc-800 border-b dark:border-zinc-700">
+                <flux:table.column>Name</flux:table.column>
+                <flux:table.column>Phone</flux:table.column>
+                <flux:table.column>Email</flux:table.column>
+                <flux:table.column>Status</flux:table.column>
+                <flux:table.column>Actions</flux:table.column>
+            </flux:table.columns>
+
+            <flux:table.rows>
+                @foreach ($this->employeeslist as $employee)
+                    <flux:table.row :key="$employee->id" class="border-b">
+                        <flux:table.cell>
+                            <div class="flex gap-2">
                                 <div>
-                                    <flux:heading size="lg">Delete employee?</flux:heading>
-                                    <flux:text class="mt-2">
-                                        <p>You're about to delete this employee.</p>
-                                        <p>This action cannot be reversed.</p>
+                                    @if($this->getEmployeeImageUrl($employee))
+                                        <img src="{{ $this->getEmployeeImageUrl($employee) }}" alt="Avatar"
+                                             class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                                    @elseif(in_array($employee->gender, ['male', 1, '1']))
+                                        <img src="{{ asset('images/male-img.png') }}" alt="Avatar"
+                                             class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                                    @elseif(in_array($employee->gender, ['female', 2, '2']))
+                                        <img src="{{ asset('images/female-img.png') }}" alt="Avatar"
+                                             class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                                    @else
+                                        <img src="{{ asset('images/human-img.png') }}" alt="Avatar"
+                                             class="w-14 h-14 rounded-full object-cover border border-gray-300 shadow-sm"/>
+                                    @endif
+                                </div>
+                                <div>
+                                    <flux:text class="font-bold">
+                                        {{ $employee->fname }} {{ $employee->mname }} {{ $employee->lname }}
+                                    </flux:text>
+                                    <flux:text>
+                                        {{ $this->getEmployeeDepartment($employee) }} <br>
+                                        {{ $this->getEmployeeDesignation($employee) }}
                                     </flux:text>
                                 </div>
-                                <div class="flex gap-2">
-                                    <flux:spacer/>
-                                    <flux:modal.close>
-                                        <flux:button variant="ghost">Cancel</flux:button>
-                                    </flux:modal.close>
-                                    <flux:button type="submit" variant="danger" icon="trash"
-                                                 wire:click="deleteEmployee({{ $employee->id }})"></flux:button>
-                                </div>
                             </div>
-                        </flux:modal>
-                    </flux:table.cell>
-                </flux:table.row>
-            @endforeach
-        </flux:table.rows>
-    </flux:table>
+                        </flux:table.cell>
+                        <flux:table.cell>
+                            {{ $employee->phone }}
+                        </flux:table.cell>
+                        <flux:table.cell class="table-cell-wrap">
+                            {{ $employee->email }}
+                        </flux:table.cell>
+                        <flux:table.cell>
+                            <div class="flex items-center gap-2">
+                                <flux:switch wire:model="employeeStatuses.{{ $employee->id }}"
+                                             wire:click="toggleStatus({{ $employee->id }})"
+                                             :checked="!$employee->is_inactive"/>
+                                <span class="text-xs px-2 py-1 rounded {{ $employee->is_inactive ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700' }}">
+                                    {{ $employee->is_inactive ? 'Inactive' : 'Active' }}
+                                </span>
+                            </div>
+                        </flux:table.cell>
+                        <flux:table.cell>
+                            <div class="flex space-x-2">
+                                <flux:button variant="primary" size="sm" icon="pencil"
+                                             wire:click="showemployeeModal({{ $employee->id }})"></flux:button>
+                                <flux:modal.trigger name="delete-employee-{{ $employee->id }}">
+                                    <flux:button variant="danger" size="sm" icon="trash"></flux:button>
+                                </flux:modal.trigger>
+                            </div>
+                            <flux:modal name="delete-employee-{{ $employee->id }}" class="min-w-[22rem]">
+                                <div class="space-y-6">
+                                    <div>
+                                        <flux:heading size="lg">Delete employee?</flux:heading>
+                                        <flux:text class="mt-2">
+                                            <p>You're about to delete this employee.</p>
+                                            <p>This action cannot be reversed.</p>
+                                        </flux:text>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <flux:spacer/>
+                                        <flux:modal.close>
+                                            <flux:button variant="ghost">Cancel</flux:button>
+                                        </flux:modal.close>
+                                        <flux:button type="submit" variant="danger" icon="trash"
+                                                     wire:click="deleteEmployee({{ $employee->id }})"></flux:button>
+                                    </div>
+                                </div>
+                            </flux:modal>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforeach
+            </flux:table.rows>
+        </flux:table>
+    @endif
+    {{-- Pagination --}}
+    <div class="mt-6 flex justify-center">
+        {{ $this->employeeslist->links() }}
+    </div>
+
+    <flux:modal name="edit-employee" title="Edit Employee Details" class="p-10 max-w-none">
+        @if ($selectedEmpId)
+            <livewire:hrms.onboard.onboard-employees :employeeId="$selectedEmpId"
+                                                     :wire:key="'onboard-employees-'.$selectedEmpId"/>
+        @endif
+    </flux:modal>
+
     <flux:modal name="add-addresses" title="Add Address" class="p-10 max-w-none">
         @if ($selectedEmpId)
             <livewire:hrms.employees-meta.employee-addresses :employeeId="$selectedEmpId"

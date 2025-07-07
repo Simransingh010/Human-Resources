@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
+
 /**
  * Class SalaryTemplatesComponent
  * 
@@ -19,6 +20,8 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property int $salary_component_id
  * @property int|null $salary_component_group_id
  * @property int $sequence
+ * @property Carbon|null $effective_from
+ * @property Carbon|null $effective_to
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
@@ -40,7 +43,9 @@ class SalaryTemplatesComponent extends Model
 		'salary_template_id' => 'int',
 		'salary_component_id' => 'int',
 		'salary_component_group_id' => 'int',
-		'sequence' => 'int'
+		'sequence' => 'int',
+		'effective_from' => 'date',
+		'effective_to' => 'date'
 	];
 
 	protected $fillable = [
@@ -48,7 +53,9 @@ class SalaryTemplatesComponent extends Model
 		'salary_template_id',
 		'salary_component_id',
 		'salary_component_group_id',
-		'sequence'
+		'sequence',
+		'effective_from',
+		'effective_to'
 	];
 
 	public function firm()

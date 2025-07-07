@@ -152,6 +152,21 @@
                                         @endif
                                         @break
 
+                                    @case('date')
+                                        @if($field === 'effective_from' || $field === 'effective_to')
+                                            <flux:date-picker
+                                                label="{{ $cfg['label'] }}"
+                                                wire:model.live="formData.{{ $field }}"
+                                                selectable-header
+                                            />
+                                        @else
+                                            <flux:date-picker selectable-header
+                                                label="{{ $cfg['label'] }}"
+                                                wire:model.live="formData.{{ $field }}"
+                                            />
+                                        @endif
+                                        @break
+
                                     @default
                                         <flux:input
                                             type="{{ $cfg['type'] }}"

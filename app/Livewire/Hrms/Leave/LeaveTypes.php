@@ -23,6 +23,7 @@ class LeaveTypes extends Component
         'leave_title' => ['label' => 'Leave Title', 'type' => 'text'],
         'leave_code' => ['label' => 'Leave Code', 'type' => 'text'],
         'leave_nature' => ['label' => 'Leave Nature', 'type' => 'select', 'listKey' => 'leave_nature'],
+        'leave_type_main' => ['label' => 'Leave Type Main', 'type' => 'select', 'listKey' => 'leave_type_main'],
         'max_days' => ['label' => 'Maximum Days', 'type' => 'number'],
         'carry_forward' => ['label' => 'Carry Forward', 'type' => 'switch'],
         'encashable' => ['label' => 'Encashable', 'type' => 'switch'],
@@ -34,6 +35,7 @@ class LeaveTypes extends Component
         'leave_title' => ['label' => 'Leave Title', 'type' => 'text'],
         'leave_code' => ['label' => 'Leave Code', 'type' => 'text'],
         'leave_nature' => ['label' => 'Leave Nature', 'type' => 'select', 'listKey' => 'leave_nature'],
+        'leave_type_main' => ['label' => 'Leave Type Main', 'type' => 'select', 'listKey' => 'leave_type_main'],
         'max_days' => ['label' => 'Maximum Days', 'type' => 'number'],
     ];
 
@@ -49,6 +51,7 @@ class LeaveTypes extends Component
         'leave_desc' => '',
         'leave_code' => '',
         'leave_nature' => '',
+        'leave_type_main' => '',
         'max_days' => null,
         'carry_forward' => false,
         'encashable' => false,
@@ -57,27 +60,21 @@ class LeaveTypes extends Component
     public function mount()
     {
         $this->resetPage();
-        $this->initListsForFields();
+        $this->listsForFields['leave_nature'] = \App\Models\Hrms\LeaveType::LEAVE_NATURE_OPTIONS;
+        $this->listsForFields['leave_type_main'] = \App\Models\Hrms\LeaveType::LEAVE_TYPE_MAIN_OPTIONS;
         
         // Set default visible fields
-        $this->visibleFields = ['leave_title', 'leave_code', 'leave_nature', 'max_days'];
-        $this->visibleFilterFields = ['leave_title', 'leave_code', 'leave_nature'];
+        $this->visibleFields = ['leave_title', 'leave_code', 'leave_nature', 'leave_type_main', 'max_days'];
+        $this->visibleFilterFields = ['leave_title', 'leave_code', 'leave_nature', 'leave_type_main'];
         
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
     }
 
-    protected function initListsForFields(): void
-    {
-        $this->listsForFields['leave_nature'] = [
-            'paid' => 'Paid',
-            'unpaid' => 'Unpaid'
-        ];
-    }
-
     public function applyFilters()
     {
         $this->resetPage();
+
     }
 
     public function clearFilters()
@@ -125,6 +122,8 @@ class LeaveTypes extends Component
                 $query->where('leave_code', 'like', "%{$value}%"))
             ->when($this->filters['leave_nature'], fn($query, $value) => 
                 $query->where('leave_nature', $value))
+            ->when($this->filters['leave_type_main'], fn($query, $value) => 
+                $query->where('leave_type_main', $value))
             ->when($this->filters['max_days'], fn($query, $value) => 
                 $query->where('max_days', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
@@ -140,6 +139,7 @@ class LeaveTypes extends Component
             'formData.leave_desc' => 'nullable|string',
             'formData.leave_code' => 'nullable|string',
             'formData.leave_nature' => 'nullable|string',
+            'formData.leave_type_main' => 'nullable|string',
             'formData.max_days' => 'nullable|integer',
             'formData.carry_forward' => 'boolean',
             'formData.encashable' => 'boolean',

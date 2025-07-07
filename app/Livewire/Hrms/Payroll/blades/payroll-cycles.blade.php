@@ -328,6 +328,10 @@
                                 <flux:modal.trigger name="mdl-logs" class="flex justify-end">
                                     <flux:button class="cursor-btn mt-2" size="xs">Logs</flux:button>
                                 </flux:modal.trigger>
+                                <flux:modal.trigger name="mdl-publish-payroll" class="flex justify-end">
+                                    <flux:button >Publish Payroll
+                                    </flux:button>
+                                </flux:modal.trigger>
                             </x-slot>
                         </flux:callout>
                     </div>
@@ -400,7 +404,7 @@
                                                          wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
                                             </flux:button>
                                         </flux:tooltip>
-                                        <flux:tooltip content="Fetch Attendance">
+                                        <flux:tooltip content="Lop Adjustment">
                                             <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
                                                          wire:click="lopAdjustmentStep({{ $payrollSlotDetails->id }})">
                                                 Adjustment
@@ -645,6 +649,23 @@
                     :payroll-slot-id="$selectedSlotId"
                     :wire:key="'employee-tax-components-'.$selectedSlotId"/>
         @endif
+    </flux:modal>
+    <flux:modal name="mdl-publish-payroll" @cancel="resetForm">
+        <form wire:submit.prevent="publishPayroll({{$payrollSlotDetails?->id}})">
+            <div class="mb-4 w-full mt-3">
+                <flux:label class="text-sm font-medium text-gray-700" >
+                    Are you sure you want to publish this payroll? This will allocate week-off leaves and cannot be undone.
+                </flux:label>
+                <flux:textarea name="remarks" placeholder="Remarks" rows="2"
+                               class="mt-2"/>
+                <div class="flex justify-end">
+                    <flux:button
+                    wire:click="publishPayroll({{$payrollSlotDetails?->id}})">
+                        Publish Payroll
+                    </flux:button>
+                </div>
+            </div>
+        </form>
     </flux:modal>
     <flux:modal name="mdl-lock-payroll" @cancel="resetForm">
         <form wire:submit.prevent="lockPayroll({{$payrollSlotDetails?->id}})">

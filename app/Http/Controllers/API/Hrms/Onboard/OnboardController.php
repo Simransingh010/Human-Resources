@@ -1243,6 +1243,28 @@ class OnboardController extends Controller
                 ], 404);
             }
 
+            // Fetch employee personal details
+            $personalDetail = EmployeePersonalDetail::where('employee_id', $employee->id)->first();
+
+            if (!$personalDetail) {
+                // If no personal details, map from User model
+                $employeeData = [
+                    'fname' => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone
+                ];
+                return response()->json([
+                    'message_type' => 'success',
+                    'message_display' => 'none',
+                    'message' => 'Employee details fetched successfully',
+                    'data' => [
+                        'employee' => $employeeData,
+                        'personal_details' => null
+                    ],
+                    'profile_completion' => $this->calculateProfileCompletion($employee->id)
+                ], 200);
+            }
+
             // Format employee basic details
             $employeeData = [
                 'id' => $employee->id,
@@ -1256,17 +1278,6 @@ class OnboardController extends Controller
             ];
 
             // Fetch employee personal details
-            $personalDetail = EmployeePersonalDetail::where('employee_id', $employee->id)->first();
-
-            if (!$personalDetail) {
-                return response()->json([
-                    'message_type' => 'error',
-                    'message_display' => 'flash',
-                    'message' => 'Personal details not found for this employee'
-                ], 404);
-            }
-
-            // Format personal details
             $personalData = [
                 'id' => $personalDetail->id,
                 'dob' => $personalDetail->dob ? $personalDetail->dob->toDateString() : null,

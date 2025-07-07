@@ -240,7 +240,7 @@ class AttendanceController extends Controller
             ]);
 
             if ($request->hasFile('selfie')) {
-//                dd('hi');
+
                 $punch->addMediaFromRequest('selfie')->toMediaCollection('selfie');
 //                $selfiePath = $request->file('selfie')->store('selfies', 'public');
             }
@@ -732,6 +732,228 @@ class AttendanceController extends Controller
                 'message_display' => 'flash',
                 'message' => 'Failed to apply week off',
                 'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Fetch all attendance statuses for the authenticated user's firm
+     * This API is optimized for scalability with caching and efficient queries
+     */
+    public function getAttendanceStatuses(Request $request)
+    {
+        try {
+            // Check for authenticated user
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated: No user found in request. Please provide a valid Bearer token.',
+                    'error_code' => 'NO_USER',
+                ], 401);
+            }
+
+            // Check for employee relationship
+            if (!method_exists($user, 'employee')) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'User model does not have an employee relationship. Please check your user setup.',
+                    'error_code' => 'NO_EMPLOYEE_RELATION',
+                ], 500);
+            }
+
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Authenticated user does not have an employee record. Please onboard the user as an employee.',
+                    'error_code' => 'NO_EMPLOYEE',
+                ], 404);
+            }
+
+            if (!isset($employee->firm_id)) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee record does not have a firm_id. Please check employee data integrity.',
+                    'error_code' => 'NO_FIRM_ID',
+                ], 422);
+            }
+
+            $firmId = $employee->firm_id;
+
+            // Use caching for better performance - cache for 1 hour
+            $cacheKey = "attendance_statuses_firm_{$firmId}";
+            
+            $attendanceStatuses = \Cache::remember($cacheKey, 3600, function () use ($firmId) {
+                return \App\Models\Hrms\EmpAttendanceStatuses::select([
+                    'id',
+                    'attendance_status_code',
+                    'attendance_status_label',
+                    'attendance_status_desc',
+                    'paid_percent',
+                    'attendance_status_main',
+                    'attribute_json',
+                    'is_inactive',
+                    'work_shift_id'
+                ])
+                ->where('firm_id', $firmId)
+                ->where('is_inactive', false) // Only active statuses
+                ->orderBy('attendance_status_label', 'asc')
+                ->get()
+                ->map(function ($status) {
+                    // Add computed attributes
+                    $status->attendance_status_main_label = $status->attendance_status_main_label;
+                    
+                    // Only include necessary fields in response
+                    return [
+                        'id' => $status->id,
+                        'attendance_status_code' => $status->attendance_status_code,
+                        'attendance_status_label' => $status->attendance_status_label,
+                        'attendance_status_desc' => $status->attendance_status_desc,
+                        'paid_percent' => $status->paid_percent,
+                        'attendance_status_main' => $status->attendance_status_main,
+                        'attendance_status_main_label' => $status->attendance_status_main_label,
+                        'attribute_json' => $status->attribute_json,
+                        'work_shift_id' => $status->work_shift_id,
+                    ];
+                });
+            });
+
+            if ($attendanceStatuses->count() === 0) {
+                return response()->json([
+                    'message_type' => 'warning',
+                    'message_display' => 'flash',
+                    'message' => 'No attendance statuses found for this firm. Please configure attendance statuses.',
+                    'error_code' => 'NO_ATTENDANCE_STATUSES',
+                    'data' => [
+                        'firm_id' => $firmId
+                    ]
+                ], 200);
+            }
+
+            // Add metadata for better API response
+            $response = [
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Attendance statuses fetched successfully',
+                'data' => [
+                    'attendance_statuses' => $attendanceStatuses,
+                    'total_count' => $attendanceStatuses->count(),
+                    'firm_id' => $firmId,
+                    'cached_at' => now()->toISOString(),
+                ]
+            ];
+
+            // Set cache headers for better performance
+            return response()->json($response, 200)
+                ->header('Cache-Control', 'public, max-age=3600')
+                ->header('ETag', md5(json_encode($response)));
+
+        } catch (\Exception $e) {
+            \Log::error('Error fetching attendance statuses: ' . $e->getMessage(), [
+                'user_id' => isset($user) ? ($user->id ?? null) : null,
+                'firm_id' => isset($firmId) ? $firmId : null,
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Failed to fetch attendance statuses. Internal server error.',
+                'error_code' => 'INTERNAL_ERROR',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark attendance status for a specific date (manual marking)
+     * Sets both attendance_status_main and emp_attendance_status_id
+     * POST /api/attendance/mark-status
+     * Required: date (Y-m-d), attendance_status_main, emp_attendance_status_id
+     * Optional: remarks
+     */
+    public function markAttendanceStatus(Request $request)
+    {
+        try {
+            // Validate input
+            $validator = \Validator::make($request->all(), [
+                'date' => 'required|date',
+                'attendance_status_main' => 'required|string',
+                'emp_attendance_status_id' => 'required|integer|exists:emp_attendance_statuses,id',
+                'remarks' => 'nullable|string|max:255',
+            ]);
+            if ($validator->fails()) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors(),
+                    'error_code' => 'VALIDATION_ERROR',
+                ], 422);
+            }
+
+            // Authenticated user and employee
+            $user = $request->user();
+            if (!$user) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated: No user found in request. Please provide a valid Bearer token.',
+                    'error_code' => 'NO_USER',
+                ], 401);
+            }
+            $employee = $user->employee;
+            if (!$employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Authenticated user does not have an employee record. Please onboard the user as an employee.',
+                    'error_code' => 'NO_EMPLOYEE',
+                ], 404);
+            }
+            $firmId = $employee->firm_id;
+            $employeeId = $employee->id;
+            $workDate = $request->date;
+
+            // Find or create EmpAttendance for this date
+            $attendance = \App\Models\Hrms\EmpAttendance::updateOrCreate(
+                [
+                    'firm_id' => $firmId,
+                    'employee_id' => $employeeId,
+                    'work_date' => $workDate,
+                ],
+                [
+                    'attendance_status_main' => $request->attendance_status_main,
+                    'emp_attendance_status_id' => $request->emp_attendance_status_id,
+                    'attend_remarks' => $request->remarks,
+                ]
+            );
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'flash',
+                'message' => 'Attendance status marked successfully',
+                'data' => [
+                    'attendance' => $attendance
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            \Log::error('Error marking attendance status: ' . $e->getMessage(), [
+                'user_id' => isset($user) ? ($user->id ?? null) : null,
+                'firm_id' => isset($firmId) ? $firmId : null,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Failed to mark attendance status. Internal server error.',
+                'error_code' => 'INTERNAL_ERROR',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
     }

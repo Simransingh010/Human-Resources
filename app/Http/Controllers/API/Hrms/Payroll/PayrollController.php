@@ -108,11 +108,11 @@ class PayrollController extends Controller
                     $holidayCalendar = HolidayCalendar::find($workShiftAlgo->holiday_calendar_id);
                 }
             }
-            
+   //$ php artisan make:migration add_role_mains_to_users_table --table=users
             // If no holiday calendar was found via work shift, use default
             if (!$holidayCalendar) {
                 $holidayCalendar = HolidayCalendar::where('firm_id', $employee->firm_id)
-                    ->where('is_inactive', false)
+//                    ->where('is_inactive', false)
                     ->where('title', 'like', '%default%')
                     ->first();
                 
@@ -141,7 +141,7 @@ class PayrollController extends Controller
             
             // Get holidays from the calendar
             $holidays = Holiday::where('holiday_calendar_id', $holidayCalendar->id)
-                ->where('is_inactive', false)
+//                ->where('is_inactive', false)
                 ->where(function($query) use ($startDate, $endDate) {
                     $query->whereBetween('start_date', [$startDate, $endDate])
                           ->orWhereBetween('end_date', [$startDate, $endDate])

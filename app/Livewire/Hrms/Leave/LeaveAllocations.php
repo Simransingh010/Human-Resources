@@ -53,7 +53,7 @@ class LeaveAllocations extends Component
     // New properties for employment type filtering
     public $employmentTypes = [];
     public $selectedEmploymentType = null;
-    public $allDepartmentsWithEmployees = []; // Store the original unfiltered data
+    public $allDepartmentsWithEmployees = [];
 
     // New properties for allocation
     public $allocationType = '';
@@ -470,6 +470,14 @@ class LeaveAllocations extends Component
         try {
             $firmId = session('firm_id');
 
+            // Use only unique key columns for existence check
+            $uniqueKeyData = [
+                'firm_id' => $firmId,
+                'employee_id' => $employeeId,
+                'leave_type_id' => $leaveTypeId,
+                'period_start' => $periodStart,
+            ]; // Unique key columns only
+
             $balanceData = [
                 'firm_id' => $firmId,
                 'employee_id' => $employeeId,
@@ -480,7 +488,7 @@ class LeaveAllocations extends Component
 
             // Lock existing row including trashed
             $existingBalance = EmpLeaveBalance::withTrashed()
-                ->where($balanceData)
+                ->where($uniqueKeyData)
                 ->lockForUpdate()
                 ->first();
 
@@ -503,6 +511,7 @@ class LeaveAllocations extends Component
                     'carry_forwarded_days' => 0,
                     'lapsed_days' => 0,
                     'balance' => $newBalance,
+                    'period_end' => $periodEnd, // Update period_end if needed
                     'updated_at' => now()
                 ]);
 
@@ -559,95 +568,6 @@ class LeaveAllocations extends Component
             );
         }
     }
-
-    // protected function createLeaveBalance($batch, $employeeId, $leaveTypeId, $days, $periodStart, $periodEnd)
-    // {
-    //     try {
-    //         $balanceData = [
-    //             'firm_id' => session('firm_id'),
-    //             'employee_id' => $employeeId,
-    //             'leave_type_id' => $leaveTypeId,
-    //             'period_start' => $periodStart,
-    //             'period_end' => $periodEnd
-    //         ];
-
-    //         $existingBalance = EmpLeaveBalance::withTrashed()
-    //             ->where($balanceData)
-    //             ->first();
-
-    //         if ($existingBalance) {
-    //             if ($existingBalance->trashed()) {
-    //                 $existingBalance->restore();
-    //             }
-
-    //             $oldData = [
-    //                 'allocated_days' => $existingBalance->allocated_days,
-    //                 'balance' => $existingBalance->balance
-    //             ];
-
-    //             $newAllocatedDays = $existingBalance->allocated_days + $days;
-    //             $newBalance = $existingBalance->balance + $days;
-
-    //             $existingBalance->update([
-    //                 'allocated_days' => $newAllocatedDays,
-    //                 'consumed_days' => 0,
-    //                 'carry_forwarded_days' => 0,
-    //                 'lapsed_days' => 0,
-    //                 'balance' => $newBalance,
-    //                 'updated_at' => now()
-    //             ]);
-
-    //             BatchItem::create([
-    //                 'batch_id' => $batch->id,
-    //                 'operation' => 'update',
-    //                 'model_type' => EmpLeaveBalance::class,
-    //                 'model_id' => $existingBalance->id,
-    //                 'old_data' => json_encode($oldData),
-    //                 'new_data' => json_encode([
-    //                     'allocated_days' => $newAllocatedDays,
-    //                     'balance' => $newBalance
-    //                 ])
-    //             ]);
-
-    //             $balance = $existingBalance;
-
-    //             Flux::toast(
-    //                 variant: 'info',
-    //                 heading: 'Balance Updated',
-    //                 text: "Added {$days} days to existing leave balance for employee ID {$employeeId}. New balance: {$newBalance} days.",
-    //             );
-
-    //             $this->createLeaveTransaction($batch, $balance, $days);
-    //             return;
-    //         }
-
-    //         // If no record exists, create new
-    //         $balance = EmpLeaveBalance::create(array_merge($balanceData, [
-    //             'allocated_days' => $days,
-    //             'consumed_days' => 0,
-    //             'carry_forwarded_days' => 0,
-    //             'lapsed_days' => 0,
-    //             'balance' => $days,
-    //             'created_at' => now(),
-    //             'updated_at' => now()
-    //         ]));
-
-    //         BatchItem::create([
-    //             'batch_id' => $batch->id,
-    //             'operation' => 'insert',
-    //             'model_type' => EmpLeaveBalance::class,
-    //             'model_id' => $balance->id,
-    //             'new_data' => json_encode($balance->toArray())
-    //         ]);
-
-    //         $this->createLeaveTransaction($batch, $balance, $days);
-
-    //     } catch (\Exception $e) {
-    //         throw new \Exception(
-    //             "Error processing leave balance for employee ID {$employeeId}: " . $e->getMessage()
-    //         );
-    //     }
-    // }
 
     /**
      * Create a leave transaction record

@@ -41,4 +41,9 @@ class FlexiWeekOff extends Model
         'CF'   => 'Carry Forward',
 
     ];
+
+    public function availedAttendance()
+    {
+        return $this->belongsTo(EmpAttendance::class, 'availed_emp_attendance_id');
+    }
 } 

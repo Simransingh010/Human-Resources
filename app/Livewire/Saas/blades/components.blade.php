@@ -1,4 +1,5 @@
-<div>
+
+<div><div>
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
@@ -275,4 +276,5 @@
         </flux:table.rows>
     </flux:table>
     <!-- Table End-->
-</div> 
+</div>
+</div>

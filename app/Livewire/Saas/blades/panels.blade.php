@@ -1,3 +1,6 @@
+
+<div>
+
 <div class="w-full p-0 m-0">
     <!-- Heading Start -->
     <div class="flex justify-between">
@@ -94,14 +97,14 @@
                     <!-- In your actions cell -->
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:button wire:click="showComponentSync({{ $rec->id }})" color="zinc" size="xs">Components
+                            <flux:button wire:click="showComponentSync({{ $rec->id }})" color="zinc" size="xs">Setup
                             </flux:button>
-                            <flux:button wire:click="showAppSync({{ $rec->id }})" color="zinc" size="xs">App
-                            </flux:button>
+{{--                            <flux:button wire:click="showAppSync({{ $rec->id }})" color="zinc" size="xs">App--}}
+{{--                            </flux:button>--}}
 
-                            <flux:button wire:click="showModuleSync({{ $rec->id }})" color="zinc" size="xs">Module
-                            </flux:button>
-                            <flux:button wire:click="showPanelStructure({{ $rec->id }})" color="blue" size="xs">Structure</flux:button>
+{{--                            <flux:button wire:click="showModuleSync({{ $rec->id }})" color="zinc" size="xs">Module--}}
+{{--                            </flux:button>--}}
+                            <flux:button wire:click="showPanelStructure({{ $rec->id }})" color="blue" size="xs">View</flux:button>
 
                             <flux:button
                                     variant="primary"
@@ -134,67 +137,11 @@
     </flux:modal>
 
 {{--    <flux:modal name="component-sync" variant="flyout" title="Manage Components" class="p-10" class="min-h-[60vh] max-h-[90vh] overflow-y-auto">--}}
-    <flux:modal name="component-sync"  variant="flyout" class="max-w-5xl min-h-[70vh] max-h-[85vh] overflow-y-auto">
+    <flux:modal name="component-sync"   class="max-w-5xl min-h-[70vh] max-h-[85vh] overflow-y-auto">
         @if($selectedPanelId)
             <livewire:saas.panel-meta.component-sync :panelId="$selectedPanelId"
                                                   :wire:key="'component-sync-'.$selectedPanelId"/>
-            <div class="bg-white rounded-lg shadow p-6 max-w-4xl mx-auto my-8">
-                <h2 class="text-2xl font-bold mb-4 flex items-center">
-                    <svg class="w-6 h-6 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-                    Panel Structure
-                </h2>
-                <div>
-                    @foreach($this->panelTreeHierarchy as $app)
-                        <div class="mb-2">
-                            <div class="flex items-center cursor-pointer" wire:click="$toggle('appOpen.{{ $app['id'] }}')">
-                                <svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 01.993.883L11 3v2h2a1 1 0 01.117 1.993L13 7h-2v2a1 1 0 01-1.993.117L9 9V7H7a1 1 0 01-.117-1.993L7 5h2V3a1 1 0 01.883-.993L10 2z" /></svg>
-                                <span class="font-semibold text-blue-700">{{ $app['name'] }}</span>
-                                <span class="ml-2 px-2 py-0.5 rounded bg-blue-100 text-blue-600 text-xs">App</span>
-                                <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                            </div>
-                            @if(isset($appOpen[$app['id']]) && $appOpen[$app['id']])
-                            <div class="ml-6 border-l-2 border-blue-100 pl-4 mt-1">
-                                @foreach($app['modules'] as $module)
-                                    <div class="mb-1">
-                                        <div class="flex items-center cursor-pointer" wire:click="$toggle('moduleOpen.{{ $module['id'] }}')">
-                                            <svg class="w-4 h-4 mr-2 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 01.993.883L11 3v2h2a1 1 0 01.117 1.993L13 7h-2v2a1 1 0 01-1.993.117L9 9V7H7a1 1 0 01-.117-1.993L7 5h2V3a1 1 0 01.883-.993L10 2z" /></svg>
-                                            <span class="font-semibold text-green-700">{{ $module['name'] }}</span>
-                                            <span class="ml-2 px-2 py-0.5 rounded bg-green-100 text-green-600 text-xs">Module</span>
-                                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                                        </div>
-                                        @if(isset($moduleOpen[$module['id']]) && $moduleOpen[$module['id']])
-                                        <div class="ml-6 border-l-2 border-green-100 pl-4 mt-1">
-                                            @foreach($module['components'] as $component)
-                                                <div class="mb-1">
-                                                    <div class="flex items-center cursor-pointer" wire:click="$toggle('componentOpen.{{ $component['id'] }}')">
-                                                        <svg class="w-4 h-4 mr-2 text-purple-500" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" /></svg>
-                                                        <span class="font-semibold text-purple-700">{{ $component['name'] }}</span>
-                                                        <span class="ml-2 px-2 py-0.5 rounded bg-purple-100 text-purple-600 text-xs">Component</span>
-                                                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
-                                                    </div>
-                                                    @if(isset($componentOpen[$component['id']]) && $componentOpen[$component['id']])
-                                                    <div class="ml-6 border-l-2 border-purple-100 pl-4 mt-1">
-                                                        @foreach($component['actions'] as $action)
-                                                            <div class="flex items-center mb-1">
-                                                                <svg class="w-4 h-4 mr-2 text-pink-500" fill="currentColor" viewBox="0 0 20 20"><rect width="16" height="4" x="2" y="8" rx="2" /></svg>
-                                                                <span class="text-pink-700">{{ $action['name'] }}</span>
-                                                                <span class="ml-2 px-2 py-0.5 rounded bg-pink-100 text-pink-600 text-xs">Action</span>
-                                                            </div>
-                                                        @endforeach
-                                                    </div>
-                                                    @endif
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                        @endif
-                                    </div>
-                                @endforeach
-                            </div>
-                            @endif
-                        </div>
-                    @endforeach
-                </div>
-            </div>
+
         @endif
     </flux:modal>   
     <!-- Panel Structure Modal -->
@@ -500,4 +447,5 @@
         @endif
     </flux:modal>   
 </div>
-    
+
+</div>

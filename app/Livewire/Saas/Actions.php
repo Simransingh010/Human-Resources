@@ -41,15 +41,19 @@ class Actions extends LivewireComponent
         'custom_css' => '',
         'actioncluster_id' => null,
         'is_inactive' => 0,
+        'action_type' => '',
     ];
 
     public $isEditing = false;
+
+    public $actionTypes = [];
 
     public function mount()
     {
         $this->resetPage();
         $this->refreshStatuses();
         $this->initListsForFields();
+        $this->actionTypes = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT;
     }
 
     protected function initListsForFields(): void
@@ -96,6 +100,7 @@ class Actions extends LivewireComponent
             'formData.custom_css' => 'nullable|string',
             'formData.actioncluster_id' => 'nullable|integer',
             'formData.is_inactive' => 'boolean',
+            'formData.action_type' => 'nullable|string',
         ]);
 
         // Convert empty strings to null

@@ -92,14 +92,14 @@ class BatchItems extends Component
         if (!$data)
             return null;
 
-        $employee = Employee::find($data['employee_id']);
-        $leaveType = LeaveType::find($data['leave_type_id']);
+        $employee = !empty($data['employee_id']) ? Employee::find($data['employee_id']) : null;
+        $leaveType = !empty($data['leave_type_id']) ? LeaveType::find($data['leave_type_id']) : null;
 
         return [
             'employee_name' => $employee ? $employee->fname : 'Unknown',
             'leave_type' => $leaveType ? $leaveType->leave_title : 'Unknown',
-            'period_start' => \Carbon\Carbon::parse($data['period_start'])->format('Y-m-d'),
-            'period_end' => \Carbon\Carbon::parse($data['period_end'])->format('Y-m-d'),
+            'period_start' => !empty($data['period_start']) ? \Carbon\Carbon::parse($data['period_start'])->format('Y-m-d') : null,
+            'period_end' => !empty($data['period_end']) ? \Carbon\Carbon::parse($data['period_end'])->format('Y-m-d') : null,
             'allocated_days' => $data['allocated_days'] ?? 0,
             'balance' => $data['balance'] ?? 0
         ];

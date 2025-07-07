@@ -67,6 +67,9 @@ class SalaryComponentEmployees extends Component
         'amount_type' => ['label' => 'Amount Type', 'type' => 'select', 'listKey' => 'amount_types'],
         'amount' => ['label' => 'Amount', 'type' => 'number'],
         'taxable' => ['label' => 'Taxable', 'type' => 'switch'],
+
+        'effective_from' => ['label' => 'Effective From', 'type' => 'date'],
+        'effective_to' => ['label' => 'Effective To', 'type' => 'date'],
         'calculation_json' => ['label' => 'Calculation', 'type' => 'textarea'],
     ];
 
@@ -93,6 +96,8 @@ class SalaryComponentEmployees extends Component
         'amount' => 0,
         'taxable' => false,
         'calculation_json' => null,
+        'effective_from' => null,
+        'effective_to' => null,
     ];
 
     public function mount($employeeId = null)
@@ -124,6 +129,9 @@ class SalaryComponentEmployees extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+
+        $this->formData['effective_from'] = null;
+        $this->formData['effective_to'] = null;
     }
 
     protected function initListsForFields(): void
@@ -186,11 +194,11 @@ class SalaryComponentEmployees extends Component
                     ->orWhere('salary_components_employees.effective_to', '>', now());
             })
             ->when($this->filters['title'], fn($query, $value) =>
-                $query->where('salary_components.title', 'like', "%{$value}%"))
+            $query->where('salary_components.title', 'like', "%{$value}%"))
             ->when($this->filters['nature'], fn($query, $value) =>
-                $query->where('salary_components_employees.nature', $value))
+            $query->where('salary_components_employees.nature', $value))
             ->when($this->filters['component_type'], fn($query, $value) =>
-                $query->where('salary_components_employees.component_type', $value))
+            $query->where('salary_components_employees.component_type', $value))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage);
     }
@@ -205,6 +213,8 @@ class SalaryComponentEmployees extends Component
             'formData.amount' => 'required|numeric|min:0',
             'formData.taxable' => 'boolean',
             'formData.calculation_json' => 'nullable|json',
+            'formData.effective_from' => 'nullable|date',
+            'formData.effective_to' => 'nullable|date',
         ];
     }
 
@@ -223,15 +233,13 @@ class SalaryComponentEmployees extends Component
 
         $validatedData['formData']['firm_id'] = session('firm_id');
         $validatedData['formData']['employee_id'] = $this->employeeId;
-        $validatedData['formData']['effective_from'] = now();
+        if (!$this->isEditing && empty($validatedData['formData']['effective_from'])) {
+            $validatedData['formData']['effective_from'] = now();
+        }
 
         if ($this->isEditing) {
-            // For editing, we need to end the current record and create a new one
             $currentComponent = SalaryComponentsEmployee::findOrFail($this->formData['id']);
-            $currentComponent->update(['effective_to' => now()]);
-            
-            // Create new record
-            SalaryComponentsEmployee::create($validatedData['formData']);
+            $currentComponent->update($validatedData['formData']);
             $toastMsg = 'Salary component updated successfully';
         } else {
             SalaryComponentsEmployee::create($validatedData['formData']);
@@ -252,6 +260,8 @@ class SalaryComponentEmployees extends Component
         $this->reset(['formData']);
         $this->formData['taxable'] = false;
         $this->formData['amount'] = 0;
+        $this->formData['effective_from'] = null;
+        $this->formData['effective_to'] = null;
         $this->isEditing = false;
     }
 
@@ -259,8 +269,6 @@ class SalaryComponentEmployees extends Component
     {
         $this->isEditing = true;
         $component = SalaryComponentsEmployee::with('salary_component')->findOrFail($id);
-        
-        // Merge the component data with the form data
         $this->formData = array_merge($this->formData, [
             'id' => $component->id,
             'firm_id' => $component->firm_id,
@@ -271,12 +279,13 @@ class SalaryComponentEmployees extends Component
             'amount_type' => $component->amount_type,
             'amount' => $component->amount,
             'taxable' => $component->taxable,
-            'calculation_json' => is_array($component->calculation_json) 
-                ? json_encode($component->calculation_json, JSON_PRETTY_PRINT) 
+            'calculation_json' => is_array($component->calculation_json)
+                ? json_encode($component->calculation_json, JSON_PRETTY_PRINT)
                 : $component->calculation_json,
-            'title' => $component->salary_component->title // Add the title from the relationship
+            'title' => $component->salary_component->title,
+            'effective_from' => $component->effective_from ? $component->effective_from->format('Y-m-d') : null,
+            'effective_to' => $component->effective_to ? $component->effective_to->format('Y-m-d') : null,
         ]);
-
         $this->modal('mdl-salary-component')->show();
     }
 
@@ -284,7 +293,7 @@ class SalaryComponentEmployees extends Component
     {
         $component = SalaryComponentsEmployee::findOrFail($id);
         $component->update(['effective_to' => now()]);
-        
+
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -458,4 +467,4 @@ class SalaryComponentEmployees extends Component
     {
         return view()->file(app_path('Livewire/Hrms/Payroll/blades/salary-component-employees.blade.php'));
     }
-} 
+}

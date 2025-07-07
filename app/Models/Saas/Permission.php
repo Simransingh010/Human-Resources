@@ -81,4 +81,9 @@ class Permission extends Model
 					->withPivot('id', 'firm_id', 'deleted_at')
 					->withTimestamps();
 	}
+
+	public function roles()
+	{
+		return $this->belongsToMany(Role::class, 'permission_role');
+	}
 }

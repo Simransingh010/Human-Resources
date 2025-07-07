@@ -13,37 +13,38 @@ class MenuCoordinator
 
     protected static array $staticModulesByApp = [
         1 => [
-            ['id' => 11, 'name' => 'Auth', 'wire' => null, 'icon' => ''],
-            ['id' => 12, 'name' => 'Organization', 'wire' => null, 'icon' => ''],
-            ['id' => 13, 'name' => 'Clusters', 'wire' => null, 'icon' => ''],
-            ['id' => 14, 'name' => 'Menus', 'wire' => null, 'icon' => ''],
+
+            ['id' => 11, 'name' => 'Platform', 'wire' => null, 'icon' => ''],
+            ['id' => 12, 'name' => 'Panels', 'wire' => null, 'icon' => ''],
+//            ['id' => 13, 'name' => 'Clusters', 'wire' => null, 'icon' => ''],
+            ['id' => 14, 'name' => 'Organization', 'wire' => null, 'icon' => ''],
+            ['id' => 15, 'name' => 'Auth', 'wire' => null, 'icon' => ''],
         ],
     ];
 
     protected static array $staticWiresByModule = [
         11 => [
-            ['name' => 'Users', 'wire' => 'saas.users', 'icon' => ''],
-        ],
-        12 => [
-            ['name' => 'Firm', 'wire' => 'saas.firms', 'icon' => ''],
-            ['name' => 'Agency', 'wire' => 'saas.agencies.index', 'icon' => ''],
-
-        ],
-        13 => [
-            //            D:\HRMS_12\app\Livewire\Saas\Actionclusters.php
-            ['name' => 'Module Clusters', 'wire' => 'saas.moduleclusters', 'icon' => ''],
-            ['name' => 'Component Clusters', 'wire' => 'saas.componentclusters', 'icon' => ''],
-            ['name' => 'Action Clusters', 'wire' => 'saas.actionclusters', 'icon' => ''],
-
-        ],
-        14 => [
-            ['name' => 'Panels', 'wire' => 'saas.panels', 'icon' => 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png'],
-            ['name' => 'Apps', 'wire' => 'saas.apps', 'icon' => ''],
+            ['name' => 'Platform Setup', 'wire' => 'saas.panel-structuring', 'icon' => 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png'],
             ['name' => 'Modules', 'wire' => 'saas.modules', 'icon' => ''],
             ['name' => 'Components', 'wire' => 'saas.components', 'icon' => ''],
             ['name' => 'Actions', 'wire' => 'saas.actions', 'icon' => ''],
-            ['name' => 'Panel Structuring', 'wire' => 'saas.panel-structuring', 'icon' => ''],
-
+        ],
+        12 => [
+            ['name' => 'Panels', 'wire' => 'saas.panels', 'icon' => 'https://try.iqdigit.com/images/appicons/629f51cfaea18_Attendance.png'],
+        ],
+//        13 => [
+//              ['name' => 'Module Clusters', 'wire' => 'saas.moduleclusters', 'icon' => ''],
+//            ['name' => 'Component Clusters', 'wire' => 'saas.componentclusters', 'icon' => ''],
+//            ['name' => 'Action Clusters', 'wire' => 'saas.actionclusters', 'icon' => ''],
+//        ],
+        14 => [
+            ['name' => 'Firm', 'wire' => 'saas.firms', 'icon' => ''],
+            ['name' => 'Agency', 'wire' => 'saas.agencies.index', 'icon' => ''],
+        ],
+        15 => [
+            ['name' => 'Users', 'wire' => 'saas.users', 'icon' => ''],
+            ['name' => 'Roles', 'wire' => 'saas.roles', 'icon' => ''],
+//            ['name' => 'L1 Users', 'wire' => 'saas.admin-users', 'icon' => ''],
         ],
     ];
 
@@ -66,8 +67,6 @@ class MenuCoordinator
             : MenuService::getComponentsForModule($moduleId);
     }
 
-
-
     public static function selectApp($appId)
     {
         Session::put('selectedAppId', $appId);
@@ -81,30 +80,26 @@ class MenuCoordinator
         }
 
         self::resetAll();
-        return self::selectWire(session('defaultwire'));
+        return self::selectWire(Session::get('defaultwire'));
     }
-
-
-
-
 
     public static function selectModule($moduleId)
     {
         Session::put('selectedModuleId', $moduleId);
         $wires = self::getModuleWires($moduleId);
-        $firstWire = $wires[0]['wire'] ?? session('defaultwire');
+        $firstWire = $wires[0]['wire'] ?? Session::get('defaultwire');
         self::selectWire($firstWire);
         return $firstWire;
     }
 
     public static function selectWire($wire)
     {
-        Session::put('selectedWire', $wire ?? session('defaultwire'));
+        Session::put('selectedWire', $wire ?? Session::get('defaultwire'));
     }
 
     public static function getSelectedWire()
     {
-        return Session::get('selectedWire', session('defaultwire'));
+        return Session::get('selectedWire', Session::get('defaultwire'));
     }
 
     public static function getSelectedAppId()

@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property Carbon|null $updated_at
  * @property string|null $deleted_at
  * @property bool $is_inactive
+ * @property string|null $leave_type_main
  * 
  * @property Firm $firm
  * @property Collection|EmpLeaveBalance[] $emp_leave_balances
@@ -55,6 +56,7 @@ class LeaveType extends Model
 		'leave_desc',
 		'leave_code',
 		'leave_nature',
+		'leave_type_main',
 		'max_days',
 		'carry_forward',
 		'encashable',
@@ -85,4 +87,16 @@ class LeaveType extends Model
 	{
 		return $this->hasMany(LeavesQuotaTemplateSetup::class);
 	}
+
+	public const LEAVE_NATURE_OPTIONS = [
+		'paid' => 'Paid',
+		'unpaid' => 'Unpaid',
+	];
+
+	public const LEAVE_TYPE_MAIN_OPTIONS = [
+		'regular' => 'Regular',
+		'weekoff' => 'Weekoff',
+		'earn' => 'Earned',
+		
+	];
 }

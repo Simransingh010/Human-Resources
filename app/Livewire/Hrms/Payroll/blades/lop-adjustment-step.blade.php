@@ -100,6 +100,9 @@
             <flux:table.column>Cycle Days</flux:table.column>
             <flux:table.column>Void Days</flux:table.column>
             <flux:table.column>LOP Days</flux:table.column>
+            @if(in_array('lop_details', $visibleFields))
+                <flux:table.column>LOP Details</flux:table.column>
+            @endif
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
 
@@ -114,6 +117,9 @@
                             {{ $item['lop_days_count'] }}
                         </flux:badge>
                     </flux:table.cell>
+                    @if(in_array('lop_details', $visibleFields))
+                        <flux:table.cell class="table-cell-wrap">{{ $item['lop_details'] }}</flux:table.cell>
+                    @endif
                     <flux:table.cell class="table-cell-wrap">
                         <div class="flex space-x-2">
                             <flux:button
@@ -147,14 +153,16 @@
                         <p class="mt-1">{{ $selectedRecord['cycle_days'] }}</p>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Void Days</label>
-                        <flux:input type="number" wire:model="editForm.void_days_count" min="0" :max="$selectedRecord['cycle_days']" />
-                        @error('editForm.void_days_count') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
+                        <label class="block text-sm font-medium text-gray-700">Void Days (select dates)</label>
+                        <flux:date-picker multiple wire:model="editForm.void_dates" :months="1" placeholder="Select void days..." />
+                        <div class="text-xs text-gray-500 mt-1">Selected: {{ collect($editForm["void_dates"])->join(', ') }}</div>
+                        @error('editForm.void_dates') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">LOP Days</label>
-                        <flux:input type="number" wire:model="editForm.lop_days_count" min="0" :max="$selectedRecord['cycle_days']" />
-                        @error('editForm.lop_days_count') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
+                        <label class="block text-sm font-medium text-gray-700">LOP Days (select dates)</label>
+                        <flux:date-picker multiple wire:model="editForm.lop_dates" :months="1" placeholder="Select LOP days..." />
+                        <div class="text-xs text-gray-500 mt-1">Selected: {{ collect($editForm["lop_dates"])->join(', ') }}</div>
+                        @error('editForm.lop_dates') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
                     </div>
                 </div>
 

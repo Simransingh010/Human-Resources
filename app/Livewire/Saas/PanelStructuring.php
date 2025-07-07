@@ -11,6 +11,8 @@
     use App\Models\Saas\Modulecluster;
     use Illuminate\Support\Facades\Session;
     use Livewire\Component;
+    use Flux;
+
 
     class PanelStructuring extends Component
     {
@@ -99,6 +101,49 @@
             'action_type' => '',
             'parent_action_id' => null,
             'actioncluster_id' => null,
+        ];
+
+        // New properties for cluster creation
+        public $newModulecluster = [
+            'name' => '',
+            'code' => '',
+            'description' => '',
+            'icon' => '',
+            'color' => '',
+            'tooltip' => '',
+            'order' => 0,
+            'badge' => '',
+            'custom_css' => '',
+            'parent_modulecluster_id' => null,
+            'is_inactive' => 0,
+        ];
+
+        public $newComponentcluster = [
+            'name' => '',
+            'code' => '',
+            'description' => '',
+            'icon' => '',
+            'color' => '',
+            'tooltip' => '',
+            'order' => 0,
+            'badge' => '',
+            'custom_css' => '',
+            'parent_componentcluster_id' => null,
+            'is_inactive' => 0,
+        ];
+
+        public $newActioncluster = [
+            'name' => '',
+            'code' => '',
+            'description' => '',
+            'icon' => '',
+            'color' => '',
+            'tooltip' => '',
+            'order' => 0,
+            'badge' => '',
+            'custom_css' => '',
+            'parent_actioncluster_id' => null,
+            'is_inactive' => 0,
         ];
 
         // Add these properties after the existing properties
@@ -700,6 +745,97 @@
             }
         }
 
+        // Cluster creation methods
+        public function addNewModulecluster()
+        {
+            $validatedData = $this->validate([
+                'newModulecluster.name' => 'required|string|max:255',
+                'newModulecluster.code' => 'nullable|string|max:255',
+                'newModulecluster.description' => 'nullable|string',
+                'newModulecluster.icon' => 'nullable|string|max:255',
+                'newModulecluster.color' => 'nullable|string|max:255',
+                'newModulecluster.tooltip' => 'nullable|string|max:255',
+                'newModulecluster.order' => 'required|integer',
+                'newModulecluster.badge' => 'nullable|string|max:255',
+                'newModulecluster.custom_css' => 'nullable|string',
+                'newModulecluster.parent_modulecluster_id' => 'nullable|integer|exists:moduleclusters,id',
+                'newModulecluster.is_inactive' => 'boolean',
+            ]);
+
+            try {
+                $clusterData = $validatedData['newModulecluster'];
+                
+                Modulecluster::create($clusterData);
+                
+                $this->reset('newModulecluster');
+                $this->loadClusters(); // Refresh clusters
+                $this->modal('add-modulecluster-modal')->close();
+                Session::flash('message', 'Module cluster added successfully.');
+            } catch (\Exception $e) {
+                Session::flash('error', 'Failed to add module cluster: ' . $e->getMessage());
+            }
+        }
+
+        public function addNewComponentcluster()
+        {
+            $validatedData = $this->validate([
+                'newComponentcluster.name' => 'required|string|max:255',
+                'newComponentcluster.code' => 'nullable|string|max:255',
+                'newComponentcluster.description' => 'nullable|string',
+                'newComponentcluster.icon' => 'nullable|string|max:255',
+                'newComponentcluster.color' => 'nullable|string|max:255',
+                'newComponentcluster.tooltip' => 'nullable|string|max:255',
+                'newComponentcluster.order' => 'required|integer',
+                'newComponentcluster.badge' => 'nullable|string|max:255',
+                'newComponentcluster.custom_css' => 'nullable|string',
+                'newComponentcluster.parent_componentcluster_id' => 'nullable|integer|exists:componentclusters,id',
+                'newComponentcluster.is_inactive' => 'boolean',
+            ]);
+
+            try {
+                $clusterData = $validatedData['newComponentcluster'];
+                
+                Componentcluster::create($clusterData);
+                
+                $this->reset('newComponentcluster');
+                $this->loadClusters(); // Refresh clusters
+                $this->modal('add-componentcluster-modal')->close();
+                Session::flash('message', 'Component cluster added successfully.');
+            } catch (\Exception $e) {
+                Session::flash('error', 'Failed to add component cluster: ' . $e->getMessage());
+            }
+        }
+
+        public function addNewActioncluster()
+        {
+            $validatedData = $this->validate([
+                'newActioncluster.name' => 'required|string|max:255',
+                'newActioncluster.code' => 'nullable|string|max:255',
+                'newActioncluster.description' => 'nullable|string',
+                'newActioncluster.icon' => 'nullable|string|max:255',
+                'newActioncluster.color' => 'nullable|string|max:255',
+                'newActioncluster.tooltip' => 'nullable|string|max:255',
+                'newActioncluster.order' => 'required|integer',
+                'newActioncluster.badge' => 'nullable|string|max:255',
+                'newActioncluster.custom_css' => 'nullable|string',
+                'newActioncluster.parent_actioncluster_id' => 'nullable|integer|exists:actionclusters,id',
+                'newActioncluster.is_inactive' => 'boolean',
+            ]);
+
+            try {
+                $clusterData = $validatedData['newActioncluster'];
+                
+                Actioncluster::create($clusterData);
+                
+                $this->reset('newActioncluster');
+                $this->loadClusters(); // Refresh clusters
+                $this->modal('add-actioncluster-modal')->close();
+                Session::flash('message', 'Action cluster added successfully.');
+            } catch (\Exception $e) {
+                Session::flash('error', 'Failed to add action cluster: ' . $e->getMessage());
+            }
+        }
+
         // Add these methods before the render method
         public function toggleEditMode($type)
         {
@@ -1136,8 +1272,23 @@
             $this->dispatch('sortable:init');
         }
 
+        public function showModuleClustersModal()
+        {
+            Flux::modal('module-clusters-modal')->show();
+        }
+
+        public function showComponentClustersModal()
+        {
+            Flux::modal('component-clusters-modal')->show();
+        }
+
+        public function showActionClustersModal()
+        {
+            Flux::modal('action-clusters-modal')->show();
+        }
+
         public function render()
         {
-            return view()->file(app_path('Livewire/Saas/blades/panel-structuring.blade.php'));
+return view()->file(app_path('Livewire/Saas/blades/panel-structuring.blade.php'));
         }
     }

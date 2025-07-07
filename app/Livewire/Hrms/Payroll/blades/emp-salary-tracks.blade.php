@@ -6,6 +6,8 @@
     </div>
     <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->
+{{--    php artisan make:migration add_firm_id_to_panel_user_table --table=panel_user--}}
+
 
     <!-- Filters Start -->
     <flux:card>
@@ -94,7 +96,7 @@
     </flux:modal>
 
     <!-- Data Table -->
-    <flux:table :paginate="$this->list" class="w-full">
+    <flux:table :paginate="$this->salaryTracks" class="w-full">
         <flux:table.columns>
             <flux:table.column>Employee</flux:table.column>
             <flux:table.column>Income</flux:table.column>
@@ -105,7 +107,7 @@
         </flux:table.columns>
 
         <flux:table.rows>
-            @foreach($this->list as $item)
+            @foreach($this->salaryTracks as $item)
                 <flux:table.row :key="$item['id']">
                     <flux:table.cell class="table-cell-wrap">{{ $item['employee_name'] }}</flux:table.cell>
                     <flux:table.cell class="table-cell-wrap">{{ number_format($item['income'], 2) }}</flux:table.cell>
@@ -161,7 +163,7 @@
                         <td class="p-1 pb-1 pt-1 bg-white">: {{ $selectedEmployee->emp_job_profile->employee_code}}</td>
                         <td class="p-1 pb-1 pt-1 bg-white w-48 font-semibold">DATE OF JOINING </td>
                         <td class="p-1 pb-1 pt-1 bg-white">
-                            : {{ optional($selectedEmployee->emp_job_profile)->doh?->format('jS M Y') }}
+                            : {{ optional($selectedEmployee->emp_job_profile)->doh?->format('d-M-Y') }}
                         </td>
                     </tr>
                     <tr>
@@ -239,6 +241,13 @@
                     <tr>
                         <td colspan="2" class="p-1 border border-black pb-1 pt-1 bg-white font-bold">NET SALARY</td>
                         <td colspan="2" class="p-1 border border-black pb-1 pt-1 bg-white text-right font-bold">{{ number_format($netSalary, 0) }}</td>
+                    </tr>
+
+                    <!-- Net Salary in Words -->
+                    <tr>
+                        <td colspan="4" class="p-1 border border-black pb-1 pt-1 bg-white text-sm font-semibold">
+                            Net Salary (in words): <span class="font-bold">{{ $netSalaryInWords }}</span>
+                        </td>
                     </tr>
 
                     <!-- Note -->

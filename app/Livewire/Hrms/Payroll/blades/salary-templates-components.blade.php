@@ -34,6 +34,15 @@
                                 </flux:select>
                                 @break
 
+                            @case('date')
+                                <flux:date-picker
+                                    placeholder="Search {{ $cfg['label'] }}"
+                                    wire:model.live="filters.{{ $field }}"
+                                    wire:change="$refresh"
+                                    selectable-header
+                                />
+                                @break
+
                             @default
                                 <flux:input
                                     placeholder="Search {{ $cfg['label'] }}"
@@ -99,7 +108,7 @@
 
     <!-- Add/Edit Salary Template Component Modal -->
     <flux:modal name="mdl-salary-template-component" @cancel="resetForm" position="right" class="max-w-6xl" variant="flyout">
-        <form wire:submit.prevent="store">
+            <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
@@ -118,6 +127,7 @@
                         <flux:select
                             label="Salary Template"
                             wire:model.live="formData.salary_template_id"
+                            wire:change="templateChanged"
                         >
                             <option value="">Select Salary Template</option>
                             @foreach($listsForFields['templates'] as $val => $lab)
@@ -192,21 +202,40 @@
                                 @else
                                     <div class="divide-y divide-gray-200">
                                         @foreach($filteredComponents as $component)
-                                            <label class="flex items-center px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors duration-150">
+                                            @php($id = is_array($component) ? $component['id'] : (is_object($component) ? $component->id : ''))
+                                            <div class="flex items-center px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors duration-150">
                                                 <input 
                                                     type="checkbox"
                                                     class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                                                     wire:model="selectedComponents"
-                                                    value="{{ is_array($component) ? ($component['id'] ?? '') : (is_object($component) ? ($component->id ?? '') : '') }}"
+                                                    value="{{ $id }}"
                                                 >
                                                 <div class="ml-3 flex-1">
                                                     <div class="text-sm font-medium text-gray-900">
                                                         {{ data_get($component, 'title', 'Untitled Component') }}
                                                     </div>
-                                                  
-                                                    
                                                 </div>
-                                            </label>
+                                                <div class="flex gap-2 items-center">
+                                                    <flux:date-picker
+                                                        wire:key="from-{{ $id }}-{{ $templateRange->start()->toDateString() }}"
+                                                        label="Effective From"
+                                                        wire:model.live="formData.components.{{ $id }}.effective_from"
+                                                        class="w-36"
+                                                        size="sm"
+                                                        min="{{ $templateRange->start()->toDateString() }}"
+                                                        max="{{ $templateRange->end()->toDateString() }}"
+                                                    />
+                                                    <flux:date-picker
+                                                        wire:key="to-{{ $id }}-{{ $templateRange->end()->toDateString() }}"
+                                                        label="Effective To"
+                                                        wire:model.live="formData.components.{{ $id }}.effective_to"
+                                                        class="w-36"
+                                                        size="sm"
+                                                        min="{{ $templateRange->start()->toDateString() }}"
+                                                        max="{{ $templateRange->end()->toDateString() }}"
+                                                    />
+                                                </div>
+                                            </div>
                                         @endforeach
                                     </div>
                                 @endif
@@ -256,6 +285,9 @@
                                         @else
                                             {{ $item->$field }}
                                         @endif
+                                    @break
+                                    @case('date')
+                                        {{ $item->$field ? date('jS F Y', strtotime($item->$field)) : '' }}
                                         @break
                                     @default
                                         {{ $item->$field }}

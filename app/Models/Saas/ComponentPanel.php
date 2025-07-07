@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property int $id
  * @property int $panel_id
  * @property int $component_id
+ * @property int $firm_id
  * 
  * @property Component $component
  * @property Panel $panel
@@ -27,12 +28,14 @@ class ComponentPanel extends Model
 
 	protected $casts = [
 		'panel_id' => 'int',
-		'component_id' => 'int'
+		'component_id' => 'int',
+		'firm_id' => 'int' ,
 	];
 
 	protected $fillable = [
 		'panel_id',
-		'component_id'
+		'component_id',
+		'firm_id'
 	];
 
 	public function component()

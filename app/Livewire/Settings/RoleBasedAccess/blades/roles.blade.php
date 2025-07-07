@@ -181,7 +181,13 @@
                         @endif
                     @endforeach
                     <flux:table.cell>
+
                         <div class="flex space-x-2">
+                            <flux:button
+                                    wire:click="showRoleActionSync({{ $item->id }})"
+                            >
+                                Assign Actions
+                            </flux:button>
                             <flux:button
                                 variant="primary"
                                 size="sm"
@@ -191,11 +197,7 @@
                             <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>
-                            <flux:button
-                                wire:click="showRoleActionSync({{ $item->id }})"
-                            >
-                                Assign Actions
-                            </flux:button>
+
                         </div>
 
                         <!-- Delete Confirmation Modal -->

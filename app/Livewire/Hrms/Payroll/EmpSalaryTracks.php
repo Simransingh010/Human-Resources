@@ -233,35 +233,73 @@ class EmpSalaryTracks extends Component
                 $query->where('payroll_slot_id', $payrollSlotId);
             }
 
-            $this->rawComponents = $query->with(['salary_component'])->get();
+            $this->rawComponents = $query->with(['salary_component.salary_component_group:id,title'])->get();
+
+            $grouped = [];
+            $ungrouped = [];
+
+            foreach ($this->rawComponents as $component) {
+                $groupId = $component->salary_component->salary_component_group_id ?? null;
+                $nature = $component->nature;
+                if ($groupId) {
+                    $groupTitle = $component->salary_component->salary_component_group?->title ?? 'Other';
+                    $grouped[$nature][$groupId]['title'] = $groupTitle;
+                    $grouped[$nature][$groupId]['amount'] = ($grouped[$nature][$groupId]['amount'] ?? 0) + $component->amount_payable;
+                } else {
+                    $ungrouped[$nature][] = [
+                        'title' => $component->salary_component->title,
+                        'amount' => $component->amount_payable,
+                        'nature' => $nature,
+                        'component_type' => $component->component_type,
+                        'amount_type' => $component->amount_type
+                    ];
+                }
+            }
 
             $this->salaryComponents = [];
             $this->totalEarnings = 0;
             $this->totalDeductions = 0;
 
-            // Group components by nature (earnings/deductions)
-            foreach ($this->rawComponents as $component) {
-                $componentData = [
-                    'title' => $component->salary_component->title,
-                    'amount' => $component->amount_payable,
-                    'nature' => $component->nature,
-                    'component_type' => $component->component_type,
-                    'amount_type' => $component->amount_type
-                ];
-
-                $this->salaryComponents[] = $componentData;
-
-                // Calculate totals based on nature
-                if ($component->nature === 'earning') {
-                    $this->totalEarnings += $component->amount_payable;
-                } elseif ($component->nature === 'deduction') {
-                    $this->totalDeductions += $component->amount_payable;
+            // Add grouped earnings
+            if (!empty($grouped['earning'])) {
+                foreach ($grouped['earning'] as $group) {
+                    $this->salaryComponents[] = [
+                        'title' => $group['title'],
+                        'amount' => $group['amount'],
+                        'nature' => 'earning',
+                    ];
+                    $this->totalEarnings += $group['amount'];
+                }
+            }
+            // Add ungrouped earnings
+            if (!empty($ungrouped['earning'])) {
+                foreach ($ungrouped['earning'] as $comp) {
+                    $this->salaryComponents[] = $comp;
+                    $this->totalEarnings += $comp['amount'];
+                }
+            }
+            // Add grouped deductions
+            if (!empty($grouped['deduction'])) {
+                foreach ($grouped['deduction'] as $group) {
+                    $this->salaryComponents[] = [
+                        'title' => $group['title'],
+                        'amount' => $group['amount'],
+                        'nature' => 'deduction',
+                    ];
+                    $this->totalDeductions += $group['amount'];
+                }
+            }
+            // Add ungrouped deductions
+            if (!empty($ungrouped['deduction'])) {
+                foreach ($ungrouped['deduction'] as $comp) {
+                    $this->salaryComponents[] = $comp;
+                    $this->totalDeductions += $comp['amount'];
                 }
             }
 
-            // Sort components by nature and title
+            // Sort by nature (earnings first), then title
             $this->salaryComponents = collect($this->salaryComponents)->sortBy([
-                ['nature', 'desc'], // earnings first
+                ['nature', 'desc'],
                 ['title', 'asc']
             ])->values()->all();
 
@@ -329,6 +367,7 @@ class EmpSalaryTracks extends Component
                 'rawComponents' => $this->rawComponents,
                 'firmSquareLogo' => $firmSquareLogoData, // Pass base64 data
                 'firmWideLogo' => $firmWideLogoData,     // Pass base64 data
+                'netSalaryInWords' => $this->netSalaryInWords,
             ]);
 
             // Set paper size to A4

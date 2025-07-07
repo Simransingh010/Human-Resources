@@ -66,6 +66,16 @@
                             <option value="{{ $id }}">{{ $name }}</option>
                         @endforeach
                     </flux:select>
+                    <flux:select
+                        label="Action Type"
+                        wire:model="formData.action_type"
+                        required
+                    >
+                        <option value="">Select Action Type</option>
+                        @foreach($actionTypes as $key => $label)
+                            <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
+                    </flux:select>
                     <flux:input
                             label="Name"
                             wire:model="formData.name"

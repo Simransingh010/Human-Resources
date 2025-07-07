@@ -49,6 +49,7 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
             ->where('component_type', 'employee_contribution')
             ->where('nature', 'deduction')
             ->get();
+
     }
 
     // Helper method to fetch employees
@@ -117,6 +118,7 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
             'PRAN NO',
             'NPS (14%)',
             'NPS (10%)',
+            'Voluntary Contribution for NPS',
             'Total'
         ];
 
@@ -136,20 +138,27 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
         // Find NPS 14% and NPS 10% components
         $nps14Amount = 0;
         $nps10Amount = 0;
+        $voluntaryContribution = 0;
         
         foreach ($this->npsComponents as $component) {
             $amount = $trackByComponent[$component->id] ?? 0;
-            if (strpos(strtolower($component->title), '14%') !== false || 
-                (strpos(strtolower($component->title), 'nps') !== false && strpos(strtolower($component->title), 'employer') !== false)) {
+            $title = strtolower(trim($component->title));
+            if (strpos($title, '14%') !== false || 
+                (strpos($title, 'nps') !== false && strpos($title, 'employer') !== false)) {
                 $nps14Amount = $amount;
-            } else if (strpos(strtolower($component->title), '10%') !== false || 
-                      (strpos(strtolower($component->title), 'nps') !== false && strpos(strtolower($component->title), 'employee') !== false)) {
+            } else if (strpos($title, '10%') !== false || 
+                      (strpos($title, 'nps') !== false && strpos($title, 'employee') !== false)) {
                 $nps10Amount = $amount;
+            }
+            // Robust match for Voluntary Contribution for NPS
+            else if (strpos($title, 'voluntary contribution for nps') !== false) {
+                $voluntaryContribution = $amount;
+
             }
         }
         
-        // Calculate total
-        $npsTotal = $nps14Amount + $nps10Amount;
+        // Calculate total (now includes voluntary contribution)
+        $npsTotal = $nps14Amount + $nps10Amount + $voluntaryContribution;
         
         $row = [
             $serial++,
@@ -158,6 +167,7 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
             $job->pran_number ?? '',
             $nps14Amount,
             $nps10Amount,
+            $voluntaryContribution ,
             $npsTotal
         ];
 
@@ -189,8 +199,8 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
                 // Insert 2 rows at the top for title
                 $sheet->insertNewRowBefore(1, 2);
 
-                // Dynamic column counts - now we have 7 columns
-                $totalCols = 7;
+                // Dynamic column counts - now we have 8 columns
+                $totalCols = 8;
                 $lastCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($totalCols);
 
                 // Set titles (row 1 and 2)

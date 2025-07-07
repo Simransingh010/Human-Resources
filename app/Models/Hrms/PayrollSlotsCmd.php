@@ -61,6 +61,7 @@ class PayrollSlotsCmd extends Model
         'CM' => 'Completed',
         "IP" =>"In Progress",
         'RS' => 'Re-Started',
+		'PB' => 'Published',
     ];
 
 	public function firm()

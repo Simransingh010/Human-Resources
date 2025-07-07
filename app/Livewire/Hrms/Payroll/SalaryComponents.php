@@ -287,7 +287,8 @@ class SalaryComponents extends Component
                 $query->where('nature', $value))
             ->when($this->filters['component_type'], fn($query, $value) =>
                 $query->where('component_type', $value))
-            ->orderBy($this->sortBy, $this->sortDirection)
+            ->orderBy('id', 'asc')
+
             ->paginate($this->perPage);
     }
 
@@ -725,9 +726,11 @@ class SalaryComponents extends Component
         }
     }
 
-    public function renderNestedOperation($path, $operation, $salaryComponents)
+    public function renderNestedOperation($path, $operation)
     {
         $html = '<div class="nested-operation-container ml-4 p-4 border-l-2 border-blue-200">';
+
+        // Operator Selection
         $html .= '<div class="mb-4">';
         $html .= '<label class="block text-sm font-medium text-gray-700 mb-2">Operator for Nested Operation</label>';
         $html .= '<flux:select wire:model.live="rule.' . $path . '.operator">';
@@ -737,13 +740,20 @@ class SalaryComponents extends Component
         $html .= '<flux:select.option value="/">Divide (÷)</flux:select.option>';
         $html .= '</flux:select>';
         $html .= '</div>';
+
+        // Nested Operands
         $html .= '<div class="space-y-4">';
         $html .= '<div class="flex justify-between items-center">';
         $html .= '<label class="block text-sm font-medium text-gray-700">Nested Operands</label>';
-        $html .= '<flux:button size="sm" wire:click="addOperand(\'' . $path . '\')" class="text-sm">Add Nested Operand</flux:button>';
+        $html .= '<flux:button size="sm" wire:click="addOperand(\'' . $path . '\')" class="text-sm">';
+        $html .= 'Add Nested Operand';
+        $html .= '</flux:button>';
         $html .= '</div>';
+
         foreach ($operation['operands'] ?? [] as $i => $operand) {
             $html .= '<div class="relative p-4 border rounded-lg bg-white shadow-sm">';
+
+            // Type Selection
             $html .= '<div class="flex items-center gap-4 mb-4">';
             $html .= '<div class="flex-1">';
             $html .= '<flux:select wire:model.live="rule.' . $path . '.operands.' . $i . '.type">';
@@ -752,18 +762,24 @@ class SalaryComponents extends Component
             $html .= '<flux:select.option value="operation">Nested Operation</flux:select.option>';
             $html .= '</flux:select>';
             $html .= '</div>';
-            $html .= '<flux:button wire:click="removeOperand(\'' . $path . '\', ' . $i . ')" class="text-red-500">Remove</flux:button>';
+            $html .= '<flux:button wire:click="removeOperand(\'' . $path . '\', ' . $i . ')" class="text-red-500">';
+            $html .= 'Remove';
+            $html .= '</flux:button>';
             $html .= '</div>';
+
+            // Content based on type
             if ($operand['type'] === 'operation') {
-                $html .= $this->renderNestedOperation($path . '.operands.' . $i, $operand, $salaryComponents);
+                $html .= $this->renderNestedOperation($path . '.operands.' . $i, $operand);
             } elseif ($operand['type'] === 'component') {
                 $html .= '<div class="ml-4">';
                 $html .= '<label class="block text-sm font-medium text-gray-700 mb-2">Select Component</label>';
                 $html .= '<flux:select wire:model.live="rule.' . $path . '.operands.' . $i . '.key">';
-                foreach ($salaryComponents as $id => $component) {
-                    $title = is_array($component) ? ($component['title'] ?? '') : (is_object($component) ? ($component->title ?? '') : '');
+
+                foreach ($this->salaryComponents as $id => $component) {
+                    $title = $this->getComponentTitle($component);
                     $html .= '<flux:select.option value="' . htmlspecialchars($id) . '">' . htmlspecialchars($title) . '</flux:select.option>';
                 }
+
                 $html .= '</flux:select>';
                 $html .= '</div>';
             } else {
@@ -772,10 +788,13 @@ class SalaryComponents extends Component
                 $html .= '<flux:input type="number" step="0.01" wire:model.live="rule.' . $path . '.operands.' . $i . '.value" placeholder="Enter value" />';
                 $html .= '</div>';
             }
+
             $html .= '</div>';
         }
+
         $html .= '</div>';
         $html .= '</div>';
+
         return $html;
     }
 

@@ -19,6 +19,9 @@ use App\Models\Hrms\PayrollStepPayrollSlotCmd;
 use App\Models\Hrms\SalaryHold;
 use App\Models\Hrms\SalaryAdvance;
 use App\Models\Hrms\SalaryArrear;
+use App\Models\Hrms\EmpLeaveBalance;
+use App\Models\Hrms\FlexiWeekOff;
+use App\Models\Hrms\LeaveType;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
@@ -27,6 +30,7 @@ use Flux;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class PayrollCycles extends Component
 {
@@ -110,6 +114,9 @@ class PayrollCycles extends Component
                     ]
                 );
             }
+
+            // Check for employees on salary hold and create hold entries
+            $this->processSalaryHoldsAtStart($slot_id);
 
             // Create initial command log
             PayrollSlotsCmd::create([
@@ -201,6 +208,8 @@ class PayrollCycles extends Component
                 );
             }
 
+            // Check for employees on salary hold and create hold entries
+            $this->processSalaryHoldsAtStart($slot_id);
 
             PayrollSlotsCmd::create([
                 'firm_id' => Session::get('firm_id'),
@@ -222,6 +231,8 @@ class PayrollCycles extends Component
 
             // Refresh slot details
             $this->loadSlotDetails($slot_id);
+          
+            $this->modal('mdl-re-start-payroll')->close();
 
         } catch (\Exception $e) {
             Flux::toast(
@@ -307,11 +318,20 @@ class PayrollCycles extends Component
                 ->where('salary_execution_group_id', $execution_group_id)
                 ->pluck('employee_id');
 
+            // Get employees on salary hold for this payroll slot
+            $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
+                ->where('payroll_slot_id', $slot_id)
+                ->pluck('employee_id')
+                ->toArray();
+
+            // Filter out employees on hold
+            $activeEmployeeIds = $employeeIds->diff($employeesOnHold);
+
             // Get the salary cycle for calculating days
             $salaryCycle = SalaryCycle::findOrFail($cycle_id);
             $cycleDays = 30;
 
-            foreach ($employeeIds as $employeeId) {
+            foreach ($activeEmployeeIds as $employeeId) {
                 // Get employee's salary components
                 $salaryComponents = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
                     ->where('employee_id', $employeeId)
@@ -385,10 +405,8 @@ class PayrollCycles extends Component
                     ->where('employee_id', $employeeId)
                     ->first();
 
-                $totalDeductionDays = 0;
-                if ($salaryDays) {
-                    $totalDeductionDays = $salaryDays->void_days_count + $salaryDays->lop_days_count;
-                }
+                // Enhanced calculation considering specific dates
+                $deductionDetails = $this->calculateAdvancedDeductionsByDates($salaryDays, $payrollSlot, $cycleDays);
 
                 // First create all non-tax components
                 foreach ($salaryComponents as $component) {
@@ -405,14 +423,8 @@ class PayrollCycles extends Component
                         continue; // Skip if already exists
                     }
 
-                    // Calculate per day amount
-                    $perDayAmount = $component->amount / $cycleDays;
-
-                    // Calculate deduction amount
-                    $deductionAmount = $perDayAmount * $totalDeductionDays;
-
-                    // Calculate final payable amount
-                    $amountPayable = $component->amount - $deductionAmount;
+                    // Calculate component amount considering LOP and void days
+                    $componentCalculation = $this->calculateComponentAmount($component, $deductionDetails, $cycleDays);
 
                     $precision = (int) session('roundoff_precision', 0);
                     $mode = (int) session('roundoff_mode', PHP_ROUND_HALF_UP);
@@ -438,12 +450,13 @@ class PayrollCycles extends Component
                             'salary_period_from' => $payrollSlot->from_date,
                             'salary_period_to' => $payrollSlot->to_date,
                             'user_id' => Session::get('user_id'),
-                            'amount_full' => round($component->amount, $precision, $mode),
-                            'amount_payable' => round($amountPayable, $precision, $mode),
+                            'amount_full' => round($componentCalculation['full_amount'], $precision, $mode),
+                            'amount_payable' => round($componentCalculation['payable_amount'], $precision, $mode),
                             'amount_paid' => 0,
                             'salary_advance_id' => null,
                             'salary_arrear_id' => null,
-                            'salary_cycle_id' => $cycle_id
+                            'salary_cycle_id' => $cycle_id,
+                            'remarks' => $componentCalculation['remarks']
                         ]
                     );
                 }
@@ -793,9 +806,18 @@ class PayrollCycles extends Component
                     ->pluck('employee_id')
                     ->toArray();
 
-                // Fetch attendance records
+                // Get employees on salary hold for this payroll slot
+                $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
+                    ->where('payroll_slot_id', $slotId)
+                    ->pluck('employee_id')
+                    ->toArray();
+
+                // Filter out employees on hold
+                $activeEmployeeIds = array_diff($employeeIds, $employeesOnHold);
+
+                // Fetch attendance records only for active employees
                 $attendanceRecords = EmpAttendance::where('firm_id', Session::get('firm_id'))
-                    ->whereIn('employee_id', $employeeIds)
+                    ->whereIn('employee_id', $activeEmployeeIds)
                     ->whereBetween('work_date', [$slot->from_date, $slot->to_date])
                     ->get();
 
@@ -805,7 +827,7 @@ class PayrollCycles extends Component
                 $cycleDays = $fromDate->diffInDays($toDate) + 1;
 
                 // Process attendance for each employee and update EmployeesSalaryDay
-                foreach ($employeeIds as $employeeId) {
+                foreach ($activeEmployeeIds as $employeeId) {
                     $employeeAttendance = $attendanceRecords->where('employee_id', $employeeId);
                     $lopDaysCount = $employeeAttendance->where('attendance_status_main', 'A')->count();
 
@@ -832,8 +854,9 @@ class PayrollCycles extends Component
                     'payroll_step_payroll_slot_id' => $stepSlot->id,
                     'payroll_step_status' => 'RN', // Run
                     'step_remarks' => sprintf(
-                        'Attendance fetched and processed for %d employees. Found %d LOP days.',
-                        count($employeeIds),
+                        'Attendance fetched and processed for %d active employees (excluded %d employees on hold). Found %d LOP days.',
+                        count($activeEmployeeIds),
+                        count($employeesOnHold),
                         $attendanceRecords->where('attendance_status_main', 'A')->count()
                     ),
                     'user_id' => auth()->user()->id
@@ -881,9 +904,9 @@ class PayrollCycles extends Component
             // Filter out employees on hold
             $activeEmployees = array_diff($employeeIds, $employeesOnHold);
 
-            // Handle salary holds step
+            // Handle salary holds step - now just mark as completed since holds are processed at start
             if ($step->step_code_main === 'salary_holds') {
-                $this->processSalaryHolds($slotId, $employeeIds, $employeesOnHold);
+                // Salary holds are already processed at payroll start, just mark step as completed
             }
             
             // Handle salary advances step
@@ -928,6 +951,64 @@ class PayrollCycles extends Component
                 variant: 'error',
                 heading: 'Error',
                 text: 'Failed to complete step: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    /**
+     * Process salary holds at the start of payroll
+     */
+    protected function processSalaryHoldsAtStart($slotId)
+    {
+        // Get salary hold component
+        $holdComponent = SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->where('component_type', 'salary_hold')
+            ->first();
+
+        if (!$holdComponent) {
+            return;
+        }
+
+        // Get employees on salary hold for this payroll slot
+        $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
+            ->where('payroll_slot_id', $slotId)
+            ->pluck('employee_id')
+            ->toArray();
+
+        // Get payroll slot details
+        $payrollSlot = PayrollSlot::findOrFail($slotId);
+
+        // Create entries for employees on hold
+        foreach ($employeesOnHold as $employeeId) {
+            PayrollComponentsEmployeesTrack::updateOrCreate(
+                [
+                    'firm_id' => Session::get('firm_id'),
+                    'payroll_slot_id' => $slotId,
+                    'employee_id' => $employeeId,
+                    'salary_component_id' => $holdComponent->id,
+                ],
+                [
+                    'payroll_slots_cmd_id' => null, // Will be set when command is created
+                    'salary_template_id' => $holdComponent->salary_template_id ?? null,
+                    'salary_component_group_id' => $holdComponent->salary_component_group_id ?? null,
+                    'sequence' => 1,
+                    'nature' => 'deduction',
+                    'component_type' => 'salary_hold',
+                    'amount_type' => 'static_known',
+                    'taxable' => false,
+                    'calculation_json' => $holdComponent->calculation_json ?? null,
+                    'salary_period_from' => $payrollSlot->from_date,
+                    'salary_period_to' => $payrollSlot->to_date,
+                    'user_id' => Session::get('user_id'),
+                    'amount_full' => 0,
+                    'amount_payable' => 0,
+                    'amount_paid' => 0,
+                    'salary_advance_id' => null,
+                    'salary_arrear_id' => null,
+                    'salary_cycle_id' => $payrollSlot->salary_cycle_id,
+                    'remarks' => 'Salary on hold for this payroll period',
+                    'entry_type' => 'system'
+                ]
             );
         }
     }
@@ -1244,6 +1325,268 @@ class PayrollCycles extends Component
         } catch (\Exception $e) {
             return collect([]);
         }
+    }
+
+    public function publishPayroll($slot_id)
+    {
+        try {
+            DB::beginTransaction();
+
+            $payrollSlot = PayrollSlot::findOrFail($slot_id);
+
+            if ($payrollSlot->payroll_slot_status !== 'L') {
+                throw new \Exception("Payroll slot is not locked.");
+            }
+
+            // 1. Update PayrollSlot status to 'PB' (Published)
+            $payrollSlot->update(['payroll_slot_status' => 'PB']);
+
+            // 2. Create entry in PayrollSlotsCmd
+            PayrollSlotsCmd::create([
+                'firm_id' => Session::get('firm_id'),
+                'payroll_slot_id' => $slot_id,
+                'user_id' => auth()->user()->id,
+                'run_payroll_remarks' => json_encode([
+                    'remark' => 'Payroll Published',
+                    'action' => 'PUBLISH'
+                ]),
+                'payroll_slot_status' => 'PB',
+            ]);
+
+            // 3. Process week-off leave balance
+            $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
+                ->where('salary_execution_group_id', $payrollSlot->salary_execution_group_id)
+                ->pluck('employee_id');
+
+            $weekoffLeaveType = LeaveType::where('firm_id', Session::get('firm_id'))
+                ->where('leave_type_main', 'weekoff')
+                ->first();
+
+            if (!$weekoffLeaveType) {
+                throw new \Exception("Weekoff leave type not found.");
+            }
+
+            foreach ($employeeIds as $employeeId) {
+                // Get available flexi week offs for the employee within the slot period
+                $weekOffsToProcess = FlexiWeekOff::join('emp_attendances', 'flexi_week_off.availed_emp_attendance_id', '=', 'emp_attendances.id')
+                    ->where('flexi_week_off.employee_id', $employeeId)
+                    ->where('flexi_week_off.week_off_Status', 'A') // 'A' for Available
+                    ->whereBetween('emp_attendances.work_date', [$payrollSlot->from_date, $payrollSlot->to_date])
+                    ->select('flexi_week_off.*')
+                    ->get();
+
+                $weekOffDays = $weekOffsToProcess->count();
+
+                if ($weekOffDays > 0) {
+                    $leaveBalance = EmpLeaveBalance::where('employee_id', $employeeId)
+                        ->where('leave_type_id', $weekoffLeaveType->id)
+                        ->where('firm_id', Session::get('firm_id'))
+                        ->where('period_start', '<=', $payrollSlot->to_date)
+                        ->where('period_end', '>=', $payrollSlot->from_date)
+                        ->first();
+
+                    if ($leaveBalance) {
+                        $leaveBalance->allocated_days += $weekOffDays;
+                        $leaveBalance->balance += $weekOffDays;
+                        $leaveBalance->save();
+
+                        // Update FlexiWeekOff status to 'C' (Consumed)
+                        FlexiWeekOff::whereIn('id', $weekOffsToProcess->pluck('id'))->update(['week_off_Status' => 'C']);
+                    } else {
+                        Log::warning("No leave balance record found for employee {$employeeId} for weekoff leave type. Week off allocation skipped.");
+                    }
+                }
+            }
+
+            DB::commit();
+            $this->loadSlotDetails($slot_id);
+
+            // Close the modal
+            $this->dispatch('close-modal', 'mdl-publish-payroll');
+            $this->resetForm();
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Success',
+                text: 'Payroll has been published successfully',
+            );
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to publish payroll: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    protected function calculateAdvancedDeductionsByDates($salaryDays, $payrollSlot, $cycleDays)
+    {
+        $deductionDetails = $this->calculateDeductionsByDates($salaryDays, $payrollSlot, $cycleDays);
+        
+        // If we have specific dates, we can do more precise calculations
+        if (!empty($deductionDetails['lop_dates']) || !empty($deductionDetails['void_dates'])) {
+            $allDeductionDates = array_merge($deductionDetails['lop_dates'], $deductionDetails['void_dates']);
+            $deductionDetails['specific_dates'] = array_unique($allDeductionDates);
+            
+            // Calculate working days more precisely
+            $fromDate = \Carbon\Carbon::parse($payrollSlot->from_date);
+            $toDate = \Carbon\Carbon::parse($payrollSlot->to_date);
+            $totalDays = $fromDate->diffInDays($toDate) + 1;
+            
+            $deductionDetails['working_days'] = $totalDays - count($deductionDetails['specific_dates']);
+        }
+        
+        return $deductionDetails;
+    }
+
+    protected function calculateComponentAmount($component, $deductionDetails, $cycleDays)
+    {
+        $fullAmount = $component->amount;
+        $payableAmount = $fullAmount;
+        $remarks = '';
+
+        // Check if component should be affected by LOP/void days
+        if (!$this->shouldComponentBeAffectedByDeductions($component)) {
+            return [
+                'full_amount' => $fullAmount,
+                'payable_amount' => $fullAmount,
+                'per_day_amount' => 0,
+                'deduction_amount' => 0,
+                'remarks' => 'Component not affected by LOP/Void days'
+            ];
+        }
+
+        // Calculate effective deduction days based on component's effective date
+        $effectiveDeductionDetails = $this->calculateEffectiveDeductionsForComponent($component, $deductionDetails, $cycleDays);
+
+        // Calculate per day amount based on effective working days
+        $effectiveWorkingDays = $effectiveDeductionDetails['effective_working_days'];
+        $perDayAmount = $effectiveWorkingDays > 0 ? $fullAmount / $effectiveWorkingDays : 0;
+
+        // Calculate deduction based on effective deduction days
+        $totalDeductionAmount = $perDayAmount * $effectiveDeductionDetails['effective_deduction_days'];
+        $payableAmount = $fullAmount - $totalDeductionAmount;
+
+        // Ensure payable amount doesn't go below 0
+        $payableAmount = max(0, $payableAmount);
+
+        // Build remarks with effective date information
+        $remarks = sprintf(
+            'Full: %s, Effective Working Days: %d, Effective Deduction Days: %d, Deduction: %s, Payable: %s',
+            number_format($fullAmount, 2),
+            $effectiveWorkingDays,
+            $effectiveDeductionDetails['effective_deduction_days'],
+            number_format($totalDeductionAmount, 2),
+            number_format($payableAmount, 2)
+        );
+
+        if ($component->effective_from) {
+            $remarks .= sprintf(', Effective From: %s', $component->effective_from->format('Y-m-d'));
+        }
+
+        return [
+            'full_amount' => $fullAmount,
+            'payable_amount' => $payableAmount,
+            'per_day_amount' => $perDayAmount,
+            'deduction_amount' => $totalDeductionAmount,
+            'effective_working_days' => $effectiveWorkingDays,
+            'effective_deduction_days' => $effectiveDeductionDetails['effective_deduction_days'],
+            'remarks' => $remarks
+        ];
+    }
+
+    protected function calculateEffectiveDeductionsForComponent($component, $deductionDetails, $cycleDays)
+    {
+        $effectiveDeductionDays = 0;
+        $effectiveWorkingDays = $cycleDays;
+
+        // If component has an effective date, calculate deductions only from that date onwards
+        if ($component->effective_from) {
+            $componentEffectiveDate = \Carbon\Carbon::parse($component->effective_from);
+            
+            // Filter deduction dates to only include those after component effective date
+            $effectiveDeductionDates = [];
+            
+            if (!empty($deductionDetails['specific_dates'])) {
+                foreach ($deductionDetails['specific_dates'] as $deductionDate) {
+                    $deductionCarbonDate = \Carbon\Carbon::parse($deductionDate);
+                    if ($deductionCarbonDate->gte($componentEffectiveDate)) {
+                        $effectiveDeductionDates[] = $deductionDate;
+                    }
+                }
+            }
+            
+            $effectiveDeductionDays = count($effectiveDeductionDates);
+            
+            // Calculate effective working days for this component
+            $effectiveWorkingDays = $cycleDays - $effectiveDeductionDays;
+            
+        } else {
+            // If no effective date, use all deduction days
+            $effectiveDeductionDays = $deductionDetails['total_deduction_days'];
+            $effectiveWorkingDays = $deductionDetails['working_days'];
+        }
+
+        return [
+            'effective_deduction_days' => $effectiveDeductionDays,
+            'effective_working_days' => $effectiveWorkingDays,
+            'effective_deduction_dates' => $effectiveDeductionDates ?? []
+        ];
+    }
+
+    protected function shouldComponentBeAffectedByDeductions($component)
+    {
+        // Components that should NOT be affected by LOP/void days
+        $nonDeductibleTypes = [
+            'reimbursement', // Reimbursements are usually not affected
+            'one_time',      // One-time payments
+            'advance',       // Advances
+            'arrear',        // Arrears
+            'tds',           // TDS
+            'tax',           // Tax
+            'employee_contribution', // Employee contributions
+            'employer_contribution'  // Employer contributions
+        ];
+
+        // Components that should NOT be affected by LOP/void days based on amount type
+        $nonDeductibleAmountTypes = [
+            'static_unknown',
+            'calculated_unknown'
+        ];
+
+        return !in_array($component->component_type, $nonDeductibleTypes) && 
+               !in_array($component->amount_type, $nonDeductibleAmountTypes);
+    }
+
+    protected function calculateDeductionsByDates($salaryDays, $payrollSlot, $cycleDays)
+    {
+        $deductionDetails = [
+            'total_deduction_days' => 0,
+            'lop_days' => 0,
+            'void_days' => 0,
+            'lop_dates' => [],
+            'void_dates' => [],
+            'working_days' => $cycleDays
+        ];
+
+        if ($salaryDays) {
+            $deductionDetails['lop_days'] = $salaryDays->lop_days_count;
+            $deductionDetails['void_days'] = $salaryDays->void_days_count;
+            $deductionDetails['total_deduction_days'] = $salaryDays->void_days_count + $salaryDays->lop_days_count;
+            $deductionDetails['working_days'] = $cycleDays - $deductionDetails['total_deduction_days'];
+
+            // Parse LOP details if available
+            if ($salaryDays->lop_details) {
+                $lopData = json_decode($salaryDays->lop_details, true);
+                if (is_array($lopData)) {
+                    $deductionDetails['lop_dates'] = $lopData['lop'] ?? [];
+                    $deductionDetails['void_dates'] = $lopData['void'] ?? [];
+                }
+            }
+        }
+
+        return $deductionDetails;
     }
 
 }

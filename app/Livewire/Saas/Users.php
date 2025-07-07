@@ -25,6 +25,7 @@ class Users extends Component
         'passcode' => '',
         'phone' => '',
         'is_inactive' => 0,
+        'role_main' => '',
     ];
 
     // Field configuration for form and table
@@ -33,6 +34,7 @@ class Users extends Component
         'email' => ['label' => 'Email', 'type' => 'text'],
         'phone' => ['label' => 'Phone', 'type' => 'text'],
         'passcode' => ['label' => 'Passcode', 'type' => 'text'],
+        'role_main' => ['label' => 'Role', 'type' => 'text'],
         'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
     ];
 
@@ -42,6 +44,7 @@ class Users extends Component
         'email' => ['label' => 'Email', 'type' => 'text'],
         'phone' => ['label' => 'Phone', 'type' => 'text'],
         'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status'],
+        'role_main' => ['label' => 'Role', 'type' => 'select', 'listKey' => 'role_main'],
     ];
 
     public array $listsForFields = [];
@@ -60,8 +63,8 @@ class Users extends Component
         $this->initListsForFields();
         
         // Set default visible fields
-        $this->visibleFields = ['name', 'email', 'phone', 'is_inactive'];
-        $this->visibleFilterFields = ['name', 'email', 'phone'];
+        $this->visibleFields = ['name', 'email', 'phone', 'is_inactive', 'role_main'];
+        $this->visibleFilterFields = ['name', 'email', 'phone', 'role_main'];
         
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
@@ -77,6 +80,7 @@ class Users extends Component
     protected function initListsForFields(): void
     {
         $this->listsForFields['panellist'] = Panel::pluck('name', 'id')->toArray();
+        $this->listsForFields['role_main'] = User::ROLE_MAIN_TYPES;
         $this->listsForFields['status'] = [
             '0' => 'Active',
             '1' => 'Inactive'
@@ -122,6 +126,7 @@ class Users extends Component
     public function list()
     {
         return User::query()
+            ->whereIn('role_main', ['L2_agency', 'L3_company'])
             ->when($this->filters['name'], fn($query, $value) => 
                 $query->where('name', 'like', "%{$value}%"))
             ->when($this->filters['email'], fn($query, $value) => 
@@ -130,24 +135,24 @@ class Users extends Component
                 $query->where('phone', 'like', "%{$value}%"))
             ->when($this->filters['is_inactive'] !== '', fn($query) => 
                 $query->where('is_inactive', $this->filters['is_inactive']))
+            ->when($this->filters['role_main'], fn($query, $value) =>
+                $query->where('role_main', $value))
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(100);
+            ->paginate(10);
     }
 
     public function store()
     {
-
-
         $validatedData = $this->validate([
             'formData.name' => 'required|string|max:255',
             'formData.email' => 'nullable|string|max:255',
             'formData.password' => 'nullable|string|max:255',
             'formData.passcode' => 'nullable|string|max:255',
             'formData.phone' => 'nullable|string|max:9999999999',
+            'formData.role_main' => 'required|string|in:' . implode(',', array_keys(User::ROLE_MAIN_TYPES)),
             'formData.is_inactive' => 'boolean',
             'panels' => ['array'],
             'panels.*' => ['exists:panels,id'],
-
         ]);
 
         // Convert empty strings to null
@@ -175,7 +180,6 @@ class Users extends Component
             heading: 'Changes saved.',
             text: $toastMsg,
         );
-
     }
 
     public function resetForm()
@@ -190,28 +194,32 @@ class Users extends Component
         $this->formData = User::findOrFail($id)->toArray();
         $this->isEditing = true;
         $this->modal('mdl-user')->show();
-
     }
+
     public function showmodal_panelSync($userId)
     {
         $this->selectedUserId = $userId;
         $this->modal('panel-sync')->show();
     }
+
     public function showmodal_firmSync($userId)
     {
         $this->selectedUserId = $userId;
         $this->modal('firm-sync')->show();
     }
+
     public function showmodal_permissionGroupSync($userId)
     {
         $this->selectedUserId = $userId;
         $this->modal('permission-group-sync')->show();
     }
+
     public function showmodal_permissionSync($userId)
     {
         $this->selectedUserId = $userId;
         $this->modal('permission-sync')->show();
     }
+
     public function delete($id)
     {
         User::findOrFail($id)->delete();
@@ -231,9 +239,9 @@ class Users extends Component
         $this->statuses[$firmId] = $firm->is_inactive;
         $this->refreshStatuses();
     }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Saas/blades/users.blade.php'));
     }
-
 }

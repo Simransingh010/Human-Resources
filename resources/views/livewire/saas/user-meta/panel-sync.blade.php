@@ -7,8 +7,8 @@
     <flux:separator />
     <div class="space-y-4">
         <flux:checkbox.group wire:model="selectedPanels" label="Panels">
-            @foreach ( $this->listsForFields['panellist'] as $id => $name)
-                <flux:checkbox label="{{ $name }}" value="{{ $id }}"/>
+            @foreach ($this->listsForFields['panellist'] as $id => $name)
+                <flux:checkbox label="{{ $name }}" value="{{ $id }}" />
             @endforeach
         </flux:checkbox.group>
     </div>

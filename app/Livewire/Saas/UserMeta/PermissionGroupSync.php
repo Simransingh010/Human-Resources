@@ -2,82 +2,111 @@
 
 namespace App\Livewire\Saas\UserMeta;
 
-use Livewire\Component;
 use App\Models\User;
-use App\Models\Saas\PermissionGroup;
-use Flux;
+use App\Models\Saas\Role;
+use App\Models\Saas\Firm;
 use Illuminate\Support\Facades\DB;
+use Livewire\Component;
+use Illuminate\Support\Facades\View;
+use Flux;
+use Livewire\Attributes\Computed;
 
 class PermissionGroupSync extends Component
 {
     public User $user;
-    public array $selectedPermissionGroups = [];
+    public array $selectedRoles = [];
     public array $listsForFields = [];
+    public ?int $firmId;
 
-    public function mount($userId)
+    public function mount($userId, $firmId = null)
     {
         $this->user = User::findOrFail($userId);
-        $this->selectedPermissionGroups = $this->user->permissionGroups()->select('permission_groups.id')->pluck('id')->toArray();
+        $this->firmId = $firmId;
+        
+        // Get roles for specific firm if firmId is provided
+        if ($firmId) {
+            $this->selectedRoles = $this->user->roles()
+                ->wherePivot('firm_id', $firmId)
+                ->pluck('roles.id')
+                ->toArray();
+        } else {
+            $this->selectedRoles = $this->user->roles()
+                ->pluck('roles.id')
+                ->toArray();
+        }
+        
         $this->initListsForFields();
     }
 
-//    public function save()
-//    {
-//        $this->user->permissionGroups()->sync($this->selectedPermissionGroups);
-//        Flux::modal('permission-group-sync')->close();
-//
-//        Flux::toast(
-//            variant: 'success',
-//            heading: 'Changes saved.',
-//            text: 'Roles updated successfully!',
-//        );
-//    }
     public function save()
     {
-        $existingGroupIds = $this->user->permissionGroups()->pluck('permission_groups.id')->toArray();
+        $userId = DB::table('users')->where('id', $this->user->id)->value('id');
 
-        // Sync groups
-        $this->user->permissionGroups()->sync($this->selectedPermissionGroups);
+        if ($this->firmId) {
+            // First remove old records that are not in selectedRoles
+            DB::table('role_user')
+                ->where('user_id', $userId)
+                ->where('firm_id', $this->firmId)
+                ->whereNotIn('role_id', $this->selectedRoles)
+                ->delete();
 
-        $selectedGroups = PermissionGroup::with('permission_group_permissions')->whereIn('id', $this->selectedPermissionGroups)->get();
+            // Then update or insert new role records
+            foreach ($this->selectedRoles as $roleId) {
+                DB::table('role_user')->updateOrInsert(
+                    [
+                        'user_id' => $userId,
+                        'role_id' => $roleId,
+                        'firm_id' => $this->firmId
+                    ]
+                );
+            }
 
-        // STEP 1: Attach permissions from selected groups with correct firm_id
-        foreach ($selectedGroups as $group) {
-            foreach ($group->permission_group_permissions as $pgp) {
-                $permissionId = $pgp->permission_id;
+            // Sync actions from ActionRole to ActionUser
+            $actionRoles = DB::table('action_role')
+                ->whereIn('role_id', $this->selectedRoles)
+                ->where('firm_id', $this->firmId)
+                ->get();
 
-                // Check if user already has this permission for this firm
-                $alreadyHas = DB::table('user_permission')
-                    ->where('user_id', $this->user->id)
-                    ->where('permission_id', $permissionId)
-                    ->where('firm_id', $group->firm_id)
-                    ->exists();
+            // Create action mapping
+            $actionMap = [];
+            foreach ($actionRoles as $ar) {
+                $actionMap[$ar->action_id] = $ar->records_scope;
+            }
 
-                if (!$alreadyHas) {
-                    $this->user->permissions()->attach([
-                        $permissionId => ['firm_id' => $group->firm_id],
-                    ]);
-                }
+            // Remove ActionUser records not in this set
+            DB::table('action_user')
+                ->where('user_id', $userId)
+                ->where('firm_id', $this->firmId)
+                ->whereNotIn('action_id', array_keys($actionMap))
+                ->delete();
+
+            // Add/update ActionUser for each action
+            foreach ($actionMap as $actionId => $recordsScope) {
+                DB::table('action_user')->updateOrInsert(
+                    [
+                        'user_id' => $userId,
+                        'firm_id' => $this->firmId,
+                        'action_id' => $actionId,
+                    ],
+                    [
+                        'records_scope' => $recordsScope,
+                    ]
+                );
+            }
+        } else {
+            // For roles without firm_id, update or insert
+            foreach ($this->selectedRoles as $roleId) {
+                DB::table('role_user')->updateOrInsert(
+                    [
+                        'user_id' => $userId,
+                        'role_id' => $roleId,
+                        'firm_id' => null
+                    ]
+                );
             }
         }
 
-        // STEP 2: Clean up permissions from deselected groups (scoped to firm)
-        $removedGroupIds = array_diff($existingGroupIds, $this->selectedPermissionGroups);
-
-        $removedGroups = PermissionGroup::with('permission_group_permissions')->whereIn('id', $removedGroupIds)->get();
-
-        foreach ($removedGroups as $group) {
-            $permissionIds = $group->permission_group_permissions->pluck('permission_id')->toArray();
-
-            // Detach only entries for this firm's permission ids
-            $this->user->permissions()
-                ->wherePivot('firm_id', $group->firm_id)
-                ->whereIn('permissions.id', $permissionIds)
-                ->detach();
-        }
-
-        // Done
-        Flux::modal('permission-group-sync')->close();
+        Flux::modal('firm-panel-sync')->close();
 
         Flux::toast(
             variant: 'success',
@@ -86,27 +115,47 @@ class PermissionGroupSync extends Component
         );
     }
 
-
     protected function initListsForFields(): void
     {
-        $firmIds = $this->user->firms()->pluck('firms.id')->toArray();
+        // Get roles using DB facade to avoid model method issues
+        if ($this->firmId) {
+            if ($this->user->role_main === 'L1_firm') {
+                // For L1_firm users, show only firm-specific roles
+                $roles = DB::table('roles')
+                    ->where('firm_id', $this->firmId)
+                    ->whereNull('deleted_at')
+                    ->orderBy('name')
+                    ->get();
+            } else {
+                // For other users, show both firm-specific and global roles
+                $roles = DB::table('roles')
+                    ->where(function($query) {
+                        $query->where('firm_id', $this->firmId)
+                              ->orWhereNull('firm_id');
+                    })
+                    ->whereNull('deleted_at')
+                    ->orderBy('name')
+                    ->get();
+            }
+        } else {
+            // Get all roles that have no firm_id
+            $roles = DB::table('roles')
+                ->whereNull('firm_id')
+                ->whereNull('deleted_at')
+                ->orderBy('name')
+                ->get();
+        }
 
-        $groups = PermissionGroup::with('firm')
-            ->whereIn('firm_id', $firmIds)
-            ->get()
-            ->groupBy(fn ($group) => optional($group->firm)->name ?? 'Unknown Firm');
-
-        // Convert Eloquent groups to a clean array
-        $this->listsForFields['permissiongrouplist'] = $groups->map(function ($groupList) {
-            return $groupList->map(function ($group) {
-                return [
-                    'id' => $group->id,
-                    'name' => $group->name,
-                ];
-            })->toArray();
+        $this->listsForFields['rolelist'] = collect($roles)->mapWithKeys(function ($role) {
+            $firmLabel = $role->firm_id ? ' (Firm)' : ' (Global)';
+            return [
+                $role->id => $role->name . $firmLabel
+            ];
         })->toArray();
-
     }
 
-
+    public function render()
+    {
+        return View::make('livewire.saas.user-meta.permission-group-sync');
+    }
 }

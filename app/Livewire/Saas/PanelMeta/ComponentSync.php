@@ -17,8 +17,10 @@ class ComponentSync extends Component
     public function mount($panelId)
     {
         $this->panel = Panel::findOrFail($panelId);
-        $this->selectedApps = $this->panel->components()->select('components.id')->pluck('id')->toArray();
+       $this->selectedComponents= $this->selectedApps = $this->panel->components()->select('components.id')->pluck('id')->toArray();
+
         $this->initListsForFields();
+
     }
 
     public function save()

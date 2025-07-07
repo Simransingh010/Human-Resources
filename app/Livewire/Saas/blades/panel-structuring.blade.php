@@ -1,70 +1,16 @@
+
 <div>
 
-<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-
-
-
-
- <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-    
-    body {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    .card-hover {
-        transition: all 0.2s ease-in-out;
-    }
-    
-    .card-hover:hover {
-        transform: translateY(-1px);
-        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-    
-    .gradient-bg {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    }
-    
-    .custom-scrollbar {
-        scrollbar-width: thin;
-        scrollbar-color: #e5e7eb #f3f4f6;
-    }
-    
-    .custom-scrollbar::-webkit-scrollbar {
-        width: 6px;
-    }
-    
-    .custom-scrollbar::-webkit-scrollbar-track {
-        background: #f3f4f6;
-        border-radius: 3px;
-    }
-    
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-        background: #e5e7eb;
-        border-radius: 3px;
-    }
-    
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-        background: #d1d5db;
-    }
-    
-    .status-indicator {
-        animation: pulse 2s infinite;
-    }
-    
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-</style>
 
 <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
     <div class="p-6 border-b border-gray-200">
         <div class="flex items-center justify-between">
-            <h2 class="text-xl font-semibold text-gray-900">Panel Management</h2>
-
+            <h2 class="text-xl font-semibold text-gray-900">Platform Setup</h2>
+            <div class="flex items-center space-x-2">
+                <flux:button wire:click="showModuleClustersModal" size="sm">Module Clusters</flux:button>
+                <flux:button wire:click="showComponentClustersModal" size="sm">Component Clusters</flux:button>
+                <flux:button wire:click="showActionClustersModal" size="sm">Action Clusters</flux:button>
+            </div>
         </div>
     </div>
     
@@ -126,18 +72,21 @@
                         <span class="font-semibold text-gray-700">Modules</span>
                     </div>
                     @if($selectedApplication)
-                        <div class="flex items-center space-x-1">
-                            <flux:button size="xs" variant="ghost" icon="bars-3-bottom-right" tooltip="Reorder"
-                                wire:click="toggleEditMode('module')"
-                                :class="$isEditingModule ? 'text-green-600' : 'text-gray-500'"
-                                class="hover:text-gray-700"/>
-                            <flux:modal.trigger name="assign-existing-item-modal">
-                                <flux:button size="xs" variant="ghost" icon="link" tooltip="Assign existing" class="text-gray-500 hover:text-gray-700" wire:click="openAssignModal('module')"/>
-                            </flux:modal.trigger> 
-                            <flux:modal.trigger name="add-module-modal">
-                                <flux:button size="xs" variant="ghost" tooltip="Add new" icon="plus" class="text-gray-500 hover:text-gray-700"/>
-                            </flux:modal.trigger>
-                        </div>
+                                            <div class="flex items-center space-x-1">
+                        <flux:button size="xs" variant="ghost" icon="bars-3-bottom-right" tooltip="Reorder"
+                            wire:click="toggleEditMode('module')"
+                            :class="$isEditingModule ? 'text-green-600' : 'text-gray-500'"
+                            class="hover:text-gray-700"/>
+                        <flux:modal.trigger name="assign-existing-item-modal">
+                            <flux:button size="xs" variant="ghost" icon="link" tooltip="Assign existing" class="text-gray-500 hover:text-gray-700" wire:click="openAssignModal('module')"/>
+                        </flux:modal.trigger> 
+                        <flux:modal.trigger name="add-module-modal">
+                            <flux:button size="xs" variant="ghost" tooltip="Add new" icon="plus" class="text-gray-500 hover:text-gray-700"/>
+                        </flux:modal.trigger>
+                        <flux:modal.trigger name="add-modulecluster-modal">
+                            <flux:button size="xs" variant="ghost" tooltip="Add cluster" icon="folder-plus" class="text-green-600 hover:text-green-700"/>
+                        </flux:modal.trigger>
+                    </div>
                     @endif
                 </div>
             </div>
@@ -198,6 +147,9 @@
                             <flux:modal.trigger name="add-component-modal">
                                 <flux:button size="xs" variant="ghost" tooltip="Add new" icon="plus" class="text-gray-500 hover:text-gray-700"/>
                             </flux:modal.trigger>
+                            <flux:modal.trigger name="add-componentcluster-modal">
+                                <flux:button size="xs" variant="ghost" tooltip="Add cluster" icon="folder-plus" class="text-yellow-600 hover:text-yellow-700"/>
+                            </flux:modal.trigger>
                         </div>
                     @endif
                 </div>
@@ -255,6 +207,9 @@
                                 class="hover:text-gray-700"/>
                             <flux:modal.trigger name="add-action-modal">
                                 <flux:button size="xs" variant="ghost" icon="plus" tooltip="Add new" class="text-gray-500 hover:text-gray-700"/>
+                            </flux:modal.trigger>
+                            <flux:modal.trigger name="add-actioncluster-modal">
+                                <flux:button size="xs" variant="ghost" tooltip="Add cluster" icon="folder-plus" class="text-purple-600 hover:text-purple-700"/>
                             </flux:modal.trigger>
                         </div>
                     @endif
@@ -700,6 +655,126 @@
     </form>
 </flux:modal>
 
+<!-- Add New Module Cluster Modal -->
+<flux:modal name="add-modulecluster-modal" class="w-full">
+    <form wire:submit.prevent="addNewModulecluster">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Add New Module Cluster</flux:heading>
+                <flux:subheading>Create a new module cluster for organizing modules.</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <flux:input label="Name" wire:model.live="newModulecluster.name" required/>
+                <flux:input label="Code" wire:model.live="newModulecluster.code"/>
+                <flux:input label="Icon" wire:model.live="newModulecluster.icon"/>
+                <flux:input label="Color" wire:model.live="newModulecluster.color"/>
+                <flux:input label="Tooltip" wire:model.live="newModulecluster.tooltip"/>
+                <flux:input label="Badge" wire:model.live="newModulecluster.badge"/>
+                <flux:input label="Custom CSS" wire:model.live="newModulecluster.custom_css"/>
+                <flux:input type="number" label="Order" wire:model.live="newModulecluster.order" value="0"/>
+                <flux:switch label="Inactive" wire:model.live="newModulecluster.is_inactive"/>
+                <flux:select label="Parent Module Cluster" wire:model.live="newModulecluster.parent_modulecluster_id">
+                    <option value="">Select Parent Cluster (Optional)</option>
+                    @foreach($moduleClusters as $cluster)
+                        <option value="{{ $cluster->id }}">{{ $cluster->name }}</option>
+                    @endforeach
+                </flux:select>
+                <div class="col-span-2">
+                    <flux:textarea label="Description" wire:model.live="newModulecluster.description" rows="3"/>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4 space-x-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">Cancel</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">Add Module Cluster</flux:button>
+            </div>
+        </div>
+    </form>
+</flux:modal>
+
+<!-- Add New Component Cluster Modal -->
+<flux:modal name="add-componentcluster-modal" class="w-full">
+    <form wire:submit.prevent="addNewComponentcluster">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Add New Component Cluster</flux:heading>
+                <flux:subheading>Create a new component cluster for organizing components.</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <flux:input label="Name" wire:model.live="newComponentcluster.name" required/>
+                <flux:input label="Code" wire:model.live="newComponentcluster.code"/>
+                <flux:input label="Icon" wire:model.live="newComponentcluster.icon"/>
+                <flux:input label="Color" wire:model.live="newComponentcluster.color"/>
+                <flux:input label="Tooltip" wire:model.live="newComponentcluster.tooltip"/>
+                <flux:input label="Badge" wire:model.live="newComponentcluster.badge"/>
+                <flux:input label="Custom CSS" wire:model.live="newComponentcluster.custom_css"/>
+                <flux:input type="number" label="Order" wire:model.live="newComponentcluster.order" value="0"/>
+                <flux:switch label="Inactive" wire:model.live="newComponentcluster.is_inactive"/>
+                <flux:select label="Parent Component Cluster" wire:model.live="newComponentcluster.parent_componentcluster_id">
+                    <option value="">Select Parent Cluster (Optional)</option>
+                    @foreach($componentClusters as $cluster)
+                        <option value="{{ $cluster->id }}">{{ $cluster->name }}</option>
+                    @endforeach
+                </flux:select>
+                <div class="col-span-2">
+                    <flux:textarea label="Description" wire:model.live="newComponentcluster.description" rows="3"/>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4 space-x-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">Cancel</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">Add Component Cluster</flux:button>
+            </div>
+        </div>
+    </form>
+</flux:modal>
+
+<!-- Add New Action Cluster Modal -->
+<flux:modal name="add-actioncluster-modal" class="w-full">
+    <form wire:submit.prevent="addNewActioncluster">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Add New Action Cluster</flux:heading>
+                <flux:subheading>Create a new action cluster for organizing actions.</flux:subheading>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <flux:input label="Name" wire:model.live="newActioncluster.name" required/>
+                <flux:input label="Code" wire:model.live="newActioncluster.code"/>
+                <flux:input label="Icon" wire:model.live="newActioncluster.icon"/>
+                <flux:input label="Color" wire:model.live="newActioncluster.color"/>
+                <flux:input label="Tooltip" wire:model.live="newActioncluster.tooltip"/>
+                <flux:input label="Badge" wire:model.live="newActioncluster.badge"/>
+                <flux:input label="Custom CSS" wire:model.live="newActioncluster.custom_css"/>
+                <flux:input type="number" label="Order" wire:model.live="newActioncluster.order" value="0"/>
+                <flux:switch label="Inactive" wire:model.live="newActioncluster.is_inactive"/>
+                <flux:select label="Parent Action Cluster" wire:model.live="newActioncluster.parent_actioncluster_id">
+                    <option value="">Select Parent Cluster (Optional)</option>
+                    @foreach($actionClusters as $cluster)
+                        <option value="{{ $cluster->id }}">{{ $cluster->name }}</option>
+                    @endforeach
+                </flux:select>
+                <div class="col-span-2">
+                    <flux:textarea label="Description" wire:model.live="newActioncluster.description" rows="3"/>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4 space-x-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">Cancel</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="primary">Add Action Cluster</flux:button>
+            </div>
+        </div>
+    </form>
+</flux:modal>
+
 <!-- Edit Item Modal -->
 <flux:modal name="edit-item-modal" :open="$isEditModalOpen" @cancel="closeEditModal" class="max-w-3xl w-full" >
     @if($editItem)
@@ -864,7 +939,66 @@
     <i class="fas fa-spinner fa-spin"></i> Initializing drag-and-drop...
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 
+
+
+
+ <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    
+    body {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    .card-hover {
+        transition: all 0.2s ease-in-out;
+    }
+    
+    .card-hover:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    }
+    
+    .gradient-bg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    
+    .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #e5e7eb #f3f4f6;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f3f4f6;
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background: #e5e7eb;
+        border-radius: 3px;
+    }
+    
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #d1d5db;
+    }
+    
+    .status-indicator {
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+</style>
 <script>
   let sortableInitialized = false;
   function showSortableOverlay() {
@@ -925,6 +1059,21 @@
   });
 </script>
 
-</div>
+
+
+<!-- Module Clusters Modal -->
+<flux:modal name="module-clusters-modal" title="Manage Module Clusters" class="p-10 max-w-7xl">
+    <livewire:saas.moduleclusters />
+</flux:modal>
+
+<!-- Component Clusters Modal -->
+<flux:modal name="component-clusters-modal" title="Manage Component Clusters" class="p-10 max-w-7xl">
+    <livewire:saas.componentclusters />
+</flux:modal>
+
+<!-- Action Clusters Modal -->
+<flux:modal name="action-clusters-modal" title="Manage Action Clusters" class="p-10 max-w-7xl">
+    <livewire:saas.actionclusters />
+</flux:modal>
 
 </div>
