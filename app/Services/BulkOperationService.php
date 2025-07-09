@@ -27,7 +27,7 @@ class BulkOperationService
             'operation'  => 'insert',
             'model_type' => get_class($model),
             'model_id'   => $model->getKey(),
-            'new_data'   => $model->getAttributes(),
+            'new_data'   => json_encode($model->getAttributes()),
         ]);
     }
 
@@ -37,8 +37,8 @@ class BulkOperationService
             'operation'     => 'update',
             'model_type'    => get_class($model),
             'model_id'      => $model->getKey(),
-            'original_data' => $original,
-            'new_data'      => $model->getChanges(),
+            'original_data' => json_encode($original),
+            'new_data'      => json_encode($model->getChanges()),
         ]);
     }
 
@@ -48,7 +48,7 @@ class BulkOperationService
             'operation'     => 'delete',
             'model_type'    => get_class($model),
             'model_id'      => $model->getKey(),
-            'original_data' => $model->getAttributes(),
+            'original_data' => json_encode($model->getAttributes()),
         ]);
     }
 

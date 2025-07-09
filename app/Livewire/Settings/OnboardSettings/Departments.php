@@ -80,31 +80,39 @@ class Departments extends Component
         ]
     );
 
-        // Convert empty strings to null
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
+        try {
+            // Convert empty strings to null
+            $validatedData['formData'] = collect($validatedData['formData'])
+                ->map(fn($val) => $val === '' ? null : $val)
+                ->toArray();
 
-        // Add firm_id from session
-        $validatedData['formData']['firm_id'] = session('firm_id');
+            // Add firm_id from session
+            $validatedData['formData']['firm_id'] = session('firm_id');
 
-        if ($this->isEditing) {
-            $department = Department::findOrFail($this->formData['id']);
-            $department->update($validatedData['formData']);
-            $toastMsg = 'Department updated successfully';
-        } else {
-            Department::create($validatedData['formData']);
-            $toastMsg = 'Department added successfully';
+            if ($this->isEditing) {
+                $department = Department::findOrFail($this->formData['id']);
+                $department->update($validatedData['formData']);
+                $toastMsg = 'Department updated successfully';
+            } else {
+                Department::create($validatedData['formData']);
+                $toastMsg = 'Department added successfully';
+            }
+
+            $this->resetForm();
+            $this->refreshStatuses();
+            $this->modal('mdl-department')->close();
+            Flux::toast(
+                variant: 'success',
+                heading: 'Changes saved.',
+                text: $toastMsg,
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage() ?: 'Unable to save department. Please try again.',
+            );
         }
-
-        $this->resetForm();
-        $this->refreshStatuses();
-        $this->modal('mdl-department')->close();
-        Flux::toast(
-            variant: 'success',
-            heading: 'Changes saved.',
-            text: $toastMsg,
-        );
     }
 
     public function clearFilters()
@@ -122,12 +130,20 @@ class Departments extends Component
 
     public function delete($id)
     {
-        Department::findOrFail($id)->delete();
-        Flux::toast(
-            variant: 'success',
-            heading: 'Record Deleted.',
-            text: 'Department has been deleted successfully',
-        );
+        try {
+            Department::findOrFail($id)->delete();
+            Flux::toast(
+                variant: 'success',
+                heading: 'Record Deleted.',
+                text: 'Department has been deleted successfully',
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Unable to delete department. It may be in use.',
+            );
+        }
     }
 
     public function resetForm()
@@ -147,12 +163,23 @@ class Departments extends Component
 
     public function toggleStatus($departmentId)
     {
-        $department = Department::find($departmentId);
-        $department->is_inactive = !$department->is_inactive;
-        $department->save();
+        try {
+            $department = Department::find($departmentId);
+            if (!$department) {
+                throw new \Exception('Department not found');
+            }
+            $department->is_inactive = !$department->is_inactive;
+            $department->save();
 
-        $this->statuses[$departmentId] = $department->is_inactive;
-        $this->refreshStatuses();
+            $this->statuses[$departmentId] = $department->is_inactive;
+            $this->refreshStatuses();
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Unable to update department status. Please try again.',
+            );
+        }
     }
 
     public function render()

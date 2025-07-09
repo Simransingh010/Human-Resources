@@ -515,6 +515,23 @@ class FirmUsers extends Component
         $this->previousRoleModalSelectedRoles = $this->roleModalSelectedRoles;
     }
 
+    // Bulk sync all users in the firm
+    public function bulkSyncUsers()
+    {
+        $firmId = Session::get('firm_id');
+        $userIds = User::whereHas('firms', function($q) use ($firmId) {
+            $q->where('firms.id', $firmId);
+        })->pluck('id');
+        foreach ($userIds as $userId) {
+            $this->syncUserActions($userId, $firmId);
+        }
+        Flux::toast(
+            variant: 'success',
+            heading: 'Bulk Sync Complete.',
+            text: 'All users in the firm have been synced with their assigned roles.',
+        );
+    }
+
     public function render()
     {
         $this->previousActionModalSelectedActions = $this->actionModalSelectedActions;

@@ -637,10 +637,30 @@ class AttendanceController extends Controller
             }
             $employeeId = $user->employee->id;
             $firmId = $user->employee->firm_id;
-            $weekOffs = \App\Models\Hrms\FlexiWeekOff::where('firm_id', $firmId)
+            
+            // Include the availed attendance relationship
+            $weekOffs = \App\Models\Hrms\FlexiWeekOff::with('availedAttendance')
+                ->where('firm_id', $firmId)
                 ->where('employee_id', $employeeId)
                 ->where('week_off_Status', 'A')
-                ->get();
+                ->get()
+                ->map(function($weekOff) {
+                    // Get the work date from availed attendance
+                    $workDate = optional($weekOff->availedAttendance)->work_date;
+                    
+                    return [
+                        'id' => $weekOff->id,
+                        'firm_id' => $weekOff->firm_id,
+                        'employee_id' => $weekOff->employee_id,
+                        'attendance_status_main' => $weekOff->attendance_status_main,
+                        'availed_emp_attendance_id' => $weekOff->availed_emp_attendance_id,
+                        'consumed_emp_attendance_id' => $weekOff->consumed_emp_attendance_id,
+                        'week_off_Status' => $weekOff->week_off_Status,
+                        'week_date' => $workDate ? $workDate->format('Y-m-d') : null,
+                        'week_day' => $workDate ? $workDate->format('l') : null // Returns full day name (Monday, Tuesday, etc.)
+                    ];
+                });
+
             if ($weekOffs->isEmpty()) {
                 return response()->json([
                     'message_type' => 'error',
@@ -649,6 +669,7 @@ class AttendanceController extends Controller
                     'week_offs' => [],
                 ], 200);
             }
+            
             return response()->json([
                 'message_type' => 'success',
                 'message_display' => 'none',

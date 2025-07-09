@@ -44,6 +44,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('emp-work-shifts', App\Livewire\Hrms\Attendance\EmpWorkShifts::class)->name('emp-work-shifts.index');
     Route::get('/emp-punches', App\Livewire\Hrms\Attendance\EmpPunches::class)->name('emp-punches.index');
     Route::get('/todays-attendance', App\Livewire\Hrms\Attendance\TodayAttendanceStats::class)->name('todays-attendance');
+    Route::get('/hrms/attendance/employee-attendance', App\Livewire\Hrms\Attendance\EmployeeAttendance::class)->name('hrms.attendance.employee-attendance');
     Route::get('/hrms/onboard/holiday-calendars',App\Livewire\Hrms\Onboard\HolidayCalendars::class)->name('hrms.onboard.holiday-calendars');
 
     Route::get('/saas/firms', App\Livewire\Saas\Firms::class)->name('saas.firms');

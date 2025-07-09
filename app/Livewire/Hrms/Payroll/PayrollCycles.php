@@ -316,6 +316,7 @@ class PayrollCycles extends Component
             // Get employees from the selected execution group
             $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
                 ->where('salary_execution_group_id', $execution_group_id)
+                ->whereHas('employee', function($q) { $q->where('is_inactive', false); })
                 ->pluck('employee_id');
 
             // Get employees on salary hold for this payroll slot
@@ -529,7 +530,7 @@ class PayrollCycles extends Component
             $monthlyEarnings = $salaryCycleEarnings + $existingEarnings;
 
             // 3. Calculate annual income
-            $annualIncome = ($monthlyEarnings * 12) - 75000; // Standard deduction of 75000
+            $annualIncome = ($monthlyEarnings * 12) - 75000;;; // Standard deduction of 75000
 
             // 4. Get tax brackets for the regime
             $taxBrackets = $employeeTaxRegime->tax_regime->tax_brackets()

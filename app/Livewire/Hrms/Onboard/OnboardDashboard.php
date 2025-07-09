@@ -295,6 +295,22 @@ class OnboardDashboard extends Component
     }
 
     #[\Livewire\Attributes\Computed]
+    public function employeesWithoutLeaveApprovers()
+    {
+        return Employee::where('employees.firm_id', session('firm_id'))
+            ->where('employees.is_inactive', false)
+            ->whereDoesntHave('leave_approval_rules', function($query) {
+                $query->where('employee_leave_approval_rule.is_inactive', false)
+                    ->where(function($q) {
+                        $q->whereNull('leave_approval_rules.period_end')
+                            ->orWhere('leave_approval_rules.period_end', '>=', now());
+                    });
+            })
+            ->with(['emp_job_profile.department', 'emp_job_profile.designation', 'emp_personal_detail.media'])
+            ->get();
+    }
+
+    #[\Livewire\Attributes\Computed]
     public function todayBirthdays()
     {
         $date = $this->selectedDate ?? Carbon::today()->format('Y-m-d');

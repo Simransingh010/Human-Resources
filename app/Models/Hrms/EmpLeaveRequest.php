@@ -53,6 +53,68 @@ class EmpLeaveRequest extends Model
 		'time_to' => 'datetime'
 	];
 
+    protected $appends = ['is_half_day', 'time_info', 'half_day_type', 'leave_age', 'status_label'];
+
+    public function getApplyFromAttribute($value)
+    {
+        return $this->asDateTime($value)->format('Y-m-d');
+    }
+
+    public function getApplyToAttribute($value)
+    {
+        return $this->asDateTime($value)->format('Y-m-d');
+    }
+
+    public function getCreatedAtAttribute($value)
+    {
+        return $this->asDateTime($value)->format('Y-m-d H:i:s');
+    }
+
+    public function getUpdatedAtAttribute($value)
+    {
+        return $this->asDateTime($value)->format('Y-m-d H:i:s');
+    }
+
+    public function getIsHalfDayAttribute()
+    {
+        return floatval($this->apply_days) === 0.5;
+    }
+
+    public function getTimeInfoAttribute()
+    {
+        if ($this->time_from && $this->time_to) {
+            return "(" . $this->asDateTime($this->time_from)->format('H:i') . " - " . $this->asDateTime($this->time_to)->format('H:i') . ")";
+        }
+        return '';
+    }
+
+    public function getHalfDayTypeAttribute()
+    {
+        if ($this->is_half_day && $this->time_from && $this->time_to) {
+            return $this->asDateTime($this->time_from)->format('H:i') <= '12:00' ? 'First Half' : 'Second Half';
+        }
+        return '';
+    }
+
+    public function getLeaveAgeAttribute()
+    {
+        if ($this->is_half_day) {
+            return 'half';
+        } elseif ($this->time_from && $this->time_to) {
+            return 'hourly';
+        } elseif (floatval($this->apply_days) == 1.0) {
+            return 'single';
+        } elseif (floatval($this->apply_days) > 1.0) {
+            return 'multi';
+        }
+        return '';
+    }
+
+    public function getStatusLabelAttribute()
+    {
+        return static::STATUS_SELECT[$this->status] ?? 'Unknown';
+    }
+
     public const STATUS_SELECT = [
         'applied' => 'Applied',
         'reviewed' => 'Reviewed',
@@ -82,7 +144,6 @@ class EmpLeaveRequest extends Model
 		'status',
         'time_from',
         'time_to'
-        //TIME FROM - TIME TO
 	];
 
 	public function employee()

@@ -8,12 +8,13 @@
         body {
             font-family: system-ui, ui-sans-serif, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
             margin: 0;
-            padding: 20px;
+            padding: 15px;
+            font-size: 9px;
         }
 
         .logo-container {
             text-align: center;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         .logo-container img {
@@ -22,21 +23,22 @@
 
         .title {
             text-align: center;
-            font-size: 18px;
+            font-size: 14px;
             font-weight: bold;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
+            font-size: 9px;
         }
 
         td,
         th {
             border: 1px solid #000;
-            padding: 4px 6px;
+            padding: 3px 4px;
         }
 
         .text-right {
@@ -48,8 +50,8 @@
         }
 
         .note {
-            font-size: 12px;
-            margin-top: 8px;
+            font-size: 8px;
+            margin-top: 6px;
         }
 
         /* Remove inner borders for employee details table */
@@ -61,7 +63,7 @@
 
         .employee-details-table td, .employee-details-table th {
             border: none;
-            padding: 4px 6px;
+            padding: 3px 4px;
         }
 
         .employee-details-table tr:first-child td, .employee-details-table tr:first-child th {

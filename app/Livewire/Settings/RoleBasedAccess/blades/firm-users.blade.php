@@ -2,12 +2,18 @@
     <!-- Heading Start -->
     <div class="flex justify-between">
         @livewire('panel.component-heading')
-        <flux:modal.trigger name="mdl-firm-user" class="flex justify-end">
-            <flux:button variant="primary" icon="plus"
-                         class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
-                New User
+        <div class="flex gap-2">
+            <flux:modal.trigger name="mdl-firm-user" class="flex justify-end">
+                <flux:button variant="primary" icon="plus"
+                             class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
+                    New User
+                </flux:button>
+            </flux:modal.trigger>
+            <flux:button variant="outline" icon="arrow-path" tooltip="Bulk Sync All Users"
+                         wire:click="bulkSyncUsers">
+                Bulk Sync
             </flux:button>
-        </flux:modal.trigger>
+        </div>
     </div>
     <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->

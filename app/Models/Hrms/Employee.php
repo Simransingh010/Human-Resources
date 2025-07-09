@@ -114,6 +114,23 @@ class Employee extends Model
         return $this->hasOne(\App\Models\Hrms\EmployeePersonalDetail::class, 'employee_id');
     }
 
+    public function documents()
+    {
+        return $this->hasMany(EmployeeDoc::class, 'employee_id');
+    }
+
+    public function relations()
+    {
+        return $this->hasMany(EmployeeRelation::class, 'employee_id');
+    }
+    public function emp_address()
+    {
+        return $this->hasMany(EmployeeAddress::class, 'employee_id');
+    }
+    public function emp_emergency_contact()
+    {
+        return $this->hasMany(EmployeeContact::class, 'employee_id');
+    }
     public function salary_execution_groups()
     {
         return $this->belongsToMany(SalaryExecutionGroup::class, 'employees_salary_execution_group', 'employee_id', 'salary_execution_group_id')
@@ -125,4 +142,16 @@ class Employee extends Model
     {
         return $this->hasOne(AttendancePolicy::class);
     }
+    public function leave_approval_rules()
+    {
+        return $this->belongsToMany(LeaveApprovalRule::class, 'employee_leave_approval_rule', 'employee_id', 'rule_id')
+            ->withPivot('id', 'firm_id', 'is_inactive')
+            ->withTimestamps();
+    }
+
+    public function salary_components_employees()
+    {
+        return $this->hasMany(SalaryComponentsEmployee::class, 'employee_id');
+    }
 }
+

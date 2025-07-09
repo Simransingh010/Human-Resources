@@ -68,6 +68,7 @@ class Firms extends Component
         $this->initListsForFields();
         $this->loadPanels();
         $this->loadAssignedPanels();
+
     }
 
     #[\Livewire\Attributes\Computed]

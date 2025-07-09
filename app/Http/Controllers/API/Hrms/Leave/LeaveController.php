@@ -585,30 +585,24 @@ class LeaveController extends Controller
 
         $leaves = EmpLeaveRequest::with([
             'leave_type',
-            // 1) order events DESC, 2) eager-load the user (only id & name)
             'leave_request_events' => function($q) {
                 $q->orderBy('created_at', 'desc')
                     ->with('user:id,name');
             },
         ])
             ->where('employee_id', $employee->id)
-            ->get();
-
-        // inject user_name into each event, then remove the nested user object
-        $leaves->each(function($leave) {
-            $leave->leave_request_events->transform(function($evt) {
-                $evt->user_name = $evt->user->name ?? null;
-                unset($evt->user);
-                return $evt;
+            ->get()
+            ->map(function($leave) {
+                // Transform events
+                $leave->leave_request_events->transform(function($evt) {
+                    $evt->user_name = $evt->user->name ?? null;
+                    $evt->created_at = Carbon::parse($evt->created_at)->format('Y-m-d H:i:s');
+                    unset($evt->user);
+                    return $evt;
+                });
+                
+                return $leave;
             });
-            
-            // Add half-day information
-            $leave->is_half_day = $leave->apply_days === 0.5;
-            if ($leave->is_half_day && $leave->time_from && $leave->time_to) {
-                $leave->half_day_type = $leave->time_from->format('H:i') <= '12:00' ? 'First Half' : 'Second Half';
-                $leave->time_range = $leave->time_from->format('H:i') . ' - ' . $leave->time_to->format('H:i');
-            }
-        });
 
         return Response::json([
             'message_type'    => 'success',
