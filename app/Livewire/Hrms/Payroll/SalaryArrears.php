@@ -19,7 +19,6 @@ class SalaryArrears extends Component
     public $sortDirection = 'desc';
 
     // Modal Properties
-    public $showArrearModal = false;
     public $selectedEmployee = null;
     public $effective_from = null;
     public $effective_to = null;
@@ -72,21 +71,22 @@ class SalaryArrears extends Component
             'effective_from',
             'effective_to',
             'total_amount',
-            'paid_amount',
+//            'paid_amount',
             'installments',
             'installment_amount',
             'arrear_status',
             'remarks',
-            'created_at'
+//            'created_at'
         ];
         $this->visibleFilterFields = [
             'employee_id',
             'arrear_status'
         ];
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-        // If an employee is preselected, load their components
+        // If an employee is preselected, load their components and payroll slots
         if ($this->selectedEmployee) {
             $this->loadComponentList($this->selectedEmployee);
+            $this->loadPayrollSlotList($this->selectedEmployee);
         }
     }
 
@@ -100,13 +100,7 @@ class SalaryArrears extends Component
             })
             ->toArray();
         $this->listsForFields['statuses'] = SalaryArrear::$arrearStatuses;
-        $this->listsForFields['payrollSlots'] = \App\Models\Hrms\PayrollSlot::where('firm_id', Session::get('firm_id'))
-            ->orderBy('from_date', 'desc')
-            ->get()
-            ->mapWithKeys(function ($slot) {
-                return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
-            })
-            ->toArray();
+        $this->listsForFields['payrollSlots'] = [];
         $this->listsForFields['components'] = [];
     }
 
@@ -148,13 +142,17 @@ class SalaryArrears extends Component
     public function openArrearModal()
     {
         $this->reset(['selectedEmployee', 'salary_component_id', 'effective_from', 'effective_to', 'total_amount', 'paid_amount', 'installments', 'installment_amount', 'arrear_status', 'disburse_wef_payroll_slot_id', 'additional_rule', 'remarks']);
-        $this->showArrearModal = true;
+        $this->isEditing = false;
+        $this->editingId = null;
+        $this->modal('mdl-salary-arrear')->show();
     }
 
     public function closeArrearModal()
     {
-        $this->showArrearModal = false;
         $this->reset(['selectedEmployee', 'salary_component_id', 'effective_from', 'effective_to', 'total_amount', 'paid_amount', 'installments', 'installment_amount', 'arrear_status', 'disburse_wef_payroll_slot_id', 'additional_rule', 'remarks']);
+        $this->isEditing = false;
+        $this->editingId = null;
+        $this->modal('mdl-salary-arrear')->close();
     }
 
     public function updatedTotalAmount($value)
@@ -170,6 +168,7 @@ class SalaryArrears extends Component
     public function updatedSelectedEmployee($value)
     {
         $this->loadComponentList($value);
+        $this->loadPayrollSlotList($value);
     }
 
     protected function loadComponentList($employeeId)
@@ -182,6 +181,22 @@ class SalaryArrears extends Component
                     return [$item->salary_component->id => $item->salary_component->title];
                 })
                 ->toArray();
+    }
+
+    protected function loadPayrollSlotList($employeeId)
+    {
+        $employee = Employee::find($employeeId);
+        if ($employee) {
+            $this->listsForFields['payrollSlots'] = $employee->payroll_slots()
+                ->orderBy('from_date', 'desc')
+                ->get()
+                ->mapWithKeys(function ($slot) {
+                    return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
+                })
+                ->toArray();
+        } else {
+            $this->listsForFields['payrollSlots'] = [];
+        }
     }
 
     protected function calculateInstallmentAmount()
@@ -227,7 +242,7 @@ class SalaryArrears extends Component
                 'effective_from' => $this->effective_from,
                 'effective_to' => $this->effective_to,
                 'total_amount' => $this->total_amount,
-                'paid_amount' => $this->paid_amount,
+                'paid_amount' => 0,
                 'installments' => $this->installments,
                 'installment_amount' => $this->installment_amount,
                 'arrear_status' => $this->arrear_status ?? 'pending',
@@ -250,9 +265,11 @@ class SalaryArrears extends Component
         }
     }
 
-    public function editArrear($id)
+    public function edit($id)
     {
+        $this->isEditing = true;
         $arrear = SalaryArrear::findOrFail($id);
+        $this->editingId = $arrear->id;
         $this->selectedEmployee = $arrear->employee_id;
         $this->salary_component_id = $arrear->salary_component_id;
         $this->effective_from = $arrear->effective_from ? $arrear->effective_from->format('Y-m-d') : null;
@@ -265,10 +282,9 @@ class SalaryArrears extends Component
         $this->disburse_wef_payroll_slot_id = $arrear->disburse_wef_payroll_slot_id;
         $this->additional_rule = $arrear->additional_rule;
         $this->remarks = $arrear->remarks;
-        $this->isEditing = true;
-        $this->editingId = $arrear->id;
-        $this->showArrearModal = true;
         $this->loadComponentList($arrear->employee_id);
+        $this->loadPayrollSlotList($arrear->employee_id);
+        $this->modal('mdl-salary-arrear')->show();
     }
 
     #[Computed]

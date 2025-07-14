@@ -29,6 +29,7 @@ class EmployeeAttendance extends Component
     public $upcomingHolidays = [];
     public $recentActivities = [];
     public $chartData = [];
+    public $chartDataJson = [];
 
     public function mount()
     {
@@ -556,6 +557,13 @@ class EmployeeAttendance extends Component
         }
         
         $this->chartData = $chartData;
+        // Add this for the Blade fix:
+        $this->chartDataJson = $this->chartData->map(function ($day) {
+            return [
+                'date' => $day['date'],
+                'status' => $day['present'] ? 'Present' : ($day['late'] ? 'Late' : ($day['absent'] ? 'Absent' : 'Unknown')),
+            ];
+        })->values()->toArray();
     }
 
     private function isWorkingDay($date, $weekOffPattern, $empWorkShift)

@@ -14,7 +14,7 @@ use Carbon\Carbon;
     </div>
 
     <!-- Key Statistics Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div class="gap-6 grid grid-cols-3">
         <!-- Present Days Card -->
         <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-center justify-between mb-4">
@@ -29,7 +29,7 @@ use Carbon\Carbon;
                 </flux:heading>
                 <flux:text class="text-base font-medium text-green-600 dark:text-green-400">
                     {{ number_format(($presentDays / max($workingDays, 1)) * 100, 1) }}% 
-                    <span class="ml-1">+2%</span>
+                    <!-- <span class="ml-1">+2%</span> -->
                 </flux:text>
             </div>
         </flux:card>
@@ -46,17 +46,14 @@ use Carbon\Carbon;
                 <flux:heading class="text-4xl font-bold text-gray-900 dark:text-white">
                     {{ $averageHours }} hrs
                 </flux:heading>
-                <flux:text class="text-base font-medium text-blue-600 dark:text-blue-400">
-                    102% of target
-                    <span class="ml-1">+0.5h</span>
-                </flux:text>
+                
             </div>
         </flux:card>
 
         <!-- This Week Card -->
         <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-center justify-between mb-4">
-                <flux:text class="text-lg font-medium text-gray-500 dark:text-gray-400">This Week</flux:text>
+                <flux:text class="text-lg font-medium text-gray-500 dark:text-gray-400">This Week Attendance</flux:text>
                 <flux:badge color="purple" class="text-sm px-3 py-1">
                     <flux:icon name="calendar" class="w-5 h-5" />
                 </flux:badge>
@@ -67,29 +64,12 @@ use Carbon\Carbon;
                 </flux:heading>
                 <flux:text class="text-base font-medium text-purple-600 dark:text-purple-400">
                     {{ number_format(($thisWeekPresent / max($thisWeekTotal, 1)) * 100, 0) }}%
-                    <span class="ml-1">Perfect!</span>
+                   
                 </flux:text>
             </div>
         </flux:card>
 
-        <!-- Attendance Score Card -->
-        <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-            <div class="flex items-center justify-between mb-4">
-                <flux:text class="text-lg font-medium text-gray-500 dark:text-gray-400">Attendance Score</flux:text>
-                <flux:badge color="yellow" class="text-sm px-3 py-1">
-                    <flux:icon name="star" class="w-5 h-5" />
-                </flux:badge>
-            </div>
-            <div class="flex items-baseline justify-between">
-                <flux:heading class="text-4xl font-bold text-gray-900 dark:text-white">
-                    {{ $attendanceScore }}
-                </flux:heading>
-                <flux:text class="text-base font-medium text-yellow-600 dark:text-yellow-400">
-                    Excellent
-                    <span class="ml-1">↑</span>
-                </flux:text>
-            </div>
-        </flux:card>
+      
     </div>
 
     <!-- Main Content Area -->
@@ -181,6 +161,7 @@ use Carbon\Carbon;
                             <flux:text class="text-base font-medium text-gray-700 dark:text-gray-300 mb-3">All Punches</flux:text>
                             <div class="space-y-3">
                                 @foreach($activity['all_punches'] as $punch)
+                                {{dd($punch)}}
                                 <div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                                     <div class="flex items-center space-x-3">
                                         @if($punch['type'] === 'In')
@@ -276,6 +257,26 @@ use Carbon\Carbon;
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('calendar');
+    // Transform PHP data to FullCalendar event format
+    var rawEvents = @json($chartDataJson);
+    var events = rawEvents.map(function(day) {
+        var color = '';
+        if (day.status === 'Present') {
+            color = '#22c55e'; // green-500
+        } else if (day.status === 'Late') {
+            color = '#eab308'; // yellow-500
+        } else if (day.status === 'Absent') {
+            color = '#ef4444'; // red-500
+        }
+        return {
+            title: day.status !== 'Unknown' ? day.status : '',
+            start: day.date, // This is in 'M d' format, needs to be converted to 'Y-m-d' if possible
+            backgroundColor: color,
+            borderColor: color,
+            display: 'block',
+            classNames: ['attendance-event']
+        };
+    });
     var calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         headerToolbar: {
@@ -285,31 +286,7 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         firstDay: 1, // Monday as first day
         height: 'auto',
-        events: @json($chartData->map(function($day) {
-            $date = \Carbon\Carbon::parse($day['date']);
-            $color = '';
-            $title = '';
-            
-            if ($day['present']) {
-                $color = '#22c55e'; // green-500
-                $title = 'Present';
-            } elseif ($day['late']) {
-                $color = '#eab308'; // yellow-500
-                $title = 'Late';
-            } elseif ($day['absent']) {
-                $color = '#ef4444'; // red-500
-                $title = 'Absent';
-            }
-            
-            return [
-                'title' => $title,
-                'start' => $date->format('Y-m-d'),
-                'backgroundColor' => $color,
-                'borderColor' => $color,
-                'display' => 'block',
-                'classNames' => ['attendance-event']
-            ];
-        })),
+        events: events,
         eventDidMount: function(info) {
             info.el.style.fontSize = '0.75rem';
             info.el.style.padding = '2px 4px';

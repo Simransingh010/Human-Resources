@@ -187,30 +187,48 @@ class AuthController extends Controller
 
     public function addDeviceToken(Request $request)
     {
-        // Validate incoming request data.
-        $data = $request->validate([
-            'firm_id' => 'required|exists:firms,id',
-            'token' => 'required|string|unique:device_tokens,token',
-            'device_type' => 'required|string',  // e.g., "ios", "android", "web"
-            'device_name' => 'nullable|string',
-            'os_version' => 'nullable|string',
-        ]);
+        try {
+            // Validate incoming request data.
+            $data = $request->validate([
+                'firm_id' => 'required|exists:firms,id',
+                'token' => 'required|string', // removed unique validation
+                'device_type' => 'required|string',  // e
+                'device_name' => 'nullable|string',
+                'os_version' => 'nullable|string',
+            ]);
 
-        // Create a new DeviceToken record associated with the authenticated user.
-        $deviceToken = DeviceToken::create([
-            'firm_id' => $data['firm_id'],
-            'user_id' => $request->user()->id,
-            'token' => $data['token'],
-            'device_type' => $data['device_type'],
-            'device_name' => $data['device_name'] ?? null,
-            'os_version' => $data['os_version'] ?? null,
-        ]);
+            // Create or update DeviceToken record associated with the authenticated user.
+            $deviceToken = DeviceToken::updateOrCreate(
+                [
+                    'token' => $data['token'],
+                ],
+                [
+                    'firm_id' => $data['firm_id'],
+                    'user_id' => $request->user()->id,
+                    'device_type' => $data['device_type'],
+                    'device_name' => $data['device_name'] ?? null,
+                    'os_version' => $data['os_version'] ?? null,
+                ]
+            );
 
-        return response()->json([
-            'message_type' => 'success',  // success, warning, error, info
-            'message_display' => 'flash',  // flash,none,popup
-            'message' => 'Device token added successfully.',
-            'device_token' => $deviceToken
-        ], 201);
+            return response()->json([
+                'message_type' => 'success',  // success, warning, error, info
+                'message_display' => 'flash',  // flash,none,popup
+                'message' => 'Device token added or updated successfully.',
+                'device_token' => $deviceToken
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => $e->validator->errors()->first()
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Failed to add or update device token: ' . $e->getMessage()
+            ], 500);
+        }
     }
 }

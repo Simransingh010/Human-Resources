@@ -12,6 +12,7 @@
             <flux:tabs wire:model="tab">
                 <flux:tab name="single">Single Employee Increment</flux:tab>
                 <flux:tab name="bulk">Bulk Increments</flux:tab>
+                <flux:tab name="logs">Change Logs</flux:tab>
             </flux:tabs>
 
             <!-- Single Employee Increment Panel -->
@@ -239,20 +240,13 @@
                                                                     <!-- Date Range Fields -->
                                                                     <div class="grid grid-cols-2 gap-4">
                                                                         <div>
+                                                                        <div>DEBUG: {{ $start_date }}</div>
                                                                             <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                                                                            <flux:date-picker wire:model.live="start_date" placeholder="Start Date">
-                                                                                <x-slot name="trigger">
-                                                                                    <flux:date-picker.input />
-                                                                                </x-slot>
-                                                                            </flux:date-picker>
+                                                                            <flux:date-picker wire:model.live="start_date" placeholder="Start Date" />
                                                                         </div>
                                                                         <div>
                                                                             <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
-                                                                            <flux:date-picker wire:model.live="end_date" placeholder="End Date">
-                                                                                <x-slot name="trigger">
-                                                                                    <flux:date-picker.input />
-                                                                                </x-slot>
-                                                                            </flux:date-picker>
+                                                                            <flux:date-picker wire:model.live="end_date" placeholder="End Date (Optional)" />
                                                                         </div>
                                                                     </div>
 
@@ -505,6 +499,92 @@
                     </div>
                 </flux:card>
             </flux:tab.panel>
+
+            <!-- Change Logs Panel -->
+            <flux:tab.panel name="logs">
+                <flux:card>
+                    <flux:heading>Salary Change Logs</flux:heading>
+                    <div class="mt-4">
+                        <div class="bg-white rounded shadow p-4">
+                            <flux:table class="w-full">
+                                <flux:table.columns>
+                                    <flux:table.column>Date</flux:table.column>
+                                    <flux:table.column>Employee</flux:table.column>
+                                    <flux:table.column>Type</flux:table.column>
+                                    <flux:table.column>Details</flux:table.column>
+                                    <flux:table.column>Actions</flux:table.column>
+                                </flux:table.columns>
+                                <flux:table.rows>
+                                    @forelse($this->changeLogs as $log)
+                                        <flux:table.row :key="$log->id">
+                                            <flux:table.cell>{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y H:i') }}</flux:table.cell>
+                                            <flux:table.cell>{{ $log->employee ? $log->employee->fname . ' ' . $log->employee->lname : '-' }}</flux:table.cell>
+                                            <flux:table.cell>
+                                                @if($log->batch_id)
+                                                    <flux:badge variant="info">Batch</flux:badge>
+                                                @else
+                                                    <flux:badge variant="outline">Individual</flux:badge>
+                                                @endif
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                <div class="text-xs">
+                                                    <div><b>Old:</b> {{ $log->old_salary_components ? ($log->old_salary_components->title ?? $log->old_salary_components->id) : '-' }}</div>
+                                                    <div><b>New:</b> {{ $log->new_salary_components ? ($log->new_salary_components->title ?? $log->new_salary_components->id) : '-' }}</div>
+                                                    <div><b>Change:</b> {{ $log->change_type ?? '-' }}</div>
+                                                </div>
+                                            </flux:table.cell>
+                                            <flux:table.cell>
+                                                <flux:modal.trigger name="log-details-{{ $log->id }}">
+                                                    <flux:button size="xs" variant="primary" icon="eye">View</flux:button>
+                                                </flux:modal.trigger>
+                                                <!-- Details Modal -->
+                                                <flux:modal name="log-details-{{ $log->id }}" class="min-w-[22rem]">
+                                                    <div class="space-y-4">
+                                                        <flux:heading size="lg">Change Details</flux:heading>
+                                                        <pre class="bg-gray-100 p-2 rounded text-xs overflow-x-auto">{{ json_encode($log->changes_details_json, JSON_PRETTY_PRINT) }}</pre>
+                                                        <div class="flex justify-end">
+                                                            <flux:modal.close>
+                                                                <flux:button variant="ghost">Close</flux:button>
+                                                            </flux:modal.close>
+                                                        </div>
+                                                    </div>
+                                                </flux:modal>
+                                                <!-- Rollback Button and Modal -->
+                                                <flux:modal.trigger name="rollback-log-{{ $log->id }}">
+                                                    <flux:button size="xs" variant="danger" icon="arrow-uturn-left">Rollback</flux:button>
+                                                </flux:modal.trigger>
+                                                <flux:modal name="rollback-log-{{ $log->id }}" class="min-w-[22rem]">
+                                                    <div class="space-y-4">
+                                                        <flux:heading size="lg">Rollback Change?</flux:heading>
+                                                        <flux:text class="mt-2">
+                                                            @if($log->batch_id)
+                                                                <p>You're about to rollback <b>all changes in this batch</b>. This action cannot be undone.</p>
+                                                            @else
+                                                                <p>You're about to rollback this change. This action cannot be undone.</p>
+                                                            @endif
+                                                            <p class="mt-2 text-red-500">Note: This will permanently delete the new salary component(s) created by this change.</p>
+                                                        </flux:text>
+                                                        <div class="flex gap-2 justify-end">
+                                                            <flux:modal.close>
+                                                                <flux:button variant="ghost">Cancel</flux:button>
+                                                            </flux:modal.close>
+                                                            <flux:button variant="danger" icon="arrow-uturn-left" wire:click="rollbackChange({{ $log->id }})" />
+                                                        </div>
+                                                    </div>
+                                                </flux:modal>
+                                            </flux:table.cell>
+                                        </flux:table.row>
+                                    @empty
+                                        <flux:table.row>
+                                            <flux:table.cell colspan="5" class="text-center text-gray-500">No change logs found.</flux:table.cell>
+                                        </flux:table.row>
+                                    @endforelse
+                                </flux:table.rows>
+                            </flux:table>
+                        </div>
+                    </div>
+                </flux:card>
+            </flux:tab.panel>
         </flux:tab.group>
 
         <!-- Calculation Rule Builder Modal -->
@@ -517,20 +597,13 @@
                 <!-- Date Range Fields -->
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     <div>
+                        <div>DEBUG: {{ $start_date }}</div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <flux:date-picker selectable-header wire:model.live="start_date" placeholder="Start Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="start_date" placeholder="Start Date" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
-                        <flux:date-picker selectable-header wire:model.live="end_date" placeholder="End Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="end_date" placeholder="End Date (Optional)" />
                     </div>
                 </div>
 
@@ -673,19 +746,11 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Effective From</label>
-                        <flux:date-picker wire:model.live="assignEffectiveFrom" placeholder="Effective From">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="assignEffectiveFrom" placeholder="Effective From" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Effective To (Optional)</label>
-                        <flux:date-picker wire:model.live="assignEffectiveTo" placeholder="Effective To">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="assignEffectiveTo" placeholder="Effective To (Optional)" />
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-6">
@@ -714,19 +779,11 @@
                 <div class="grid grid-cols-2 gap-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <flux:date-picker wire:model.live="bulk_start_date" placeholder="Start Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="bulk_start_date" placeholder="Start Date" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
-                        <flux:date-picker wire:model.live="bulk_end_date" placeholder="End Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker wire:model.live="bulk_end_date" placeholder="End Date (Optional)" />
                     </div>
                 </div>
                 <!-- Controls -->
@@ -787,19 +844,11 @@
                 <div class="grid grid-cols-2 gap-4 mb-6">
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                        <flux:date-picker selectable-header wire:model.live="bulk_start_date" placeholder="Start Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker selectable-header wire:model.live="bulk_start_date" placeholder="Start Date" />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
-                        <flux:date-picker selectable-header wire:model.live="bulk_end_date" placeholder="End Date">
-                            <x-slot name="trigger">
-                                <flux:date-picker.input />
-                            </x-slot>
-                        </flux:date-picker>
+                        <flux:date-picker selectable-header wire:model.live="bulk_end_date" placeholder="End Date (Optional)" />
                     </div>
                 </div>
                 <div class="grid gap-6">
@@ -903,9 +952,9 @@
                 </div>
                 <div class="flex justify-end gap-4 mt-6">
                     <flux:button wire:click="$dispatch('close-modal', { id: 'bulk-calculation-rule-modal' })">Cancel</flux:button>
-                    <flux:button variant="primary">Save Rule</flux:button>
+                    <flux:button variant="primary" wire:click="saveBulkRule">Save Rule</flux:button>
                 </div>
             </div>
         </flux:modal>
     </div>
-    </div>
+</div>

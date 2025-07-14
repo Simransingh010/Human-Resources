@@ -483,12 +483,8 @@ class PayrollCycles extends Component
             ->first();
 
         if (!$employeeTaxRegime) {
-            // Instead of throwing an exception, just log or skip tax calculation
-            \Log::info("Skipping tax calculation: No active tax regime for employee ID {$employeeId}");
             return; // Exit function without throwing error
         }
-
-
 
         try {
             // Get TDS component first - we'll need it for both calculations
@@ -501,36 +497,16 @@ class PayrollCycles extends Component
                 throw new \Exception("TDS component not found");
             }
 
-
-
-            // 2. Get total earnings for the month from salary components
-            $salaryCycleEarnings = SalaryComponentsEmployee::where('employee_id', $employeeId)
-                ->where('firm_id', Session::get('firm_id'))
-                ->where('nature', 'earning')
-                ->where('taxable', true)
-                ->where(function ($query) {
-                    $query->whereNull('effective_to')
-                        ->orWhere('effective_to', '>', now());
-                })
-                ->sum('amount');
-
-            $tdsComponentEmployee = SalaryComponentsEmployee::where('employee_id', $employeeId)
-                ->where('firm_id', Session::get('firm_id'))
-                ->where('component_type', 'tds')
-                ->first();
-
-            // Get existing earnings from payroll tracks for this slot
-            $existingEarnings = PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
+            // 2. Get total earnings for the current month from payroll tracks for this slot
+            $currentMonthlyEarnings = PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
                 ->where('firm_id', Session::get('firm_id'))
                 ->where('payroll_slot_id', $slot_id)
                 ->where('nature', 'earning')
                 ->where('taxable', true)
                 ->sum('amount_payable');
 
-            $monthlyEarnings = $salaryCycleEarnings + $existingEarnings;
-
-            // 3. Calculate annual income
-            $annualIncome = ($monthlyEarnings * 12) - 75000;;; // Standard deduction of 75000
+            // 3. Calculate projected annual income (YTD actual + projected future)
+            $projectedAnnualIncome = $this->getProjectedAnnualIncome($employeeId, $currentMonthlyEarnings, $payrollSlot->to_date);
 
             // 4. Get tax brackets for the regime
             $taxBrackets = $employeeTaxRegime->tax_regime->tax_brackets()
@@ -540,21 +516,20 @@ class PayrollCycles extends Component
 
             // 5. Calculate tax for each slab
             $totalTax = 0;
-            $remainingIncome = $annualIncome;
+            $remainingIncome = $projectedAnnualIncome;
 
             foreach ($taxBrackets as $bracket) {
-                $slabAmount = min(
-                    $remainingIncome,
-                    ($bracket->income_to ?? PHP_FLOAT_MAX) - $bracket->income_from
-                );
-
-                if ($slabAmount > 0) {
-                    $taxForSlab = round(($slabAmount * $bracket->rate) / 100);
-                    $totalTax += $taxForSlab;
-                    $remainingIncome -= $slabAmount;
+                $slabFrom = $bracket->income_from;
+                $slabTo = $bracket->income_to ?? PHP_FLOAT_MAX;
+                if ($remainingIncome > $slabFrom) {
+                    $slabAmount = min($remainingIncome, $slabTo) - $slabFrom;
+                    if ($slabAmount > 0) {
+                        $taxForSlab = round(($slabAmount * $bracket->rate) / 100);
+                        $totalTax += $taxForSlab;
+                        $remainingIncome -= $slabAmount;
+                    }
                 }
-
-                if ($remainingIncome <= 0) {
+                if ($remainingIncome <= $slabFrom) {
                     break;
                 }
             }
@@ -576,12 +551,16 @@ class PayrollCycles extends Component
                 throw new \Exception("No remaining salary slots in current financial year");
             }
 
+            // Allow negative TDS for recovery
             $monthlyTax = ($total_tds_remaining_for_year) / $total_count_of_salary_slots_remaining;
             $monthlyTax = $this->roundOffTax($monthlyTax);
 
-           
-
             // 8. Create PayrollComponentsEmployeesTrack for TDS
+            $tdsComponentEmployee = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                ->where('firm_id', Session::get('firm_id'))
+                ->where('component_type', 'tds')
+                ->first();
+
             PayrollComponentsEmployeesTrack::firstOrCreate(
                 [
                     'firm_id' => Session::get('firm_id'),
@@ -590,7 +569,6 @@ class PayrollCycles extends Component
                     'salary_component_id' => $tdsComponent->id,
                 ],
                 [
-
                     'payroll_slots_cmd_id' => $payroll_slots_cmd_id,
                     'salary_template_id' => $tdsComponent->salary_template_id ?? null,
                     'salary_component_group_id' => $tdsComponent->salary_component_group_id,
@@ -753,10 +731,7 @@ class PayrollCycles extends Component
         }
     }
 
-    public function render()
-    {
-        return view()->file(app_path('Livewire/Hrms/Payroll/blades/payroll-cycles.blade.php'));
-    }
+
     
   
 
@@ -1185,7 +1160,7 @@ class PayrollCycles extends Component
                     'nature' => 'earning',
                     'component_type' => 'salary_arrear',
                     'amount_type' => 'static_known',
-                    'taxable' => true, // Arrears are typically taxable
+                'taxable' => true,
                     'calculation_json' => null,
                     'salary_period_from' => $payrollSlot->from_date,
                     'salary_period_to' => $payrollSlot->to_date,
@@ -1588,6 +1563,51 @@ class PayrollCycles extends Component
         }
 
         return $deductionDetails;
+    }
+
+    /**
+     * Get actual YTD (Year-To-Date) taxable earnings for the employee from FY start to current slot's to_date
+     */
+    protected function getActualYTDEarnings($employeeId, $fyStart, $currentSlotToDate)
+    {
+        return PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('nature', 'earning')
+            ->where('taxable', true)
+            ->whereBetween('salary_period_from', [$fyStart, $currentSlotToDate])
+            ->sum('amount_payable');
+    }
+
+    /**
+     * Get the number of remaining months in the financial year, including the current slot's month if not fully paid
+     */
+    protected function getRemainingMonthsInFY($currentSlotToDate, $fyEnd)
+    {
+        $current = Carbon::parse($currentSlotToDate);
+        $fyEnd = Carbon::parse($fyEnd);
+        // If slot ends after FY, return 0
+        if ($current->gt($fyEnd)) return 0;
+        // Months left including current month
+        return $current->diffInMonths($fyEnd) + 1;
+    }
+
+    /**
+     * Projected annual income = YTD actual + (current month earnings × remaining months) - standard deduction
+     */
+    protected function getProjectedAnnualIncome($employeeId, $currentMonthlyEarnings, $currentSlotToDate)
+    {
+        $fyStart = session('fy_start');
+        $fyEnd = session('fy_end');
+        $actualYTDEarnings = $this->getActualYTDEarnings($employeeId, $fyStart, $currentSlotToDate);
+        $remainingMonths = $this->getRemainingMonthsInFY($currentSlotToDate, $fyEnd);
+        $projectedRemainingEarnings = $currentMonthlyEarnings * $remainingMonths;
+        return $actualYTDEarnings + $projectedRemainingEarnings - 75000;
+    }
+
+
+    public function render()
+    {
+        return view()->file(app_path('Livewire/Hrms/Payroll/blades/payroll-cycles.blade.php'));
     }
 
 }

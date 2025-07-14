@@ -153,5 +153,16 @@ class Employee extends Model
     {
         return $this->hasMany(SalaryComponentsEmployee::class, 'employee_id');
     }
+    public function payroll_slots()
+    {
+        return $this->hasManyThrough(
+            PayrollSlot::class,
+            EmployeesSalaryExecutionGroup::class,
+            'employee_id',
+            'salary_execution_group_id',
+            'id',
+            'salary_execution_group_id'
+        );
+    }
 }
 

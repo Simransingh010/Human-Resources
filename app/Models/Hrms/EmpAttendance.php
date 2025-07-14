@@ -76,7 +76,7 @@ class EmpAttendance extends Model
         'H'   => 'Holiday',
         'W'   => 'Week Off',
         'S'   => 'Suspended',
-        'POW' => 'Persent on Week Off',
+        'POW' => 'Present on Week Off',
         'LM'  => 'Late Marked',
         'NM'  => 'Not Marked',
 

@@ -1025,8 +1025,8 @@ class LeaveController extends Controller
                                              ($leaveRequest->employee->mname ? $leaveRequest->employee->mname . ' ' : '') . 
                                              $leaveRequest->employee->lname),
                         'leave_type' => $leaveRequest->leave_type->leave_title ?? 'N/A',
-                        'apply_from' => $leaveRequest->apply_from->format('jS F Y'),
-                        'apply_to' => $leaveRequest->apply_to->format('jS F Y'),
+                        'apply_from' => Carbon::parse($leaveRequest->apply_from)->format('jS F Y'),
+                        'apply_to' => Carbon::parse($leaveRequest->apply_to)->format('jS F Y'),
                         'apply_days' => $leaveRequest->apply_days,
                         'reason' => $leaveRequest->reason,
                         'old_status' => $oldStatus,

@@ -169,14 +169,14 @@
                         />
                         @error('total_amount') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
-                        <flux:input
-                            type="number"
-                            label="Paid Amount"
-                            wire:model.live="paid_amount"
-                        />
-                        @error('paid_amount') <span class="text-danger">{{ $message }}</span> @enderror
-                    </div>
+{{--                    <div>--}}
+{{--                        <flux:input--}}
+{{--                            type="number"--}}
+{{--                            label="Paid Amount"--}}
+{{--                            wire:model.live="paid_amount"--}}
+{{--                        />--}}
+{{--                        @error('paid_amount') <span class="text-danger">{{ $message }}</span> @enderror--}}
+{{--                    </div>--}}
                     <div>
                         <flux:input
                             type="number"
@@ -186,16 +186,8 @@
                         @error('installments') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
                     <div>
-                        <flux:input
-                            type="number"
-                            label="Installment Amount"
-                            :value="$installment_amount"
-                            readonly
-                            disabled
-                        />
-                        @if($installment_amount === null)
-                            <span class="text-gray-400 text-xs">Enter total amount and installments to calculate</span>
-                        @endif
+                        <span class="text-danger">Installment Amount: ₹{{ $installment_amount }}</span>
+
                     </div>
                     <div>
                         <flux:select
@@ -290,7 +282,7 @@
                     @endforeach
                     <flux:table.cell>
                         <div class="flex space-x-2">
-                            <flux:button variant="primary" size="sm" icon="pencil" wire:click="editArrear({{ $arrear->id }})" tooltip="Edit" />
+                            <flux:button variant="primary" size="sm" icon="pencil" wire:click="edit({{ $arrear->id }})" tooltip="Edit" />
                             <flux:button variant="danger" size="sm" icon="trash" wire:click="removeArrear({{ $arrear->id }})" tooltip="Remove Arrear" />
                         </div>
                     </flux:table.cell>

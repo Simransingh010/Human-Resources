@@ -832,8 +832,8 @@ class AttendanceController extends Controller
                     // Only include necessary fields in response
                     return [
                         'id' => $status->id,
-                        'attendance_status_code' => $status->attendance_status_code,
-                        'attendance_status_label' => $status->attendance_status_label,
+                        'attendance_status_label' => $status->attendance_status_code,
+                        'attendance_status_code' => $status->attendance_status_label,
                         'attendance_status_desc' => $status->attendance_status_desc,
                         'paid_percent' => $status->paid_percent,
                         'attendance_status_main' => $status->attendance_status_main,

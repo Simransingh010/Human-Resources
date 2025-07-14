@@ -208,27 +208,27 @@ class WeekOffCredit extends Component
         $leaveType = \App\Models\Hrms\LeaveType::where('firm_id', $firmId)
             ->where('leave_type_main', 'weekoff')
             ->first();
+
         if (!$leaveType) {
             $this->showSyncModal = false;
+            \Flux\Flux::toast('Leave type not found', 'error');
             return;
         }
 
-        // 2. Find or create EmpLeaveBalance for this employee, leave type, and slot period
-        $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::firstOrCreate([
+        // 2. Find EmpLeaveBalance for this employee, leave type, and slot period (do not create)
+        $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::where([
             'firm_id' => $firmId,
             'employee_id' => $employeeId,
             'leave_type_id' => $leaveType->id,
-            'period_start' => $from,
-            'period_end' => $to,
-        ], [
-            'allocated_days' => 0,
-            'consumed_days' => 0,
-            'carry_forwarded_days' => 0,
-            'lapsed_days' => 0,
-            'balance' => 0,
-        ]);
+
+        ])->first();
+        if (!$leaveBalance) {
+            $this->showSyncModal = false;
+            \Flux\Flux::toast('Leave balance not found', 'error');
+            return;
+        }
         $leaveBalance->allocated_days += $daysToCredit;
-        $leaveBalance->carry_forwarded_days += $daysToCredit;
+        // $leaveBalance->carry_forwarded_days += $daysToCredit;
         $leaveBalance->balance += $daysToCredit;
         $leaveBalance->save();
 
@@ -247,6 +247,7 @@ class WeekOffCredit extends Component
         }
 
         $this->showSyncModal = false;
+        \Flux\Flux::toast('Week Offs has been Credited Successfully', 'Success');
         // Refresh table by resetting cache
         $this->updatedSelectedSlotId();
     }
@@ -275,6 +276,7 @@ class WeekOffCredit extends Component
             ->first();
         if (!$leaveType) {
             $this->showBulkSyncModal = false;
+            \Flux\Flux::toast('Leave type not found', 'error');
             return;
         }
         $groupId = $this->slotDetails->salary_execution_group_id;
@@ -288,20 +290,18 @@ class WeekOffCredit extends Component
             $employeeId = $employee->id;
             $available = $this->getEmployeeAvailableDays($employeeId);
             if ($available > 0) {
-                // Credit leave balance
-                $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::firstOrCreate([
+                // Only update existing leave balance, do not create
+                $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::where([
                     'firm_id' => $firmId,
                     'employee_id' => $employeeId,
                     'leave_type_id' => $leaveType->id,
                     'period_start' => $from,
                     'period_end' => $to,
-                ], [
-                    'allocated_days' => 0,
-                    'consumed_days' => 0,
-                    'carry_forwarded_days' => 0,
-                    'lapsed_days' => 0,
-                    'balance' => 0,
-                ]);
+                ])->first();
+                if (!$leaveBalance) {
+                    \Flux\Flux::toast('Leave balance not found for employee ID ' . $employeeId, 'error');
+                    continue;
+                }
                 $leaveBalance->allocated_days += $available;
                 $leaveBalance->carry_forwarded_days += $available;
                 $leaveBalance->balance += $available;

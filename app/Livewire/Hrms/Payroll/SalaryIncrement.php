@@ -36,8 +36,8 @@ class SalaryIncrement extends Component
     public $calculatedFinalAmount = 0;
     public $salaryComponentsList = [];
     public $remarks = '';
-    public ?\Illuminate\Support\Carbon $start_date = null;
-    public ?\Illuminate\Support\Carbon $end_date = null;
+    public $start_date = null;
+    public $end_date = null;
 
     public $rule = [
         'type' => 'operation',
@@ -73,8 +73,8 @@ class SalaryIncrement extends Component
     ];
 
     public $assignComponentIds = [];
-    public ?\Illuminate\Support\Carbon $assignEffectiveFrom = null;
-    public ?\Illuminate\Support\Carbon $assignEffectiveTo = null;
+    public  $assignEffectiveFrom = null;
+    public $assignEffectiveTo = null;
     
     protected $queryString = ['tab'];
 
@@ -125,7 +125,6 @@ class SalaryIncrement extends Component
     public function mount()
     {
         $this->initializeSalaryComponentsList();
-        $this->start_date = now();
         $this->fetchBulkFilterData();
         // Collect SQL queries for browser console
         
@@ -316,7 +315,7 @@ class SalaryIncrement extends Component
         $this->operation = 'increase';
         $this->modificationValue = null;
         $this->calculatedFinalAmount = $component->amount;
-        $this->start_date = now();
+        $this->start_date = null;
         $this->end_date = null;
         
         $this->modal("increment-{$componentId}")->show();
@@ -372,8 +371,11 @@ class SalaryIncrement extends Component
     public function saveModification($componentId)
     {
         try {
-            dd($this->start_date);
             $this->validate();
+
+            \Log::info('Start Date (raw):', ['start_date' => $this->start_date]);
+            $startDate = $this->start_date ? \Carbon\Carbon::parse($this->start_date) : null;
+            $endDate = $this->end_date ? \Carbon\Carbon::parse($this->end_date) : null;
 
             $oldComponent = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
                 ->where('id', $componentId)
@@ -385,13 +387,13 @@ class SalaryIncrement extends Component
 
             DB::beginTransaction();
             try {
-                $oldComponent->effective_to = $this->start_date->copy()->subDay()->format('Y-m-d');
+                $oldComponent->effective_to = $startDate->copy()->subDay()->format('Y-m-d');
                 $oldComponent->save();
 
                 $newComponent = $oldComponent->replicate();
                 $newComponent->amount = $this->calculatedFinalAmount;
-                $newComponent->effective_from = $this->start_date->format('Y-m-d');
-                $newComponent->effective_to = $this->end_date?->format('Y-m-d');
+                $newComponent->effective_from = $startDate->format('Y-m-d');
+                $newComponent->effective_to = $endDate?->format('Y-m-d');
                 $newComponent->save();
 
                 $changeDetails = [
@@ -403,8 +405,8 @@ class SalaryIncrement extends Component
                     'modification_value' => $this->modificationValue,
                     'old_effective_from' => $oldComponent->effective_from,
                     'old_effective_to' => $oldComponent->effective_to,
-                    'new_effective_from' => $this->start_date->format('Y-m-d'),
-                    'new_effective_to' => $this->end_date?->format('Y-m-d'),
+                    'new_effective_from' => $startDate->format('Y-m-d'),
+                    'new_effective_to' => $endDate?->format('Y-m-d'),
                 ];
 
                 SalaryChangeEmployee::create([
@@ -590,7 +592,7 @@ class SalaryIncrement extends Component
             }
 
             $this->selectedComponentId = $componentId;
-            $this->start_date = now();
+            $this->start_date = null;
             $this->end_date = null;
             $this->modal('calculation-rule-modal')->show();
         } catch (\Exception $e) {
@@ -615,6 +617,10 @@ class SalaryIncrement extends Component
                 throw new \Exception('No component selected.');
             }
 
+            // Parse dates to Carbon instances
+            $startDate = $this->start_date ? \Carbon\Carbon::parse($this->start_date) : null;
+            $endDate = $this->end_date ? \Carbon\Carbon::parse($this->end_date) : null;
+
             $oldComponent = SalaryComponentsEmployee::with('salary_component')
                 ->where('id', $this->selectedComponentId)
                 ->where('firm_id', Session::get('firm_id'))
@@ -626,12 +632,12 @@ class SalaryIncrement extends Component
 
             DB::beginTransaction();
             try {
-                $oldComponent->effective_to = $this->start_date->copy()->subDay()->format('Y-m-d');
+                $oldComponent->effective_to = $startDate->copy()->subDay()->format('Y-m-d');
                 $oldComponent->save();
 
                 $newComponent = $oldComponent->replicate();
-                $newComponent->effective_from = $this->start_date->format('Y-m-d');
-                $newComponent->effective_to = $this->end_date?->format('Y-m-d');
+                $newComponent->effective_from = $startDate->format('Y-m-d');
+                $newComponent->effective_to = $endDate?->format('Y-m-d');
                 $newComponent->save();
 
                 $oldComponent->salary_component->update([
@@ -644,8 +650,8 @@ class SalaryIncrement extends Component
                     'new_calculation_json' => $this->rule,
                     'old_effective_from' => $oldComponent->effective_from,
                     'old_effective_to' => $oldComponent->effective_to,
-                    'new_effective_from' => $this->start_date->format('Y-m-d'),
-                    'new_effective_to' => $this->end_date?->format('Y-m-d'),
+                    'new_effective_from' => $startDate->format('Y-m-d'),
+                    'new_effective_to' => $endDate?->format('Y-m-d'),
                 ];
 
                 SalaryChangeEmployee::create([
@@ -767,68 +773,23 @@ class SalaryIncrement extends Component
         return '';
     }
 
-    protected function validateDateRange()
-    {
-        // Check for overlapping date ranges
-        if ($this->selectedEmployeeId && $this->start_date) {
-            $existingComponent = SalaryComponentsEmployee::where('employee_id', $this->selectedEmployeeId)
-                ->where('id', '!=', $this->selectedComponentId)
-                ->where(function ($query) {
-                    $query->where(function ($q) {
-                        $q->where('effective_from', '<=', $this->start_date)
-                            ->where(function ($q2) {
-                                $q2->where('effective_to', '>=', $this->start_date)
-                                    ->orWhereNull('effective_to');
-                            });
-                    })->orWhere(function ($q) {
-                        if ($this->end_date) {
-                            $q->where('effective_from', '<=', $this->end_date)
-                                ->where(function ($q2) {
-                                    $q2->where('effective_to', '>=', $this->end_date)
-                                        ->orWhereNull('effective_to');
-                                });
-                        }
-                    });
-                })
-                ->exists();
 
-            if ($existingComponent) {
-                throw new \Exception('The selected date range overlaps with an existing salary component.');
-            }
-        }
-    }
 
     public function updatedStartDate()
     {
-        try {
-            $this->validateDateRange();
-        } catch (\Exception $e) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => $e->getMessage()
-            ]);
-            $this->start_date = null;
-        }
+        // Date validation removed - allowing overlapping date ranges
     }
 
     public function updatedEndDate()
     {
-        try {
-            $this->validateDateRange();
-        } catch (\Exception $e) {
-            $this->dispatch('notify', [
-                'type' => 'error',
-                'message' => $e->getMessage()
-            ]);
-            $this->end_date = null;
-        }
+        // Date validation removed - allowing overlapping date ranges
     }
 
     public function updatedBulkFilter()
     {
         $this->selectedBulkEmployeeIds = [];
         $this->selectAllBulkEmployees = false;
-        $this->selectedBulkComponentId = null; // Reset component selection on filter change
+        $this->selectedBulkComponentId = null; 
     }
 
     public function getAvailableComponentsForAssignmentProperty()
@@ -1141,6 +1102,162 @@ class SalaryIncrement extends Component
         } catch (\Exception $e) {
             \DB::rollBack();
             \Flux\Flux::toast('Bulk salary increment failed: ' . $e->getMessage(), 'error');
+        }
+    }
+
+    public function saveBulkRule()
+    {
+        $this->validate([
+            'bulk_rule' => 'required|array',
+            'bulk_start_date' => 'required',
+            'bulk_end_date' => 'nullable|after:bulk_start_date',
+            'bulk_remarks' => 'nullable|string|min:3|max:500',
+            'selectedBulkComponentId' => 'required|integer',
+            'selectedBulkEmployeeIds' => 'required|array|min:1',
+        ]);
+
+        $componentId = $this->selectedBulkComponentId;
+        $employeeIds = $this->selectedBulkEmployeeIds;
+        $startDate = $this->bulk_start_date ? \Carbon\Carbon::parse($this->bulk_start_date) : null;
+        $endDate = $this->bulk_end_date ? \Carbon\Carbon::parse($this->bulk_end_date) : null;
+        $rule = $this->bulk_rule;
+        $remarks = $this->bulk_remarks;
+
+        $batch = null;
+        \DB::beginTransaction();
+        try {
+            $batch = \App\Services\BulkOperationService::start('SalaryComponentsEmployee', 'bulk_calculation_rule', 'Bulk Calculation Rule Update');
+            foreach ($employeeIds as $employeeId) {
+                $oldComponent = \App\Models\Hrms\SalaryComponentsEmployee::where('firm_id', session('firm_id'))
+                    ->where('employee_id', $employeeId)
+                    ->where('salary_component_id', $componentId)
+                    ->where(function($q) use ($startDate) {
+                        $q->whereNull('effective_to')->orWhere('effective_to', '>=', $startDate);
+                    })
+                    ->orderByDesc('effective_from')
+                    ->first();
+                if (!$oldComponent) {
+                    // Optionally log or skip
+                    continue;
+                }
+                $original = $oldComponent->getOriginal();
+                // Set the current component's effective_to to the day before new start date
+                $oldComponent->effective_to = $startDate->copy()->subDay()->format('Y-m-d');
+                $oldComponent->save();
+                \App\Services\BulkOperationService::logUpdate($batch, $oldComponent, $original);
+
+                // Create a new component with updated calculation rule
+                $newComponent = $oldComponent->replicate();
+                $newComponent->calculation_json = $rule;
+                $newComponent->effective_from = $startDate->format('Y-m-d');
+                $newComponent->effective_to = $endDate?->format('Y-m-d');
+                $newComponent->save();
+                \App\Services\BulkOperationService::logInsert($batch, $newComponent);
+
+                // Log the salary change
+                $changeDetails = [
+                    'change_type' => 'calculation_rule_modification',
+                    'old_calculation_json' => $oldComponent->calculation_json,
+                    'new_calculation_json' => $rule,
+                    'old_effective_from' => $oldComponent->effective_from,
+                    'old_effective_to' => $oldComponent->effective_to,
+                    'new_effective_from' => $startDate->format('Y-m-d'),
+                    'new_effective_to' => $endDate?->format('Y-m-d'),
+                ];
+                \App\Models\Hrms\SalaryChangeEmployee::create([
+                    'firm_id' => session('firm_id'),
+                    'employee_id' => $employeeId,
+                    'old_salary_components_employee_id' => $oldComponent->id,
+                    'new_salary_components_employee_id' => $newComponent->id,
+                    'old_effective_to' => $oldComponent->effective_to,
+                    'remarks' => $remarks,
+                    'changes_details_json' => $changeDetails
+                ]);
+            }
+            \DB::commit();
+            $this->bulk_remarks = '';
+            $this->bulk_start_date = now();
+            $this->bulk_end_date = null;
+            $this->selectedBulkEmployeeIds = [];
+            $this->selectAllBulkEmployees = false;
+            $this->modal('bulk-calculation-rule-modal')->close();
+            \Flux\Flux::toast('Bulk calculation rule updated successfully.', 'success');
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            \Flux\Flux::toast('Bulk calculation rule update failed: ' . $e->getMessage(), 'error');
+        }
+    }
+
+    // --- Change Logs Tab Properties ---
+    public $logSearch = '';
+    public $logDateFrom = null;
+    public $logDateTo = null;
+    public $logType = '';
+    public $logPage = 1;
+    public $logPerPage = 15;
+
+    #[\Livewire\Attributes\Computed]
+    public function changeLogs()
+    {
+        $query = \App\Models\Hrms\SalaryChangeEmployee::query()
+            ->with(['employee', 'old_salary_components', 'new_salary_components'])
+            ->where('firm_id', Session::get('firm_id'));
+
+        if ($this->logSearch) {
+            $search = strtolower($this->logSearch);
+            $query->whereHas('employee', function($q) use ($search) {
+                $q->whereRaw('LOWER(fname) LIKE ?', ["%{$search}%"])
+                  ->orWhereRaw('LOWER(lname) LIKE ?', ["%{$search}%"]);
+            });
+        }
+        if ($this->logDateFrom) {
+            $query->whereDate('created_at', '>=', $this->logDateFrom);
+        }
+        if ($this->logDateTo) {
+            $query->whereDate('created_at', '<=', $this->logDateTo);
+        }
+        // logType: '' (all), 'batch', 'individual'
+        if ($this->logType === 'batch') {
+            $query->whereNotNull('batch_id');
+        } elseif ($this->logType === 'individual') {
+            $query->whereNull('batch_id');
+        }
+        $query->orderByDesc('created_at');
+        return $query->paginate($this->logPerPage, ['*'], 'logPage', $this->logPage);
+    }
+
+    public function rollbackChange($logId)
+    {
+        try {
+            \DB::transaction(function () use ($logId) {
+                $log = \App\Models\Hrms\SalaryChangeEmployee::findOrFail($logId);
+                if ($log->batch_id) {
+                    // Rollback all logs in this batch
+                    $batchLogs = \App\Models\Hrms\SalaryChangeEmployee::where('batch_id', $log->batch_id)->get();
+                    foreach ($batchLogs as $item) {
+                        if ($item->new_salary_components_employee_id) {
+                            $component = \App\Models\Hrms\SalaryComponentsEmployee::find($item->new_salary_components_employee_id);
+                            if ($component) {
+                                $component->forceDelete();
+                            }
+                        }
+                        $item->delete();
+                    }
+                } else {
+                    // Rollback just this change
+                    if ($log->new_salary_components_employee_id) {
+                        $component = \App\Models\Hrms\SalaryComponentsEmployee::find($log->new_salary_components_employee_id);
+                        if ($component) {
+                            $component->forceDelete();
+                        }
+                    }
+                    $log->delete();
+                }
+            });
+            \Flux\Flux::toast('Rollback successful.', 'success');
+            $this->changeLogs = $this->changeLogs(); // Refresh logs
+        } catch (\Exception $e) {
+            \Flux\Flux::toast('Rollback failed: ' . $e->getMessage(), 'error');
         }
     }
 }

@@ -111,6 +111,7 @@
                     <flux:table>
                         <flux:table.columns>
                             <flux:table.column align="center" variant="strong" sortable :sorted="$sortBy === 'employee'" :direction="$sortDirection" wire:click="sort('employee')">Employee Name</flux:table.column>
+                            <flux:table.column align="center" variant="strong">Employee ID</flux:table.column>
                             <flux:table.column align="center" variant="strong" sortable :sorted="$sortBy === 'total'" :direction="$sortDirection" wire:click="sort('total')">Total Week Off Days</flux:table.column>
                             <flux:table.column align="center" variant="strong" sortable :sorted="$sortBy === 'available'" :direction="$sortDirection" wire:click="sort('available')">Available</flux:table.column>
                             <flux:table.column align="center" variant="strong" sortable :sorted="$sortBy === 'consumed'" :direction="$sortDirection" wire:click="sort('consumed')">Consumed</flux:table.column>
@@ -130,6 +131,9 @@
                                     <flux:table.row :key="$row['employee']->id">
                                         <flux:table.cell align="center" variant="strong">
                                             {{ $row['employee_name'] }}
+                                        </flux:table.cell>
+                                        <flux:table.cell align="center" variant="strong">
+                                            {{ $row['employee']->id }}
                                         </flux:table.cell>
                                         <flux:table.cell align="center" variant="strong">
                                             {{ $row['total'] }}
