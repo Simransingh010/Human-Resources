@@ -46,4 +46,9 @@ class FlexiWeekOff extends Model
     {
         return $this->belongsTo(EmpAttendance::class, 'availed_emp_attendance_id');
     }
+
+    public function consumedAttendance()
+    {
+        return $this->belongsTo(EmpAttendance::class, 'consumed_emp_attendance_id');
+    }
 } 

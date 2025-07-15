@@ -242,7 +242,6 @@ class AttendanceController extends Controller
             if ($request->hasFile('selfie')) {
 
                 $punch->addMediaFromRequest('selfie')->toMediaCollection('selfie');
-//                $selfiePath = $request->file('selfie')->store('selfies', 'public');
             }
 
 
@@ -364,9 +363,9 @@ class AttendanceController extends Controller
 
         $workDate = Carbon::today()->toDateString();
 
-//        print_r($policy->camshot_label); exit;
+                  //        print_r($policy->camshot_label); exit;
 
-//        print_r(Carbon::now());
+                   //        print_r(Carbon::now());
 
         $todaysPunches = EmpPunch::where('firm_id', $firmId)
             ->where('employee_id', $employeeId)
@@ -379,7 +378,7 @@ class AttendanceController extends Controller
 
 
 
-// Add 'selfie_url' to each punch using Spatie Media Library
+            // Add 'selfie_url' to each punch using Spatie Media Library
         $todaysPunches = $todaysPunches->map(function ($punch) {
             // Get the selfie media (assuming 'selfie' is the media collection name)
             $media = $punch->getMedia('selfie')->first();
@@ -387,8 +386,8 @@ class AttendanceController extends Controller
             return $punch;
         });
 
-//        dd($todaysPunches->last());
-        // Define flags based on policy and context
+            //        dd($todaysPunches->last());
+              // Define flags based on policy and context
         $flags = [
             'camshot_status' => $policy->camshot_label,
             'geo_status' => $policy->geo_label,

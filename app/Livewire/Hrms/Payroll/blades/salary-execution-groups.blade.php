@@ -225,7 +225,7 @@
                                     <flux:button
 
                                             title="Payroll processing has started"
-                                    >Processing</flux:button>
+                                    >Cannot RollBack</flux:button>
                                 @endif
 
                                 <!-- Rollback Confirmation Modal -->

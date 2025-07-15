@@ -26,7 +26,7 @@ class EmployeeJobProfiles extends Component
         'reporting_manager' => '',
         'employment_type' => '',
         'joblocation_id' => '',
-        'doe' => '', // date of exit
+        'doe' => '', 
     ];
 
     public $sortBy = 'created_at';
@@ -127,8 +127,12 @@ class EmployeeJobProfiles extends Component
             'profileData.doe' => 'nullable|date|after:profileData.doh',
         ]);
 
+        // Convert empty string dates to null
+        if (empty($validatedData['profileData']['doe'])) {
+            $validatedData['profileData']['doe'] = null;
+        }
+
         $validatedData['profileData']['employee_id'] = $this->employee->id;
-//        dd($validatedData['profileData']);
         if ($this->isEditing) {
             $profile = EmployeeJobProfile::findOrFail($this->profileData['id']);
             $profile->update($validatedData['profileData']);
@@ -145,6 +149,10 @@ class EmployeeJobProfiles extends Component
             heading: 'Changes saved.',
             text: 'Job profile details have been updated successfully.',
         );
+
+        // Emit step completion event
+        $this->dispatch('stepCompleted', step: 5);
+        $this->render();
     }
 
     public function deleteProfile($profileId)
@@ -154,6 +162,13 @@ class EmployeeJobProfiles extends Component
 
         // Delete the profile
         $profile->delete();
+
+        // Check if there are any remaining profiles
+        $remainingProfiles = EmployeeJobProfile::where('employee_id', $this->employee->id)->count();
+        if ($remainingProfiles === 0) {
+            // If no profiles remain, emit step uncompletion event
+            $this->dispatch('stepUncompleted', step: 5);
+        }
 
         // Show toast notification
         Flux::toast(
@@ -166,7 +181,7 @@ class EmployeeJobProfiles extends Component
     {
         $this->profileData = [
             'id' => null,
-            'employee_id' => '',
+//            'employee_id' => '',
             'employee_code' => '',
             'doh' => '',
             'department_id' => '',
@@ -177,6 +192,11 @@ class EmployeeJobProfiles extends Component
             'doe' => '',
         ];
         $this->isEditing = false;
+    }
+
+    public function render()
+    {
+        return view('livewire.hrms.employees-meta.employee-job-profiles');
     }
 
 }

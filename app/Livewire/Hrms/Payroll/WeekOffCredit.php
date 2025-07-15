@@ -295,8 +295,7 @@ class WeekOffCredit extends Component
                     'firm_id' => $firmId,
                     'employee_id' => $employeeId,
                     'leave_type_id' => $leaveType->id,
-                    'period_start' => $from,
-                    'period_end' => $to,
+                  
                 ])->first();
                 if (!$leaveBalance) {
                     \Flux\Flux::toast('Leave balance not found for employee ID ' . $employeeId, 'error');

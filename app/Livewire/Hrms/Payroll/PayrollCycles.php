@@ -81,7 +81,7 @@ class PayrollCycles extends Component
         $this->executionGroups = $query->get()->toArray();
     }
 
-    public function loadPayrollSlots($groupId)
+    public function loadPayrollSlots($groupId   )
     {
         $this->selectedGroupId = $groupId;
         $query = PayrollSlot::where('firm_id', Session::get('firm_id'))
@@ -115,9 +115,18 @@ class PayrollCycles extends Component
                 );
             }
 
+            // Fetch all employees of the execution group for this slot and dd them
+            $payrollSlot = PayrollSlot::findOrFail($slot_id);
+            $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
+                ->where('salary_execution_group_id', $payrollSlot->salary_execution_group_id)
+                ->whereHas('employee', function($q) { $q->where('is_inactive', false); })
+                ->pluck('employee_id')
+                ->toArray();
+            dd($employeeIds);
+
             // Check for employees on salary hold and create hold entries
             $this->processSalaryHoldsAtStart($slot_id);
-
+//            Full: 11,000.00, Effective Working Days: 30, Effective Deduction Days: 0, Deduction: 0.00, Payable: 11,000.00, Effective From: 2025-04-01
             // Create initial command log
             PayrollSlotsCmd::create([
                 'firm_id' => Session::get('firm_id'),
@@ -318,6 +327,7 @@ class PayrollCycles extends Component
                 ->where('salary_execution_group_id', $execution_group_id)
                 ->whereHas('employee', function($q) { $q->where('is_inactive', false); })
                 ->pluck('employee_id');
+                
 
             // Get employees on salary hold for this payroll slot
             $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
@@ -645,6 +655,7 @@ class PayrollCycles extends Component
         // Get employee's execution group
         $executionGroupId = EmployeesSalaryExecutionGroup::where('employee_id', $employeeId)
             ->where('firm_id', Session::get('firm_id'))
+            ->where('is_inactive', false)
             ->value('salary_execution_group_id');
 
         // Count total slots in current financial year
@@ -780,6 +791,7 @@ class PayrollCycles extends Component
                 $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
                     ->where('salary_execution_group_id', $slot->salary_execution_group_id)
                     ->pluck('employee_id')
+                    ->where('is_inactive', false)
                     ->toArray();
 
                 // Get employees on salary hold for this payroll slot
