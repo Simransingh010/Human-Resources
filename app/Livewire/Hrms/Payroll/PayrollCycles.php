@@ -19,6 +19,9 @@ use App\Models\Hrms\PayrollStepPayrollSlotCmd;
 use App\Models\Hrms\SalaryHold;
 use App\Models\Hrms\SalaryAdvance;
 use App\Models\Hrms\SalaryArrear;
+use App\Models\Hrms\EmployeeExit;
+use App\Models\Hrms\FinalSettlement;
+use App\Models\Hrms\FinalSettlementItem;
 use App\Models\Hrms\EmpLeaveBalance;
 use App\Models\Hrms\FlexiWeekOff;
 use App\Models\Hrms\LeaveType;
@@ -403,6 +406,12 @@ class PayrollCycles extends Component
                 })
                 ->pluck('employee_id');
 
+            // Exclude employees who are in exit process (any active EmployeeExit record)
+            $employeesOnExit = EmployeeExit::where('firm_id', Session::get('firm_id'))
+                ->whereIn('employee_id', $employeeIds)
+                ->pluck('employee_id');
+            $employeeIds = $employeeIds->diff($employeesOnExit);
+
 
             // Get employees on salary hold for this payroll slot
             $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
@@ -469,6 +478,16 @@ class PayrollCycles extends Component
             
 
             foreach ($activeEmployeeIds as $employeeId) {
+                // If employee has Final Settlement to be disbursed in this slot, generate FNF tracks only
+                $fnf = FinalSettlement::where('firm_id', Session::get('firm_id'))
+                    ->where('employee_id', $employeeId)
+                    ->where('disburse_payroll_slot_id', $slot_id)
+                    ->first();
+
+                if ($fnf) {
+                    $this->createFinalSettlementTracks($fnf, $slot_id, $payroll_slots_cmd_id, $payrollSlot, $cycle_id);
+                    continue; // Skip regular component processing
+                }
                 // Check if employee belongs to the payroll slot's execution group
                 if (!$this->isEmployeeInSlotExecutionGroup($employeeId, $payrollSlot)) {
                     continue;
@@ -537,6 +556,55 @@ class PayrollCycles extends Component
 
         } catch (\Exception $e) {
             throw new \Exception("Error creating payroll tracks: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Create payroll tracks for Final Settlement for a specific slot
+     */
+    protected function createFinalSettlementTracks(FinalSettlement $fnf, $slotId, $payrollSlotsCmdId, $payrollSlot, $cycleId): void
+    {
+        $items = FinalSettlementItem::where('final_settlement_id', $fnf->id)
+            ->where('firm_id', Session::get('firm_id'))
+            ->get();
+
+        foreach ($items as $item) {
+            // Fetch component meta if available to populate fields
+            $component = SalaryComponent::where('firm_id', Session::get('firm_id'))
+                ->where('id', $item->salary_component_id)
+                ->first();
+
+            PayrollComponentsEmployeesTrack::updateOrCreate(
+                [
+                    'firm_id' => Session::get('firm_id'),
+                    'payroll_slot_id' => $slotId,
+                    'employee_id' => $fnf->employee_id,
+                    'salary_component_id' => $item->salary_component_id,
+                    // Key by FNF item to avoid duplication on reruns
+                    'remarks' => 'FNF Item ID: ' . $item->id,
+                ],
+                [
+                    'payroll_slots_cmd_id' => $payrollSlotsCmdId,
+                    'salary_template_id' => $component->salary_template_id ?? null,
+                    'salary_component_group_id' => $component->salary_component_group_id ?? null,
+                    'sequence' => 1,
+                    'nature' => $item->nature ?? ($component->nature ?? 'earning'),
+                    'component_type' => 'final_settlement',
+                    'amount_type' => $component->amount_type ?? 'static_known',
+                    'taxable' => (bool) ($component->taxable ?? true),
+                    'calculation_json' => $component->calculation_json ?? null,
+                    'salary_period_from' => $payrollSlot->from_date,
+                    'salary_period_to' => $payrollSlot->to_date,
+                    'user_id' => Session::get('user_id'),
+                    'amount_full' => (float) $item->amount,
+                    'amount_payable' => (float) $item->amount,
+                    'amount_paid' => 0,
+                    'salary_advance_id' => null,
+                    'salary_arrear_id' => null,
+                    'salary_cycle_id' => $cycleId,
+                    'entry_type' => 'system'
+                ]
+            );
         }
     }
 

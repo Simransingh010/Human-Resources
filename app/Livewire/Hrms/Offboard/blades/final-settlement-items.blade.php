@@ -121,13 +121,17 @@
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     @foreach($fieldConfig as $field => $cfg)
+                        @php
+                            // Skip single component/nature/amount fields; handled by repeater
+                            if(in_array($field, ['salary_component_id','nature','amount'])) continue;
+                        @endphp
                         <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
                             @switch($cfg['type'])
                                 @case('select')
                                     <flux:select
                                         label="{{ $cfg['label'] }}"
                                         wire:model.live="formData.{{ $field }}"
-                                        required="{{ in_array($field, ['exit_id', 'final_settlement_id', 'employee_id', 'salary_component_id', 'nature']) }}"
+                                        required="{{ in_array($field, ['exit_id', 'final_settlement_id', 'employee_id']) }}"
                                     >
                                         <option value="">Select {{ $cfg['label'] }}</option>
                                         @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
@@ -162,20 +166,6 @@
                                     />
                                     @break
 
-                                @case('number')
-                                    <flux:input
-                                        type="number"
-                                        label="{{ $cfg['label'] }}"
-                                        wire:model.live="formData.{{ $field }}"
-                                        min="0"
-                                        step="0.01"
-                                        required="{{ in_array($field, ['amount']) }}"
-                                    />
-                                    @error("formData.{$field}")
-                                        <flux:text color="red" size="sm">{{ $message }}</flux:text>
-                                    @enderror
-                                    @break
-
                                 @default
                                     <flux:input
                                         type="{{ $cfg['type'] }}"
@@ -185,6 +175,44 @@
                             @endswitch
                         </div>
                     @endforeach
+                </div>
+
+                <!-- Multi-row entry for items -->
+                <div class="col-span-2">
+                    <flux:heading>Items</flux:heading>
+                    <div class="space-y-3 mt-2">
+                        @foreach($fsItems as $idx => $it)
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                                <div>
+                                    <flux:select
+                                        label="Salary Component"
+                                        wire:model.live="fsItems.{{ $idx }}.salary_component_id"
+                                    >
+                                        <option value="">Select Component</option>
+                                        @foreach($this->availableComponents($idx) as $id => $title)
+                                            <option value="{{ $id }}">{{ $title }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                </div>
+                                <div>
+                                    <flux:input
+                                        type="number"
+                                        label="Amount"
+                                        wire:model.live="fsItems.{{ $idx }}.amount"
+                                        min="0"
+                                        step="0.01"
+                                    />
+                                </div>
+                                <div class="flex items-end gap-2">
+                                    <flux:input type="text" label="Remarks" wire:model.live="fsItems.{{ $idx }}.remarks" />
+                                    <flux:button size="sm" icon="minus" wire:click="removeItem({{ $idx }})" />
+                                </div>
+                            </div>
+                        @endforeach
+                        <div>
+                            <flux:button icon="plus" wire:click="addItem">Add Item</flux:button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="flex justify-end pt-4">

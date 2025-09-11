@@ -20,7 +20,7 @@ class ExitApprovals extends Component
 
     public $perPage = 10;
     public $search = '';
-    public $filter = 'all'; // all|pending|in_progress|completed|overdue
+    public $filter = 'all';
     public $selectedStepTrackId = null;
 
     // Checklist state

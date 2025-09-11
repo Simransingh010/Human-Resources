@@ -123,9 +123,23 @@
                                     >
                                         <option value="">Select {{ $cfg['label'] }}</option>
                                         @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
+                                            @if($field === 'component_type' && $val === 'epf' && $epfLocked)
+                                                <option value="{{ $val }}" disabled>{{ $lab }} (already configured)</option>
+                                            @else
+                                                <option value="{{ $val }}">{{ $lab }}</option>
+                                            @endif
                                         @endforeach
                                     </flux:select>
+
+                                    @if($field === 'component_type' && ($formData['component_type'] ?? '') === 'epf')
+                                        <div class="mt-2 p-3 rounded bg-blue-50 text-blue-800 text-sm">
+                                            By selecting <strong>EPF</strong>, two components will be created on save:
+                                            <ul class="list-disc ml-5 mt-1">
+                                                <li>EPF - Employer Contribution</li>
+                                                <li>EPF - Employee Contribution</li>
+                                            </ul>
+                                        </div>
+                                    @endif
                                     @break
 
                                 @case('switch')
@@ -733,12 +747,20 @@
 
                     <flux:table.cell>
                         <div class="flex space-x-2">
+                        <flux:button
+                                    variant="outline"
+                                    size="sm"
+                                    icon="plus"
+                                    wire:click="openBreakdown({{ $item->id }})"
+                                    tooltip="Add Info Breakdown"
+                            ></flux:button>
                             <flux:button
                                     variant="primary"
                                     size="sm"
                                     icon="pencil"
                                     wire:click="edit({{ $item->id }})"
                             ></flux:button>
+                          
                             <flux:modal.trigger name="delete-{{ $item->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>
@@ -768,6 +790,68 @@
             @endforeach
         </flux:table.rows>
     </flux:table>
+
+    <!-- Breakdown Builder Modal (Info-only) -->
+    <flux:modal name="mdl-breakdown" class="max-w-7xl">
+        <div class="p-6 space-y-6">
+            <div>
+                <flux:heading size="lg">Component Info Breakdown</flux:heading>
+                <flux:subheading>Informational only; not used in calculations. Saved into description.</flux:subheading>
+            </div>
+
+            <div class="space-y-3">
+                <div class="grid grid-cols-12 gap-2 text-xs font-medium text-gray-600 px-2">
+                    <div class="col-span-5">Name</div>
+                    <div class="col-span-2">Type</div>
+                    <div class="col-span-3">Component / Value</div>
+                    <div class="col-span-1">% Of</div>
+                    <div class="col-span-1 text-right">Actions</div>
+                </div>
+
+                @foreach($breakdownData as $idx => $row)
+                    <div class="grid grid-cols-12 gap-2 items-center p-2 border rounded-lg bg-gray-50">
+                        <div class="col-span-5">
+                            <flux:input wire:model.live="breakdownData.{{ $idx }}.name" placeholder="Name" />
+                        </div>
+                        <div class="col-span-2">
+                            <flux:select wire:model.live="breakdownData.{{ $idx }}.type">
+                                <flux:select.option value="constant">Constant</flux:select.option>
+                                <flux:select.option value="component">Component</flux:select.option>
+                            </flux:select>
+                        </div>
+                        <div class="col-span-3">
+                            @if(($breakdownData[$idx]['type'] ?? 'constant') === 'component')
+                                <flux:select wire:model.live="breakdownData.{{ $idx }}.component_key">
+                                    @foreach($salaryComponents as $id => $component)
+                                        @php $title = $this->getComponentTitle($component); @endphp
+                                        <flux:select.option value="{{ $id }}">{{ $title }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                            @else
+                                <flux:input type="number" step="0.01" wire:model.live="breakdownData.{{ $idx }}.value" placeholder="Value" />
+                            @endif
+                        </div>
+                        @if(($breakdownData[$idx]['type'] ?? 'constant') === 'component')
+                            <div class="col-span-1">
+                                <flux:input type="number" step="0.01" wire:model.live="breakdownData.{{ $idx }}.percentage" placeholder="%" />
+                            </div>
+                        @endif
+                        <div class="col-span-1 flex justify-end">
+                            <flux:button variant="danger" size="sm" icon="trash" wire:click="removeBreakdownItem({{ $idx }})" />
+                        </div>
+                        <div class="col-span-12">
+                            <flux:input wire:model.live="breakdownData.{{ $idx }}.note" placeholder="Note (optional)" />
+                        </div>
+                    </div>
+                @endforeach
+
+                <div class="flex justify-between">
+                    <flux:button variant="outline" icon="plus" wire:click="addBreakdownItem">Add Item</flux:button>
+                    <flux:button variant="primary" icon="check" wire:click="saveBreakdown">Save</flux:button>
+                </div>
+            </div>
+        </div>
+    </flux:modal>
 
 </div>
 </div>

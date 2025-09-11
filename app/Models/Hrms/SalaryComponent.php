@@ -75,7 +75,8 @@ class SalaryComponent extends Model
 		'advance' => 'Advance',
 		'arrear' => 'Arrear',
         'tds' => 'TDS',
-		'tax' => 'Tax',
+		'epf' => 'EPF',	
+		
 		'employee_contribution' => 'Employee Contribution',
 		'employer_contribution' => 'Employer Contribution',
 		'lop_deduction' => "Lop Deduction",

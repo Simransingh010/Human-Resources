@@ -35,9 +35,16 @@
                 $exit = $first->exit;
                 $total = $rows->count();
                 $approved = $rows->where('status','approved')->count();
-                $statusText = $approved === $total ? 'Completed' : ($approved > 0 ? 'In Progress' : 'Pending');
+                $dueTs = $exit && $exit->last_working_day ? strtotime($exit->last_working_day) : null;
+                $isOverdue = $dueTs && $dueTs < strtotime('today') && $approved < $total;
+                $statusText = $approved === $total ? 'Completed' : ($isOverdue ? 'Overdue' : ($approved > 0 ? 'In Progress' : 'Pending'));
                 if ($filter !== 'all') {
-                    $map = ['completed' => ($approved === $total), 'in_progress' => ($approved>0 && $approved<$total), 'pending' => ($approved===0), 'overdue' => false];
+                    $map = [
+                        'completed'   => ($approved === $total),
+                        'in_progress' => ($approved > 0 && $approved < $total),
+                        'pending'     => ($approved === 0 && $approved < $total),
+                        'overdue'     => $isOverdue,
+                    ];
                     if (($map[$filter] ?? false) === false) continue;
                 }
                 $next = $rows->where('status','!=','approved')->sortBy('flow_order')->first();
@@ -57,8 +64,8 @@
                             @endif
                         </div>
                         <div>
-                            <div class="text-xl font-semibold text-slate-900">{{ trim(($employee->fname ?? '').' '.($employee->lname ?? '')) }} @if($jp && $jp->employee_code)<span class="text-slate-500 text-sm">({{ $jp->employee_code }})</span>@endif</div>
-                            <div class="text-slate-600 text-sm flex items-center gap-2">
+                            <div class="text-xl font-semibold text-slate-900 mx-1">{{ trim(($employee->fname ?? '').' '.($employee->lname ?? '')) }} @if($jp && $jp->employee_code)<span class="text-slate-500 text-sm">({{ $jp->employee_code }})</span>@endif</div>
+                            <div class="text-slate-600 text-sm flex items-center gap-2 mx-1">
                                 <span>{{ \App\Models\Hrms\EmployeeExit::EXIT_TYPES[$exit->exit_type] ?? $exit->exit_type }}</span>
                                 <span>•</span>
                                 <span>Due: {{ $exit->last_working_day ? date('jS M Y', strtotime($exit->last_working_day)) : '-' }}</span>
@@ -79,6 +86,9 @@
                                 @break
                             @case('In Progress')
                                 <span class="px-3 py-1 rounded-full bg-amber-200 text-amber-900 text-sm font-medium">In Progress</span>
+                                @break
+                            @case('Overdue')
+                                <span class="px-3 py-1 rounded-full bg-rose-200 text-rose-900 text-sm font-medium">Overdue</span>
                                 @break
                             @default
                                 <span class="px-3 py-1 rounded-full bg-blue-200 text-blue-900 text-sm font-medium">Pending</span>
@@ -101,6 +111,21 @@
                                 </span>
                             @elseif($isNext)
                                 <span class="text-xs text-amber-700">Waiting for approver</span>
+                            @else
+                                @switch($step->status)
+                                    @case('rejected')
+                                        <span class="px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 text-xs font-semibold">Rejected</span>
+                                        @break
+                                    @case('blocked')
+                                        <span class="px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 text-xs font-semibold">Blocked</span>
+                                        @break
+                                    @case('in_progress')
+                                        <span class="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-xs font-semibold">In Progress</span>
+                                        @break
+                                    @case('pending')
+                                    @default
+                                        <span class="px-2 py-0.5 rounded-full bg-blue-200 text-blue-900 text-xs font-semibold">Pending</span>
+                                @endswitch
                             @endif
                             <span>
                                 <flux:button size="xs" color="zinc" wire:click="openChecklist({{ $step->id }})">Checklist</flux:button>

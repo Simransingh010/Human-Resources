@@ -10,6 +10,7 @@ use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Flux;
+use Illuminate\Support\Str;
 
 class SalaryComponents extends Component
 {
@@ -61,6 +62,12 @@ class SalaryComponents extends Component
         'component' => 'Component',
         'constant' => 'Constant'
     ];
+
+    public bool $epfLocked = false;
+
+    // Breakdown Builder State
+    public $breakdownComponentId = null;
+    public array $breakdownData = [];
 
     protected $listeners = [
         'ruleSaved' => 'handleRuleSaved'
@@ -145,6 +152,123 @@ class SalaryComponents extends Component
             // Fallback for unexpected types
             return [];
         })->toArray();
+
+        // Determine if EPF option should be locked (when both contributions already exist)
+        $this->computeEpfLocked();
+    }
+
+    protected function computeEpfLocked(): void
+    {
+        $firmId = Session::get('firm_id');
+        $existingTypes = SalaryComponent::query()
+            ->where('firm_id', $firmId)
+            ->whereIn('component_type', ['employee_contribution', 'employer_contribution'])
+            ->pluck('component_type')
+            ->unique()
+            ->toArray();
+
+        $this->epfLocked = in_array('employee_contribution', $existingTypes, true)
+            && in_array('employer_contribution', $existingTypes, true);
+    }
+
+    public function openBreakdown($componentId)
+    {
+        try {
+            $this->breakdownComponentId = $componentId;
+            $component = SalaryComponent::findOrFail($componentId);
+
+            $this->breakdownData = [];
+            $raw = $component->description;
+            if (is_string($raw) && $raw !== '') {
+                $decoded = json_decode($raw, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($decoded['breakdown']) && is_array($decoded['breakdown'])) {
+                    $this->breakdownData = $decoded['breakdown'];
+                }
+            }
+
+            if (empty($this->breakdownData)) {
+                $this->breakdownData = [
+                    [
+                        'name' => '',
+                        'type' => 'constant', // constant | component
+                        'component_key' => null,
+                        'percentage' => null,
+                        'value' => null,
+                        'note' => null,
+                    ]
+                ];
+            }
+
+            $this->modal('mdl-breakdown')->show();
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to open breakdown: ' . $e->getMessage()
+            );
+        }
+    }
+
+    public function addBreakdownItem()
+    {
+        $this->breakdownData[] = [
+            'name' => '',
+            'type' => 'constant',
+            'component_key' => null,
+            'percentage' => null,
+            'value' => null,
+            'note' => null,
+        ];
+    }
+
+    public function removeBreakdownItem($index)
+    {
+        array_splice($this->breakdownData, (int) $index, 1);
+        if (empty($this->breakdownData)) {
+            $this->addBreakdownItem();
+        }
+    }
+
+    public function saveBreakdown()
+    {
+        try {
+            if (!$this->breakdownComponentId) {
+                throw new \Exception('No component selected');
+            }
+
+            // Basic sanitize: ensure array and allowed keys
+            $items = array_values(array_map(function ($item) {
+                return [
+                    'id' => isset($item['id']) && $item['id'] !== '' ? (string) $item['id'] : (string) Str::uuid(),
+                    'name' => (string) ($item['name'] ?? ''),
+                    'type' => in_array(($item['type'] ?? 'constant'), ['constant', 'component'], true) ? $item['type'] : 'constant',
+                    'component_key' => $item['component_key'] ?? null,
+                    'percentage' => is_numeric($item['percentage'] ?? null) ? (float) $item['percentage'] : null,
+                    'value' => is_numeric($item['value'] ?? null) ? (float) $item['value'] : null,
+                    'note' => isset($item['note']) ? (string) $item['note'] : null,
+                ];
+            }, $this->breakdownData));
+
+            $component = SalaryComponent::findOrFail($this->breakdownComponentId);
+            $component->update([
+                'description' => json_encode(['breakdown' => $items], JSON_UNESCAPED_UNICODE),
+            ]);
+
+            $this->modal('mdl-breakdown')->close();
+            $this->breakdownComponentId = null;
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Breakdown Saved',
+                text: 'Component breakdown saved to description.'
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: $e->getMessage()
+            );
+        }
     }
 
     public function updatedRuleType()
@@ -312,6 +436,19 @@ class SalaryComponents extends Component
     {
         $validatedData = $this->validate();
 
+        // Block selecting EPF type when contributions already exist (server-side safety)
+        if (($validatedData['formData']['component_type'] ?? null) === 'epf') {
+            $this->computeEpfLocked();
+            if ($this->epfLocked) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Cannot Add',
+                    text: 'EPF is already configured for this firm. You cannot select EPF again.'
+                );
+                return;
+            }
+        }
+
         // Check for duplicate 'lop_deduction' for the firm (only on create)
         if (!$this->isEditing && ($validatedData['formData']['component_type'] ?? null) === 'lop_deduction') {
             $firmId = session('firm_id');
@@ -345,8 +482,37 @@ class SalaryComponents extends Component
             $salaryComponent->update($validatedData['formData']);
             $toastMsg = 'Salary component updated successfully';
         } else {
-            SalaryComponent::create($validatedData['formData']);
-            $toastMsg = 'Salary component added successfully';
+            // Special handling: when EPF is chosen, create two components instead
+            if (($validatedData['formData']['component_type'] ?? null) === 'epf') {
+                $base = $validatedData['formData'];
+                $common = [
+                    'firm_id' => session('firm_id'),
+                    'salary_component_group_id' => $base['salary_component_group_id'] ?? null,
+                    'nature' => $base['nature'] ?? 'deduction',
+                    'amount_type' => $base['amount_type'] ?? null,
+                    'taxable' => $base['taxable'] ?? false,
+                    'calculation_json' => $base['calculation_json'] ?? null,
+                    'document_required' => $base['document_required'] ?? false,
+                    'description' => $base['description'] ?? null,
+                ];
+
+                // Employer Contribution
+                SalaryComponent::create(array_merge($common, [
+                    'title' => 'EPF - Employer Contribution',
+                    'component_type' => 'employer_contribution',
+                ]));
+
+                // Employee Contribution
+                SalaryComponent::create(array_merge($common, [
+                    'title' => 'EPF - Employee Contribution',
+                    'component_type' => 'employee_contribution',
+                ]));
+
+                $toastMsg = 'EPF configured: Employer and Employee contribution components created';
+            } else {
+                SalaryComponent::create($validatedData['formData']);
+                $toastMsg = 'Salary component added successfully';
+            }
         }
 
         $this->resetForm();
@@ -356,6 +522,9 @@ class SalaryComponents extends Component
             heading: 'Changes saved.',
             text: $toastMsg,
         );
+
+        // Recompute EPF lock status after changes
+        $this->computeEpfLocked();
     }
 
     public function resetForm()

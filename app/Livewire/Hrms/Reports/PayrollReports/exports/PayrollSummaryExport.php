@@ -126,7 +126,11 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
             'payroll_tracks' => function ($q) {
                 $q->whereBetween('salary_period_from', [$this->start, $this->end]);
             }
-        ])->where('firm_id', $firmId);
+        ])->where('firm_id', $firmId)
+          // Ensure only employees having at least one payroll track in range are included
+          ->whereHas('payroll_tracks', function ($q) {
+              $q->whereBetween('salary_period_from', [$this->start, $this->end]);
+          });
 
         // Apply salary execution group filter if selected
         if (!empty($this->filters['salary_execution_group_id'])) {
@@ -156,7 +160,8 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
             // Find the payroll slot for this employee for the period (from their payroll_tracks)
             $payrollTrack = $employee->payroll_tracks->first();
             if (!$payrollTrack || !$payrollTrack->payroll_slot_id) {
-                return true; // No payroll slot, include by default
+                // No payroll tracks/slot for this period — exclude from report as requested
+                return false;
             }
             $payrollSlotId = $payrollTrack->payroll_slot_id;
             // Check if this employee is on hold for this slot

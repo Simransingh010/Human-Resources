@@ -54,11 +54,15 @@ class FinalSettlementItems extends Component
         'exit_id' => '',
         'final_settlement_id' => '',
         'employee_id' => '',
+        // Below fields are used in repeater rows instead of single inputs
         'salary_component_id' => '',
         'nature' => '',
         'amount' => '',
         'remarks' => '',
     ];
+
+    // Repeater rows: multiple final settlement items in one submit
+    public array $fsItems = [];
 
     public function mount()
     {
@@ -70,6 +74,13 @@ class FinalSettlementItems extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+
+        // Initialize one empty row for multi-entry
+        if (empty($this->fsItems)) {
+            $this->fsItems = [
+                ['salary_component_id' => '', 'nature' => '', 'amount' => '', 'remarks' => '']
+            ];
+        }
     }
 
     protected function initListsForFields(): void
@@ -110,11 +121,8 @@ class FinalSettlementItems extends Component
                         return [$employee->id => "{$employee->fname} {$employee->lname} ({$employee->employee_code})"];
                     })
                     ->toArray(),
-                'salary_components' => SalaryComponent::where('firm_id', $firmId)
-//                    ->where('is_inactive', false)
-                    ->orderBy('title')
-                    ->pluck('title', 'id')
-                    ->toArray(),
+                // Start with empty; populate on employee selection
+                'salary_components' => [],
                 'nature_options' => [
                     'earning' => 'Earning',
                     'deduction' => 'Deduction',
@@ -127,6 +135,90 @@ class FinalSettlementItems extends Component
     public function applyFilters()
     {
         $this->resetPage();
+    }
+
+    // When Exit is selected, auto-fill employee and related final settlement, and load components
+    public function updatedFormDataExitId($exitId): void
+    {
+        if (!$exitId) {
+            return;
+        }
+
+        $firmId = Session::get('firm_id');
+        $exit = EmployeeExit::where('firm_id', $firmId)->with('employee')->find($exitId);
+        if ($exit) {
+            $this->formData['employee_id'] = $exit->employee_id;
+
+            // Pick the latest settlement for this exit if available
+            $settlement = FinalSettlement::where('firm_id', $firmId)
+                ->where('exit_id', $exit->id)
+                ->orderByDesc('id')
+                ->first();
+            if ($settlement) {
+                $this->formData['final_settlement_id'] = $settlement->id;
+            }
+
+            $this->loadEmployeeComponents($exit->employee_id);
+        }
+    }
+
+    public function updatedFormDataEmployeeId($employeeId): void
+    {
+        if ($employeeId) {
+            $this->loadEmployeeComponents($employeeId);
+        } else {
+            $this->listsForFields['salary_components'] = [];
+        }
+    }
+
+    protected function loadEmployeeComponents($employeeId): void
+    {
+        // Filter salary components assigned to this employee
+        $assigned = \App\Models\Hrms\SalaryComponentsEmployee::where('employee_id', $employeeId)
+            ->with('salary_component')
+            ->get();
+
+        // Components for select [id => title]
+        $this->listsForFields['salary_components'] = $assigned
+            ->mapWithKeys(function ($item) {
+                return [$item->salary_component->id => $item->salary_component->title];
+            })
+            ->toArray();
+
+        // Component natures map [id => nature]
+        $this->listsForFields['component_natures'] = $assigned
+            ->mapWithKeys(function ($item) {
+                return [$item->salary_component->id => $item->nature];
+            })
+            ->toArray();
+    }
+
+    public function availableComponents(int $currentIndex): array
+    {
+        $all = $this->listsForFields['salary_components'] ?? [];
+        $selectedIds = collect($this->fsItems)
+            ->pluck('salary_component_id')
+            ->filter()
+            ->values()
+            ->toArray();
+        $current = $this->fsItems[$currentIndex]['salary_component_id'] ?? null;
+        $selectedOther = array_values(array_filter($selectedIds, fn($id) => (string)$id !== (string)$current));
+        return array_filter($all, function ($title, $id) use ($selectedOther) {
+            return !in_array((string)$id, array_map('strval', $selectedOther), true);
+        }, ARRAY_FILTER_USE_BOTH);
+    }
+
+    public function addItem(): void
+    {
+        $this->fsItems[] = ['salary_component_id' => '', 'nature' => '', 'amount' => '', 'remarks' => ''];
+    }
+
+    public function removeItem($index): void
+    {
+        if (isset($this->fsItems[$index])) {
+            unset($this->fsItems[$index]);
+            $this->fsItems = array_values($this->fsItems);
+        }
     }
 
     public function clearFilters()
@@ -187,10 +279,11 @@ class FinalSettlementItems extends Component
             'formData.exit_id' => 'required|exists:employee_exits,id',
             'formData.final_settlement_id' => 'required|exists:final_settlements,id',
             'formData.employee_id' => 'required|exists:employees,id',
-            'formData.salary_component_id' => 'required|exists:salary_components,id',
-            'formData.nature' => 'required|in:earning,deduction,no_impact',
-            'formData.amount' => 'required|numeric|min:0',
-            'formData.remarks' => 'nullable|string|max:1000'
+            // Repeater validation
+            'fsItems' => 'required|array|min:1',
+            'fsItems.*.salary_component_id' => 'required|exists:salary_components,id',
+            'fsItems.*.amount' => 'required|numeric|min:0',
+            'fsItems.*.remarks' => 'nullable|string|max:1000',
         ];
     }
 
@@ -198,19 +291,61 @@ class FinalSettlementItems extends Component
     {
         $validatedData = $this->validate();
 
-        $validatedData['formData'] = collect($validatedData['formData'])
-            ->map(fn($val) => $val === '' ? null : $val)
-            ->toArray();
-
-        $validatedData['formData']['firm_id'] = session('firm_id');
+        $firmId = session('firm_id');
 
         if ($this->isEditing) {
+            // Update a single item using the first repeater row and derive nature
             $finalSettlementItem = FinalSettlementItem::findOrFail($this->formData['id']);
-            $finalSettlementItem->update($validatedData['formData']);
+            $row = $validatedData['fsItems'][0] ?? null;
+            if ($row) {
+                $nature = $this->listsForFields['component_natures'][$row['salary_component_id']] ??
+                    (string) \App\Models\Hrms\SalaryComponentsEmployee::where('employee_id', $this->formData['employee_id'])
+                        ->where('salary_component_id', $row['salary_component_id'])
+                        ->value('nature');
+                $finalSettlementItem->update([
+                    'exit_id' => $this->formData['exit_id'],
+                    'final_settlement_id' => $this->formData['final_settlement_id'],
+                    'employee_id' => $this->formData['employee_id'],
+                    'salary_component_id' => $row['salary_component_id'],
+                    'nature' => $nature,
+                    'amount' => $row['amount'],
+                    'remarks' => $this->formData['remarks'] ?? null,
+                ]);
+            }
+            // After any change, recompute the parent settlement totals
+            if (!empty($this->formData['final_settlement_id'])) {
+                $settlement = FinalSettlement::find($this->formData['final_settlement_id']);
+                if ($settlement) {
+                    $settlement->recomputeTotals();
+                }
+            }
             $toastMsg = 'Final settlement item updated successfully';
         } else {
-            FinalSettlementItem::create($validatedData['formData']);
-            $toastMsg = 'Final settlement item added successfully';
+            foreach ($validatedData['fsItems'] as $row) {
+                $nature = $this->listsForFields['component_natures'][$row['salary_component_id']] ??
+                    (string) \App\Models\Hrms\SalaryComponentsEmployee::where('employee_id', $this->formData['employee_id'])
+                        ->where('salary_component_id', $row['salary_component_id'])
+                        ->value('nature');
+
+                FinalSettlementItem::create([
+                    'firm_id' => $firmId,
+                    'exit_id' => $this->formData['exit_id'],
+                    'final_settlement_id' => $this->formData['final_settlement_id'],
+                    'employee_id' => $this->formData['employee_id'],
+                    'salary_component_id' => $row['salary_component_id'],
+                    'nature' => $nature,
+                    'amount' => $row['amount'],
+                    'remarks' => $row['remarks'] ?? null,
+                ]);
+            }
+            // Recompute totals for parent settlement after bulk insert
+            if (!empty($this->formData['final_settlement_id'])) {
+                $settlement = FinalSettlement::find($this->formData['final_settlement_id']);
+                if ($settlement) {
+                    $settlement->recomputeTotals();
+                }
+            }
+            $toastMsg = 'Final settlement items added successfully';
         }
 
         // Clear cache to refresh lists
@@ -229,23 +364,53 @@ class FinalSettlementItems extends Component
     {
         $this->reset(['formData']);
         $this->isEditing = false;
+        $this->fsItems = [
+            ['salary_component_id' => '', 'nature' => '', 'amount' => '', 'remarks' => '']
+        ];
     }
 
     public function edit($id)
     {
         $this->isEditing = true;
         $finalSettlementItem = FinalSettlementItem::findOrFail($id);
-        $this->formData = $finalSettlementItem->toArray();
+        $this->formData['id'] = $finalSettlementItem->id;
+        $this->formData['exit_id'] = $finalSettlementItem->exit_id;
+        $this->formData['final_settlement_id'] = $finalSettlementItem->final_settlement_id;
+        $this->formData['employee_id'] = $finalSettlementItem->employee_id;
+        $this->formData['remarks'] = $finalSettlementItem->remarks;
+
+        // Load components for the employee so repeater has options and natures
+        if ($finalSettlementItem->employee_id) {
+            $this->loadEmployeeComponents($finalSettlementItem->employee_id);
+        }
+
+        // Prefill repeater with the existing item (component + amount)
+        $this->fsItems = [
+            [
+                'salary_component_id' => $finalSettlementItem->salary_component_id,
+                'amount' => $finalSettlementItem->amount,
+                'remarks' => $finalSettlementItem->remarks,
+            ]
+        ];
         $this->modal('mdl-final-settlement-item')->show();
     }
 
     public function delete($id)
     {
         $finalSettlementItem = FinalSettlementItem::findOrFail($id);
+        $settlementId = $finalSettlementItem->final_settlement_id;
         $finalSettlementItem->delete();
         
         // Clear cache to refresh lists
         $this->clearCache();
+        
+        // Recompute totals for parent after deletion
+        if ($settlementId) {
+            $settlement = FinalSettlement::find($settlementId);
+            if ($settlement) {
+                $settlement->recomputeTotals();
+            }
+        }
         
         Flux::toast(
             variant: 'success',

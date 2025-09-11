@@ -30,7 +30,7 @@ class FinalSettlements extends Component
         'disburse_payroll_slot_id' => ['label' => 'Disburse Payroll Slot', 'type' => 'select', 'listKey' => 'payroll_slots'],
         'fnf_earning_amount' => ['label' => 'Total Earning', 'type' => 'number'],
         'fnf_deduction_amount' => ['label' => 'Total Deduction', 'type' => 'number'],
-        'full_final_status' => ['label' => 'Status', 'type' => 'text'],
+        'full_final_status' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'final_statuses'],
         'remarks' => ['label' => 'Remarks', 'type' => 'textarea'],
         'additional_rule' => ['label' => 'Additional Rule', 'type' => 'textarea'],
     ];
@@ -57,7 +57,7 @@ class FinalSettlements extends Component
         'disburse_payroll_slot_id' => '',
         'fnf_earning_amount' => 0,
         'fnf_deduction_amount' => 0,
-        'full_final_status' => 'initiated',
+        'full_final_status' => 'pending',
         'remarks' => '',
         'additional_rule' => '',
     ];
@@ -87,12 +87,16 @@ class FinalSettlements extends Component
                     ->with('employee')
                     ->orderByDesc('id')
                     ->get()
-                    ->mapWithKeys(function ($exit) {
+                    ->map(function ($exit) {
                         $label = "Exit #{$exit->id}";
                         if ($exit->employee) {
                             $label .= " - {$exit->employee->fname} {$exit->employee->lname}";
                         }
-                        return [$exit->id => $label];
+                        return [
+                            'id' => $exit->id,
+                            'label' => $label,
+                            'employee_id' => $exit->employee_id,
+                        ];
                     })
                     ->toArray(),
                 'employees' => Employee::where('firm_id', $firmId)
@@ -110,6 +114,7 @@ class FinalSettlements extends Component
                     ->orderByDesc('id')
                     ->pluck('title', 'id')
                     ->toArray(),
+                'final_statuses' => FinalSettlement::full_final_status_select,
             ];
         });
     }
@@ -140,6 +145,18 @@ class FinalSettlements extends Component
             $this->visibleFilterFields = array_filter($this->visibleFilterFields, fn ($f) => $f !== $field);
         } else {
             $this->visibleFilterFields[] = $field;
+        }
+    }
+
+    // Auto-select employee when exit is chosen
+    public function updatedFormDataExitId($value): void
+    {
+        if (!$value) {
+            return;
+        }
+        $exit = collect($this->listsForFields['exits'] ?? [])->firstWhere('id', (int) $value);
+        if ($exit && !empty($exit['employee_id'])) {
+            $this->formData['employee_id'] = $exit['employee_id'];
         }
     }
 
@@ -187,9 +204,13 @@ class FinalSettlements extends Component
         if ($this->isEditing) {
             $record = FinalSettlement::findOrFail($this->formData['id']);
             $record->update($data);
+            // Ensure totals reflect items regardless of manual edits
+            $record->recomputeTotals();
             $toastMsg = 'Final settlement updated successfully';
         } else {
-            FinalSettlement::create($data);
+            $record = FinalSettlement::create($data);
+            // Safety: initialize totals from existing items if any
+            $record->recomputeTotals();
             $toastMsg = 'Final settlement created successfully';
         }
 
@@ -246,7 +267,7 @@ class FinalSettlements extends Component
         $this->formData['settlement_date'] = date('Y-m-d');
         $this->formData['fnf_earning_amount'] = 0;
         $this->formData['fnf_deduction_amount'] = 0;
-        $this->formData['full_final_status'] = 'initiated';
+        $this->formData['full_final_status'] = 'pending';
         $this->isEditing = false;
     }
 

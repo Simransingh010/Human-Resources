@@ -74,7 +74,16 @@ class EmployeeJobProfile extends Model
 		'pran_number',
 		'paylevel',
 		'rf_id',
-		'biometric_emp_code'
+		'biometric_emp_code',
+		'status'
+	];
+
+	public const STATUS_SELECT = [
+		'active' => 'Active',
+		'inactive' => 'Inactive',
+		'terminated' => 'Terminated',
+		'resigned' => 'Resigned',
+		'transferred' => 'Transferred',
 	];
 
 	public function department()

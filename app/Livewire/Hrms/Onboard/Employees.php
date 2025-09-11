@@ -14,6 +14,10 @@ use Illuminate\Validation\Rule;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use App\Models\Hrms\EmployeeJobProfile;
+use App\Models\Hrms\SalaryHold;
 
 class Employees extends Component
 {
@@ -464,19 +468,78 @@ class Employees extends Component
     public function toggleStatus($employeeId)
     {
         $employee = Employee::findOrFail($employeeId);
-        $employee->is_inactive = !$employee->is_inactive;
-        $employee->save();
+        $activate = $employee->is_inactive; // if currently inactive, we are activating
 
-        // Delete payroll entries for this employee as per required statuses
+        $this->applyEmployeeActiveState($employeeId, $activate);
+
+        // Delete payroll entries for this employee as per required statuses (existing behavior)
         $this->deleteEmployeePayrollEntries($employeeId);
 
         $this->employeeStatuses[$employeeId] = !$employee->is_inactive;
-    
 
         Flux::toast(
             heading: 'Status Updated',
-            text: $employee->is_inactive ? 'Employee has been deactivated.' : 'Employee has been activated.'
+            text: $activate ? 'Employee has been activated.' : 'Employee has been deactivated.'
         );
+    }
+
+    /**
+     * Apply employee activation/deactivation and sync related artifacts:
+     * - Flip Employee.is_inactive
+     * - Update EmployeeJobProfile.status (active/inactive)
+     * - Create/Delete SalaryHold for current and future payroll slots
+     */
+    private function applyEmployeeActiveState(int $employeeId, bool $activate): void
+    {
+        DB::transaction(function () use ($employeeId, $activate) {
+            $employee = Employee::with(['emp_job_profile', 'salary_execution_groups'])->findOrFail($employeeId);
+
+            // 1) Flip employee active state
+            $employee->is_inactive = !$activate;
+            $employee->save();
+
+            // 2) Update job profile status if exists
+            if ($employee->emp_job_profile) {
+                $employee->emp_job_profile->status = $activate ? 'active' : 'inactive';
+                $employee->emp_job_profile->save();
+            } else {
+                // Optionally create a profile or skip; we skip if none exists
+            }
+
+            // 3) Create/Delete SalaryHold for current and future slots
+            $groupIds = $employee->salary_execution_groups()->pluck('salary_execution_group_id');
+            if ($groupIds->isEmpty()) {
+                return; // nothing to hold/release
+            }
+
+            $currentStart = Carbon::now()->startOfMonth();
+
+            // Only consider non-completed future/current slots
+            $slotIds = PayrollSlot::whereIn('salary_execution_group_id', $groupIds)
+                ->whereDate('to_date', '>=', $currentStart)
+                ->where('payroll_slot_status', '!=', 'CM')
+                ->pluck('id');
+
+            if ($slotIds->isEmpty()) {
+                return;
+            }
+
+            if ($activate) {
+                // Reactivation: remove holds for current/future slots
+                SalaryHold::where('employee_id', $employeeId)
+                    ->whereIn('payroll_slot_id', $slotIds)
+                    ->delete();
+            } else {
+                // Deactivation: ensure holds exist for current/future slots
+                foreach ($slotIds as $slotId) {
+                    SalaryHold::firstOrCreate([
+                        'firm_id' => (int) session('firm_id'),
+                        'employee_id' => $employeeId,
+                        'payroll_slot_id' => (int) $slotId,
+                    ]);
+                }
+            }
+        });
     }
 
     /**

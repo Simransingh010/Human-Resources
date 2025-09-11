@@ -17,6 +17,7 @@
                     <div class="w-1/4 min-w-[16rem]">
                         @switch($cfg['type'])
                             @case('select')
+                                @php($list = $listsForFields[$cfg['listKey']] ?? [])
                                 <flux:select
                                     variant="listbox"
                                     searchable
@@ -25,9 +26,15 @@
                                     wire:change="applyFilters"
                                 >
                                     <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
-                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
-                                    @endforeach
+                                    @if($field==='exit_id')
+                                        @foreach($list as $opt)
+                                            <flux:select.option value="{{ $opt['id'] }}">{{ $opt['label'] }}</flux:select.option>
+                                        @endforeach
+                                    @else
+                                        @foreach($list as $val => $lab)
+                                            <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
+                                        @endforeach
+                                    @endif
                                 </flux:select>
                                 @break
                             @default
@@ -89,8 +96,8 @@
                     @endforeach
                     <flux:table.cell class="text-right">
                         <div class="flex justify-end gap-2">
-                            <flux:button size="xs" variant="secondary" wire:click="edit({{ $row->id }})">Edit</flux:button>
-                            <flux:button size="xs" variant="danger" wire:click="delete({{ $row->id }})">Delete</flux:button>
+                            <flux:button size="xs" variant="primary" wire:click="edit({{ $row->id }})">Edit</flux:button>
+                            <flux:button size="xs" variant="primary" wire:click="delete({{ $row->id }})">Delete</flux:button>
                         </div>
                     </flux:table.cell>
                 </flux:table.row>
@@ -109,15 +116,26 @@
                         <div class="@if(in_array($field, ['remarks','additional_rule'])) col-span-2 @endif">
                             @switch($cfg['type'])
                                 @case('select')
+                                    @php($list = $listsForFields[$cfg['listKey']] ?? [])
                                     <flux:select
                                         label="{{ $cfg['label'] }}"
                                         searchable
                                         wire:model.live="formData.{{ $field }}"
                                     >
                                         <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
+                                        @if($field==='exit_id')
+                                            @foreach($list as $opt)
+                                                <option value="{{ $opt['id'] }}">{{ $opt['label'] }}</option>
+                                            @endforeach
+                                        @elseif($field==='full_final_status')
+                                            @foreach($list as $val => $lab)
+                                                <option value="{{ $val }}">{{ $lab }}</option>
+                                            @endforeach
+                                        @else
+                                            @foreach($list as $val => $lab)
+                                                <option value="{{ $val }}">{{ $lab }}</option>
+                                            @endforeach
+                                        @endif
                                     </flux:select>
                                     @break
 

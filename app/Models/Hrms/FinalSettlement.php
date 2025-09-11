@@ -61,6 +61,15 @@ class FinalSettlement extends Model
         'additional_rule'
     ];
 
+    public const full_final_status_select = [
+        'pending' => 'Pending',
+        'settled' => 'Settled',
+        'disbursed' => 'Disbursed',
+        'locked' => 'Locked',
+        'published' => 'Published',
+       'rejected' => 'Rejected',
+    ];
+    
     public function firm()
     {
         return $this->belongsTo(Firm::class);
@@ -84,5 +93,24 @@ class FinalSettlement extends Model
     public function finalSettlementItems()
     {
         return $this->hasMany(FinalSettlementItem::class);
+    }
+
+    /**
+     * Recompute and persist FNF totals from linked items.
+     */
+    public function recomputeTotals(): void
+    {
+        $earning = $this->finalSettlementItems()
+            ->where('nature', 'earning')
+            ->sum('amount');
+
+        $deduction = $this->finalSettlementItems()
+            ->where('nature', 'deduction')
+            ->sum('amount');
+
+        $this->forceFill([
+            'fnf_earning_amount' => (float) $earning,
+            'fnf_deduction_amount' => (float) $deduction,
+        ])->save();
     }
 } 
