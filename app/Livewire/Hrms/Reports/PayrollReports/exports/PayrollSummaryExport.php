@@ -5,6 +5,7 @@ namespace App\Livewire\Hrms\Reports\PayrollReports\Exports;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\SalaryComponent;
 use App\Models\Hrms\Employee;
+use App\Models\Hrms\SalaryArrear;
 use App\Models\Saas\Firm;
 use Carbon\Carbon;
 use Maatwebsite\Excel\Concerns\FromCollection;
@@ -27,8 +28,9 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
     protected $end;
     protected $earnings;
     protected $deductions;
-    protected $allComponents;
+    protected $allComponents;   
     protected $data;
+    protected $rows; // flattened rows including arrear rows
     protected $firmName;
 
     public function __construct($filters)
@@ -44,28 +46,71 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
         $firm = Firm::find($firmId);
         $this->firmName = $firm ? $firm->name : '';
 
-        // First, collect the data to determine which components are actually used
+        // First, collect the employees and their payroll tracks
         $this->data = $this->fetchEmployees($firmId);
-        
-        // Extract unique component IDs from the payroll tracks
+
+        // Build flattened rows: normal salary row + one arrear row per arrear record
+        $this->rows = collect();
+
+        // Extract unique component IDs from payroll tracks and arrears
         $componentIds = [];
+
         foreach ($this->data as $employee) {
+            // add regular salary row
+            $this->rows->push([
+                'type' => 'salary',
+                'employee' => $employee,
+            ]);
+
+            // collect component ids from payroll tracks
             if ($employee->payroll_tracks) {
                 foreach ($employee->payroll_tracks as $track) {
                     $componentIds[$track->salary_component_id] = true;
                 }
             }
+
+            // Determine employee payroll slot for this period (if any)
+            $employeeSlotId = optional($employee->payroll_tracks->first())->payroll_slot_id;
+
+            // fetch arrears for this employee disbursed in this slot (fallback to date range)
+            $arrears = $this->fetchEmployeeArrears($firmId, $employee->id, $employeeSlotId);
+            // Aggregate arrears by effective month (M Y) and component
+            $arrearsByMonth = [];
+            foreach ($arrears as $arrear) {
+                if ($arrear->salary_component_id) {
+                    $componentIds[$arrear->salary_component_id] = true;
+                }
+                $monthKey = $arrear->effective_from ? Carbon::parse($arrear->effective_from)->format('M Y') : 'Arrears';
+                $remaining = max(0, (float)$arrear->total_amount - (float)$arrear->paid_amount);
+                $amountToShow = (float)($arrear->installment_amount ?: 0);
+                if ($amountToShow <= 0) {
+                    $amountToShow = $remaining > 0 ? $remaining : (float)$arrear->total_amount;
+                }
+                if (!isset($arrearsByMonth[$monthKey])) {
+                    $arrearsByMonth[$monthKey] = [];
+                }
+                if (!isset($arrearsByMonth[$monthKey][$arrear->salary_component_id])) {
+                    $arrearsByMonth[$monthKey][$arrear->salary_component_id] = 0;
+                }
+                $arrearsByMonth[$monthKey][$arrear->salary_component_id] += $amountToShow;
+            }
+            foreach ($arrearsByMonth as $monthKey => $componentTotals) {
+                $this->rows->push([
+                    'type' => 'arrear',
+                    'employee' => $employee,
+                    'arrear_month' => $monthKey,
+                    'arrear_amounts' => $componentTotals,
+                ]);
+            }
         }
 
-        // Only fetch the components that are actually used by the selected employees
-        if (!empty($componentIds)) {
-            $this->allComponents = SalaryComponent::whereIn('id', array_keys($componentIds))
+        // Only fetch the components that are actually used by the selected employees (tracks + arrears)
+        $this->allComponents = !empty($componentIds)
+            ? SalaryComponent::whereIn('id', array_keys($componentIds))
                 ->where('firm_id', $firmId)
-                ->get();
-        } else {
-            $this->allComponents = collect([]);
-        }
-        
+                ->get()
+            : collect([]);
+
         $this->earnings = $this->allComponents->where('nature', 'earning')->values();
         $this->deductions = $this->allComponents->where('nature', 'deduction')->values();
     }
@@ -75,6 +120,9 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
     {
         $query = Employee::with([
             'emp_job_profile.department',
+            'emp_job_profile.joblocation',
+            'emp_personal_detail',
+            'salary_execution_groups',
             'payroll_tracks' => function ($q) {
                 $q->whereBetween('salary_period_from', [$this->start, $this->end]);
             }
@@ -92,12 +140,109 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
             $query->whereIn('id', $this->filters['employee_id']);
         }
 
-        return $query->get();
+        $employees = $query->get();
+
+        // For each employee, determine their payroll slot for the period and exclude if on hold
+        $filtered = $employees->filter(function($employee) use ($firmId) {
+            // Check if employee was hired before or during the report period
+            $jobProfile = $employee->emp_job_profile;
+            if ($jobProfile && $jobProfile->doh) {
+                // If employee was hired after the end of the report period, exclude them
+                if ($jobProfile->doh->isAfter($this->end)) {
+                    return false;
+                }
+            }
+            
+            // Find the payroll slot for this employee for the period (from their payroll_tracks)
+            $payrollTrack = $employee->payroll_tracks->first();
+            if (!$payrollTrack || !$payrollTrack->payroll_slot_id) {
+                return true; // No payroll slot, include by default
+            }
+            $payrollSlotId = $payrollTrack->payroll_slot_id;
+            // Check if this employee is on hold for this slot
+            $onHold = \App\Models\Hrms\SalaryHold::where('firm_id', $firmId)
+                ->where('payroll_slot_id', $payrollSlotId)
+                ->where('employee_id', $employee->id)
+                ->exists();
+            return !$onHold;
+        });
+
+        // Sort employees by salary execution groups for Firm ID 27
+        if ($firmId == 27) {
+            $filtered = $this->sortEmployeesBySalaryGroups($filtered);
+        }
+
+        return $filtered->values();
+    }
+
+    // Helper method to sort employees by salary execution groups for Firm ID 27
+    private function sortEmployeesBySalaryGroups($employees)
+    {
+        // Define the desired sequence for Firm ID 27
+        $desiredSequence = [
+            'Director',
+            'Faculty Regular', 
+            'Faculty Contractual',
+            'Staff Permanent',
+            'Staff Contractual'
+        ];
+
+        // Create a mapping of group titles to their priority
+        $priorityMap = array_flip($desiredSequence);
+
+        return $employees->sortBy(function($employee) use ($priorityMap) {
+            // Get the first salary execution group for this employee
+            $salaryGroup = $employee->salary_execution_groups->first();
+            
+            if (!$salaryGroup) {
+                // If no salary group, put at the end
+                return 999;
+            }
+
+            $groupTitle = $salaryGroup->title;
+            
+            // Check if the group title is in our desired sequence
+            if (isset($priorityMap[$groupTitle])) {
+                return $priorityMap[$groupTitle];
+            }
+
+            // If not in our sequence, put at the end
+            return 999;
+        });
+    }
+
+    // Fetch arrears for a given employee within the selected period
+    private function fetchEmployeeArrears($firmId, $employeeId, $payrollSlotId = null)
+    {
+        $q = SalaryArrear::query()
+            ->where('firm_id', $firmId)
+            ->where('employee_id', $employeeId)
+            ->whereNull('deleted_at')
+            ->where('is_inactive', false)
+            ->whereIn('arrear_status', ['pending', 'partially_paid']);
+
+        if ($payrollSlotId) {
+            // Include arrears explicitly scheduled for this payroll slot (regardless of effective month)
+            // OR arrears without a slot but whose effective_from falls within the report period
+            $q->where(function($sub) use ($payrollSlotId) {
+                $sub->where('disburse_wef_payroll_slot_id', $payrollSlotId)
+                    ->orWhere(function($s) {
+                        $s->whereNull('disburse_wef_payroll_slot_id')
+                          ->whereBetween('effective_from', [$this->start, $this->end]);
+                    });
+            });
+        } else {
+            // No slot info; fallback to effective_from within the report period
+            $q->whereBetween('effective_from', [$this->start, $this->end]);
+        }
+
+        return $q->get();
     }
 
     public function collection()
     {
-        return $this->data;
+        // Return the flattened rows collection for mapping
+        return $this->rows ?? collect();
     }
 
     // Only the FINAL header row should go here!
@@ -110,7 +255,9 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
             'Paylevel',
             'Employee Name',
             'Department',
-            'Designation'
+            'Designation',
+            'Sub-center Name',
+            'PAN Card',
         ];
 
         // Row 1: Main headers
@@ -124,7 +271,7 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
 
         // Row 2: Component titles
         $subHeaders = array_merge(
-            array_fill(0, 6, ''), // Empty cells for employee fields (will be merged)
+            array_fill(0, 8, ''), // Empty cells for employee fields (will be merged)
             $this->earnings->pluck('title')->toArray(),
             [''],  // Empty cell for Total Earnings (will be merged)
             $this->deductions->pluck('title')->toArray(),
@@ -134,28 +281,76 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
         return [$headers, $subHeaders];
     }
 
-    public function map($employee): array
+    public function map($item): array
     {
         static $serial = 1;
+        $type = $item['type'] ?? 'salary';
+        $employee = $item['employee'];
         $job = $employee->emp_job_profile;
+        $personal = $employee->emp_personal_detail;
 
-        $payrollTracks = collect($employee->payroll_tracks);
-        $trackByComponent = $payrollTracks
-            ->groupBy('salary_component_id')
-            ->map(fn($items) => $items->sum('amount_payable'));
+        if ($type === 'salary') {
+            // Exclude arrear tracks from the regular salary row to avoid double counting
+            $payrollTracks = collect($employee->payroll_tracks)
+                ->filter(function ($t) {
+                    return ($t->component_type ?? null) !== 'salary_arrear';
+                });
+            $trackByComponent = $payrollTracks
+                ->groupBy('salary_component_id')
+                ->map(fn($items) => $items->sum('amount_payable'));
+
+            $row = [
+                $serial++,
+                $job->employee_code ?? '',
+                $job->paylevel ?? '',
+                trim("{$employee->fname} {$employee->lname}"),
+                $job->department->title ?? '',
+                $job->designation->title ?? '',
+                $job->joblocation->name ?? '',
+                $personal->panno ?? '',
+            ];
+
+            $earnTotal = 0;
+            foreach ($this->earnings as $component) {
+                $amount = $trackByComponent[$component->id] ?? 0;
+                $row[] = $amount;
+                $earnTotal += $amount;
+            }
+            $row[] = $earnTotal;
+
+            $dedTotal = 0;
+            foreach ($this->deductions as $component) {
+                $amount = $trackByComponent[$component->id] ?? 0;
+                $row[] = $amount;
+                $dedTotal += $amount;
+            }
+            $row[] = $dedTotal;
+
+            $row[] = $earnTotal - $dedTotal;
+
+            return $row;
+        }
+
+        // arrear row (aggregated per month)
+        $arrearMonth = $item['arrear_month'] ?? '';
 
         $row = [
             $serial++,
             $job->employee_code ?? '',
-            $job->paylevel ?? '',
+            "Arrears {$arrearMonth}",
             trim("{$employee->fname} {$employee->lname}"),
             $job->department->title ?? '',
             $job->designation->title ?? '',
+            $job->joblocation->name ?? '',
+            $personal->panno ?? '',
         ];
+
+        // Component-wise aggregated arrear amounts for this month
+        $arrearComponentTotals = collect($item['arrear_amounts'] ?? []);
 
         $earnTotal = 0;
         foreach ($this->earnings as $component) {
-            $amount = $trackByComponent[$component->id] ?? 0;
+            $amount = (float) ($arrearComponentTotals[$component->id] ?? 0);
             $row[] = $amount;
             $earnTotal += $amount;
         }
@@ -163,7 +358,8 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
 
         $dedTotal = 0;
         foreach ($this->deductions as $component) {
-            $amount = $trackByComponent[$component->id] ?? 0;
+            // Only place amount if the arrear component is actually a deduction
+            $amount = (float) ($arrearComponentTotals[$component->id] ?? 0);
             $row[] = $amount;
             $dedTotal += $amount;
         }
@@ -190,7 +386,7 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
                 $sheet->insertNewRowBefore(1, 2);
 
                 // Dynamic column counts
-                $empColCount = 6;
+                $empColCount = 8; // Updated for new columns
                 $earnCount = $this->earnings->count();
                 $dedCount = $this->deductions->count();
                 $totalCols = $empColCount + $earnCount + 1 + $dedCount + 2;
@@ -214,23 +410,33 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
                     $sheet->mergeCells("{$col}3:{$col}4");
                 }
 
-                // Merge Earnings header horizontally
-                $earnStart = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + 1);
-                $earnEnd = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount);
-                $sheet->mergeCells("{$earnStart}3:{$earnEnd}3");
+                // Merge Earnings header horizontally (only if there are earnings)
+                if ($earnCount > 0) {
+                    $earnStart = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + 1);
+                    $earnEnd = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount);
+                    $sheet->mergeCells("{$earnStart}3:{$earnEnd}3");
+                }
 
-                // Merge Deductions header horizontally
-                $dedStart = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount + 2);
-                $dedEnd = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount + 1 + $dedCount);
-                $sheet->mergeCells("{$dedStart}3:{$dedEnd}3");
+                // Merge Deductions header horizontally (only if there are deductions)
+                if ($dedCount > 0) {
+                    // Calculate the correct start column for deductions
+                    $dedStartCol = $empColCount + $earnCount + 2; // After employee cols + earnings + total earnings
+                    $dedEndCol = $dedStartCol + $dedCount - 1;
+                    
+                    $dedStart = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($dedStartCol);
+                    $dedEnd = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($dedEndCol);
+                    $sheet->mergeCells("{$dedStart}3:{$dedEnd}3");
+                }
 
                 // Merge Total columns vertically
                 $totalEarnCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount + 1);
                 $sheet->mergeCells("{$totalEarnCol}3:{$totalEarnCol}4");
 
+                // Calculate the correct column for total deductions
                 $totalDedCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount + $dedCount + 2);
                 $sheet->mergeCells("{$totalDedCol}3:{$totalDedCol}4");
 
+                // Calculate the correct column for net pay
                 $netPayCol = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($empColCount + $earnCount + $dedCount + 3);
                 $sheet->mergeCells("{$netPayCol}3:{$netPayCol}4");
 
@@ -246,8 +452,13 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
                 $sheet->getStyle("A3:{$lastCol}4")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_MEDIUM);
 
                 // Auto width for all columns
-                foreach (range('A', $lastCol) as $col) {
-                    $sheet->getColumnDimension($col)->setAutoSize(true);
+                for (
+                    $colIdx = 1;
+                    $colIdx <= \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($lastCol);
+                    $colIdx++
+                ) {
+                    $colLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($colIdx);
+                    $sheet->getColumnDimension($colLetter)->setAutoSize(true);
                 }
 
                 // Data rows start at row 5

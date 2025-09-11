@@ -8,6 +8,7 @@ use App\Models\Saas\Agency;
 use App\Models\Saas\Firm;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Livewire\Attributes\On;
 use Flux;
 
 class Users extends Component
@@ -56,6 +57,7 @@ class Users extends Component
     public $modal = false;
     public $panels;
     public $selectedUserId = null;
+    public $selectedFirmId = null; // New property for firm-specific operations
 
     public function mount()
     {
@@ -238,6 +240,19 @@ class Users extends Component
 
         $this->statuses[$firmId] = $firm->is_inactive;
         $this->refreshStatuses();
+    }
+
+    // New methods for firm-specific panel, role, and action management
+    #[On('setSelectedFirmId')]
+    public function setSelectedFirmId($firmId)
+    {
+        $this->selectedFirmId = $firmId;
+    }
+
+    #[On('setSelectedUserId')]
+    public function setSelectedUserId($userId)
+    {
+        $this->selectedUserId = $userId;
     }
 
     public function render()

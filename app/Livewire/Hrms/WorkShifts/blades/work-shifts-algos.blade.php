@@ -216,14 +216,7 @@
                                                 Configure Week Off
                                             </flux:button>
 
-                                            <flux:button class="bg-yellow-500 text-white mt-1"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    icon="user-group"
-                                                    wire:click="showAllocation({{ $rec->id }}, {{ $rec->work_shift_id }})"
-                                            >
-                                                Allocate
-                                            </flux:button>
+                                           
                                         </div>
                                     </div>
                                     @break
@@ -246,14 +239,23 @@
                                 $batchStatus = $this->getBatchStatus($rec->id);
                             @endphp
 
-                            @if($batchStatus === 'sync_days_rolled_back' || !$batchStatus)
-                                <flux:button wire:click="syncWorkShiftDays({{ $rec->id }})">Sync</flux:button>
-                            @endif
-
-                            @if($batchStatus === 'sync_days')
-                                <flux:button wire:click="rollbackSync({{ $rec->id }})">Rollback</flux:button>
-                            @endif
-
+                            <flux:button wire:click="syncWorkShiftDays({{ $rec->id }})">Sync</flux:button>
+                            <flux:button 
+                                wire:click="debugAlgorithm({{ $rec->id }})"
+                                variant="outline"
+                                size="sm"
+                                class="bg-yellow-100 text-yellow-800 border-yellow-300"
+                            >
+                                Debug
+                            </flux:button>
+                            <flux:button class="bg-yellow-500 text-white mt-1"
+                                                    variant="outline"
+                                                    size="sm"
+                                                    icon="user-group"
+                                                    wire:click="showAllocation({{ $rec->id }}, {{ $rec->work_shift_id }})"
+                                            >
+                                                Allocate
+                                            </flux:button>
                             <flux:modal.trigger name="delete-{{ $rec->id }}">
                                 <flux:button variant="danger" size="sm" icon="trash"/>
                             </flux:modal.trigger>

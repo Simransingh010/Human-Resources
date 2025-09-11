@@ -81,7 +81,9 @@ class User extends Authenticatable
 
     public function panels()
     {
-        return $this->belongsToMany(Panel::class, 'panel_user');
+        return $this->belongsToMany(Panel::class, 'panel_user')
+                    ->withPivot('firm_id')
+                    ->withTimestamps();
     }
 
     public function firms()

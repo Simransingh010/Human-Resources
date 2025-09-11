@@ -312,6 +312,22 @@ class SalaryComponents extends Component
     {
         $validatedData = $this->validate();
 
+        // Check for duplicate 'lop_deduction' for the firm (only on create)
+        if (!$this->isEditing && ($validatedData['formData']['component_type'] ?? null) === 'lop_deduction') {
+            $firmId = session('firm_id');
+            $exists = SalaryComponent::where('firm_id', $firmId)
+                ->where('component_type', 'lop_deduction')
+                ->exists();
+            if ($exists) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Cannot Add',
+                    text: 'You already have a LOP Deduction type component for this firm. Cannot create more.'
+                );
+                return;
+            }
+        }
+
         $validatedData['formData'] = collect($validatedData['formData'])
             ->map(function ($val, $key) {
                 if ($key === 'calculation_json' && !empty($val)) {

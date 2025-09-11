@@ -62,6 +62,7 @@ class EmpAttendance extends Model
 		'actual_worked_hours',
 		'final_day_weightage',
 		'attend_remarks',
+		'is_overnight'
 	];
 
     public const ATTENDANCE_STATUS_MAIN_SELECT = [
@@ -79,8 +80,8 @@ class EmpAttendance extends Model
         'POW' => 'Present on Week Off',
         'LM'  => 'Late Marked',
         'NM'  => 'Not Marked',
-
-    ];
+		'POL' => 'Present on Leave',
+	];
     public function getAttendanceStatusMainLabelAttribute($value)
     {
         return static::ATTENDANCE_STATUS_MAIN_SELECT[$this->attendance_status_main] ?? null;

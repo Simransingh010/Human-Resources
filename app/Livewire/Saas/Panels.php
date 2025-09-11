@@ -157,38 +157,71 @@ class Panels extends Component
         if (!$this->selectedPanelId) {
             return collect();
         }
+        
+        // Get the panel with its directly associated components
         $panel = \App\Models\Saas\Panel::with([
-            'apps.modules.components.actions',
+            'components.modules.apps',
+            'components.actions'
         ])->find($this->selectedPanelId);
+        
         if (!$panel) return collect();
-        return $panel->apps->map(function($app) {
-            return [
-                'id' => $app->id,
-                'name' => $app->name,
-                'type' => 'app',
-                'modules' => $app->modules->map(function($module) {
-                    return [
-                        'id' => $module->id,
-                        'name' => $module->name,
-                        'type' => 'module',
-                        'components' => $module->components->map(function($component) {
-                            return [
-                                'id' => $component->id,
-                                'name' => $component->name,
-                                'type' => 'component',
-                                'actions' => $component->actions->map(function($action) {
-                                    return [
-                                        'id' => $action->id,
-                                        'name' => $action->name,
-                                        'type' => 'action',
-                                    ];
-                                }),
-                            ];
-                        }),
-                    ];
-                }),
-            ];
-        });
+        
+        // Group components by their app and module
+        $grouped = [];
+        
+        foreach ($panel->components as $component) {
+            foreach ($component->modules as $module) {
+                foreach ($module->apps as $app) {
+                    if (!isset($grouped[$app->id])) {
+                        $grouped[$app->id] = [
+                            'id' => $app->id,
+                            'name' => $app->name,
+                            'type' => 'app',
+                            'modules' => []
+                        ];
+                    }
+                    
+                    if (!isset($grouped[$app->id]['modules'][$module->id])) {
+                        $grouped[$app->id]['modules'][$module->id] = [
+                            'id' => $module->id,
+                            'name' => $module->name,
+                            'type' => 'module',
+                            'components' => []
+                        ];
+                    }
+                    
+                    // Only add component if not already added
+                    $componentExists = false;
+                    foreach ($grouped[$app->id]['modules'][$module->id]['components'] as $existingComponent) {
+                        if ($existingComponent['id'] === $component->id) {
+                            $componentExists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$componentExists) {
+                        $grouped[$app->id]['modules'][$module->id]['components'][] = [
+                            'id' => $component->id,
+                            'name' => $component->name,
+                            'type' => 'component',
+                            'actions' => $component->actions->map(function($action) {
+                                return [
+                                    'id' => $action->id,
+                                    'name' => $action->name,
+                                    'type' => 'action',
+                                ];
+                            }),
+                        ];
+                    }
+                }
+            }
+        }
+        
+        // Convert to array format expected by the view
+        return collect($grouped)->map(function($app) {
+            $app['modules'] = collect($app['modules'])->values();
+            return $app;
+        })->values();
     }
 
     public function showPanelStructure($panelId)

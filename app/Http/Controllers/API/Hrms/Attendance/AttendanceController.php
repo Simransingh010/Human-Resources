@@ -14,6 +14,7 @@ use App\Models\Hrms\FlexiWeekOff;
 // Updated namespace
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+//simranpreet singh is th 
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -109,8 +110,16 @@ class AttendanceController extends Controller
             $workDate = Carbon::today()->toDateString();
             $punchDateTime = Carbon::now();
 
+            // Detect if the employee is on leave for the day. If yes, we'll convert to POL on punch-in
+            $isOnLeaveDay = EmpAttendance::where('firm_id', $firmId)
+                ->where('employee_id', $employeeId)
+                ->where('work_date', $workDate)
+                ->where('attendance_status_main', 'L')
+                ->exists();
+
             // Fetch the employee's assigned work shift for the day
-            $empWorkShift = DB::table('emp_work_shifts')
+            // If multiple assignments exist, use the most recent one by created_at field
+            $empWorkShifts = DB::table('emp_work_shifts')
                 ->where('firm_id', $firmId)
                 ->where('employee_id', $employeeId)
                 ->where('start_date', '<=', $workDate)
@@ -118,14 +127,45 @@ class AttendanceController extends Controller
                     $query->where('end_date', '>=', $workDate)
                         ->orWhereNull('end_date');
                 })
-                ->first();
+                ->get();
 
-            if (!$empWorkShift) {
+            if ($empWorkShifts->count() === 0) {
                 return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'popup',
                     'message' => 'No work shift assigned for today!!'
                 ], 400);
+            }
+
+            if ($empWorkShifts->count() > 1) {
+                // Use the most recent assignment by created_at field
+                $empWorkShift = $empWorkShifts->sortByDesc('created_at')->first();
+                
+                // Log the conflict for HR review
+                \Log::warning("Multiple work shifts assigned for employee", [
+                    'employee_id' => $employeeId,
+                    'firm_id' => $firmId,
+                    'work_date' => $workDate,
+                    'total_assignments' => $empWorkShifts->count(),
+                    'selected_assignment' => [
+                        'id' => $empWorkShift->id,
+                        'work_shift_id' => $empWorkShift->work_shift_id,
+                        'start_date' => $empWorkShift->start_date,
+                        'end_date' => $empWorkShift->end_date,
+                        'created_at' => $empWorkShift->created_at
+                    ],
+                    'all_assignments' => $empWorkShifts->map(function($shift) {
+                        return [
+                            'id' => $shift->id,
+                            'work_shift_id' => $shift->work_shift_id,
+                            'start_date' => $shift->start_date,
+                            'end_date' => $shift->end_date,
+                            'created_at' => $shift->created_at
+                        ];
+                    })->toArray()
+                ]);
+            } else {
+                $empWorkShift = $empWorkShifts->first();
             }
 
             $workShiftId = $empWorkShift->work_shift_id;
@@ -141,7 +181,10 @@ class AttendanceController extends Controller
                 return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'popup',
-                    'message' => 'No work shift day defined for today'
+                    "work_date" => $workDate,
+                    "work_shift_id" => $workShiftId,
+                    "emp_work_shift" => $empWorkShift,
+                    'message' => 'No work shift day defined for today SIMRAN '.$workDate . ' for work shift id '.$workShiftId.' for employee id '.$employeeId.' and emp_work_shift id '.$empWorkShift->id,
                 ], 400);
             }
 
@@ -172,6 +215,14 @@ class AttendanceController extends Controller
                     'attendance_status_main' => 'W' // Week off status
                 ])->first();
 
+                // Check if there's a holiday entry for this date BEFORE updating/creating attendance
+                $holidayAttendance = EmpAttendance::where([
+                    'firm_id' => $firmId,
+                    'employee_id' => $employeeId,
+                    'work_date' => $workDate,
+                    'attendance_status_main' => 'H' // Holiday status
+                ])->first();
+
                 // Now create/update the punch-in attendance (which will set it to 'P')
                 $attendance = EmpAttendance::updateOrCreate(
                     [
@@ -180,20 +231,22 @@ class AttendanceController extends Controller
                         'work_date' => $workDate,
                     ],
                     [
+                        'firm_id' => $firmId,
                         'work_shift_day_id' => $workShiftDayId,
                         'ideal_working_hours' => $idealWorkingHours,
                         'actual_worked_hours' => 0,
                         'final_day_weightage' => 0,
-                        'attend_remarks' => 'Punched in',
-                        'attendance_status_main'=>'P',
+                        'attend_remarks' => $isOnLeaveDay ? 'Punched in (Present on Leave request created)' : 'Punched in',
+                        'attendance_status_main' => $isOnLeaveDay ? 'POL' : 'P',
                     ]
                 );
 
-                // If there was a week off, create the FlexiWeekOff entry
-                if ($weekOffAttendance) {
+                // If there was a week off or a holiday, create the FlexiWeekOff entry (credit as Week Off)
+                if ($weekOffAttendance || $holidayAttendance) {
                     FlexiWeekOff::create([
                         'firm_id' => $firmId,
                         'employee_id' => $employeeId,
+                        // Credit as Week Off regardless of source (W/H)
                         'attendance_status_main' => 'W',
                         'availed_emp_attendance_id' => $attendance->id, // Current punch in attendance
                         'consumed_emp_attendance_id' => null, // Will be filled when consumed
@@ -399,11 +452,7 @@ class AttendanceController extends Controller
 
 
 
-//        dd($todaysPunches);
 
-// Return the response with the added 'selfie_url' field
-
-//        print_r($todaysPunches);
 
         return response()->json([
             'message_type' => 'info',
@@ -433,14 +482,20 @@ class AttendanceController extends Controller
         $user = $request->user();
         $employee = $user->employee; // Assuming a relationship exists between User and Employee
         $employeeId = $employee->id;
-        $attendances = EmpAttendance::with(['punches' => function ($query) {
-            $query->orderBy('punch_datetime', 'desc');
-        }])
-            ->where('firm_id', $request->firm_id)
+        // Ensure only one attendance per date (the latest record for that date)
+        $latestAttendanceIds = EmpAttendance::where('firm_id', $request->firm_id)
             ->whereBetween('work_date', [$request->start_date, $request->end_date])
             ->when($employeeId, function ($query) use ($employeeId) {
                 return $query->where('employee_id', $employeeId);
             })
+            ->select(DB::raw('MAX(id) as id'))
+            ->groupBy('work_date')
+            ->pluck('id');
+
+        $attendances = EmpAttendance::with(['punches' => function ($query) {
+            $query->orderBy('punch_datetime', 'desc');
+        }])
+            ->whereIn('id', $latestAttendanceIds)
             ->orderby('work_date')
             ->get();
 
@@ -500,12 +555,16 @@ class AttendanceController extends Controller
         // Convert to array for JSON response
         $statusCountsArray = array_values($filteredStatusCounts);
         
+        // Inclusive total days in the requested period
+        $totalDays = Carbon::parse($request->start_date)->diffInDays(Carbon::parse($request->end_date)) + 1;
+        
         return response()->json([
             'message_type' => 'success',
             'message_display' => 'flash',
             'message' => 'Attendance List Fetched',
             'attednances' => $attendances,
-            'status_counts' => $statusCountsArray
+            'status_counts' => $statusCountsArray,
+            'total_days' => $totalDays, 
         ], 201);
     }
 
@@ -708,6 +767,22 @@ class AttendanceController extends Controller
             $employeeId = $employee->id;
             $date = $request->date;
 
+            // Prevent duplicate week off application for the same date
+            $existingAttendance = \App\Models\Hrms\EmpAttendance::where([
+                'firm_id' => $firmId,
+                'employee_id' => $employeeId,
+                'work_date' => $date,
+                'attendance_status_main' => 'W'
+            ])->first();
+
+            if ($existingAttendance) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'You have already applied for a week off on this date.',
+                ], 400);
+            }
+
             // Find the first available week off
             $weekOff = \App\Models\Hrms\FlexiWeekOff::where('firm_id', $firmId)
                 ->where('employee_id', $employeeId)
@@ -757,7 +832,7 @@ class AttendanceController extends Controller
     }
 
     /**
-     * Fetch all attendance statuses for the authenticated user's firm
+     * Fetch all attendance statuSes for the authenticated user's firm
      * This API is optimized for scalability with caching and efficient queries
      */
     public function getAttendanceStatuses(Request $request)
@@ -974,6 +1049,95 @@ class AttendanceController extends Controller
                 'message' => 'Failed to mark attendance status. Internal server error.',
                 'error_code' => 'INTERNAL_ERROR',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Fetch the last 12 week offs (availed or consumed) for the authenticated employee
+     * Returns week off date, day, status, and related attendance info
+     */
+    public function lastWeekOffs(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return response()->json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Employee not found',
+                ], 404);
+            }
+            $employeeId = $user->employee->id;
+            $firmId = $user->employee->firm_id;
+
+            // Fetch last 12 week offs (availed or consumed)
+            $weekOffs = \App\Models\Hrms\FlexiWeekOff::with(['availedAttendance', 'consumedAttendance'])
+                ->where('firm_id', $firmId)
+                ->where('employee_id', $employeeId)
+                ->orderByDesc('id')
+                ->limit(12)
+                ->get()
+                ->map(function($weekOff) {
+                    // Prefer availed attendance for date, else consumed
+                    $attendance = $weekOff->availedAttendance ?: $weekOff->consumedAttendance;
+                    $workDate = optional($attendance)->work_date;
+                    $statusLabel = \App\Models\Hrms\FlexiWeekOff::WEEK_OFF_STATUS_MAIN_SELECT[$weekOff->week_off_Status] ?? $weekOff->week_off_Status;
+                    $attendanceStatusLabel = $attendance && isset(\App\Models\Hrms\EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$attendance->attendance_status_main])
+                        ? \App\Models\Hrms\EmpAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$attendance->attendance_status_main]
+                        : null;
+                    $availedAttendance = $weekOff->availedAttendance;
+                    $consumedAttendance = $weekOff->consumedAttendance;
+                    $availedDate = $availedAttendance && $availedAttendance->work_date
+                        ? (is_string($availedAttendance->work_date) ? $availedAttendance->work_date : $availedAttendance->work_date->format('Y-m-d'))
+                        : null;
+                    $consumedDate = $consumedAttendance && $consumedAttendance->work_date
+                        ? (is_string($consumedAttendance->work_date) ? $consumedAttendance->work_date : $consumedAttendance->work_date->format('Y-m-d'))
+                        : null;
+                    // Add day of week fields
+                    $availedDay = $availedDate ? (\Carbon\Carbon::parse($availedDate)->format('l')) : null;
+                    $consumedDay = $consumedDate ? (\Carbon\Carbon::parse($consumedDate)->format('l')) : null;
+                    return [
+                        'id' => $weekOff->id,
+                        'firm_id' => $weekOff->firm_id,
+                        'employee_id' => $weekOff->employee_id,
+                        'availed_emp_attendance_id' => $weekOff->availed_emp_attendance_id,
+                        'consumed_emp_attendance_id' => $weekOff->consumed_emp_attendance_id,
+                        'week_off_Status' => $weekOff->week_off_Status,
+                        'week_off_Status_label' => 
+                            isset(\App\Models\Hrms\FlexiWeekOff::WEEK_OFF_STATUS_MAIN_SELECT[$weekOff->week_off_Status])
+                                ? \App\Models\Hrms\FlexiWeekOff::WEEK_OFF_STATUS_MAIN_SELECT[$weekOff->week_off_Status]
+                                : $weekOff->week_off_Status,
+                        'availed_date' => $availedDate,
+                        'availed_day' => $availedDay,
+                        'consumed_date' => $consumedDate,
+                        'consumed_day' => $consumedDay,
+
+                        'consumed' => $weekOff->consumedAttendance ? true : false,
+                    ];
+                });
+
+            if ($weekOffs->isEmpty()) {
+                return response()->json([
+                    'message_type' => 'info',
+                    'message_display' => 'none',
+                    'message' => 'No week offs found for the employee',
+                    'week_offs' => [],
+                ], 200);
+            }
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Last 12 week offs fetched',
+                'week_offs' => $weekOffs,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Failed to fetch week offs',
+                'error' => $e->getMessage(),
             ], 500);
         }
     }

@@ -19,6 +19,7 @@ class Roles extends Component
     public $sortDirection = 'asc';
     public $isEditing = false;
     public $selectedRoleId = null;
+    public $firmId = null; // Add property to accept firm ID
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -47,8 +48,9 @@ class Roles extends Component
         'is_inactive' => false,
     ];
 
-    public function mount()
+    public function mount($firmId = null)
     {
+        $this->firmId = $firmId;
         $this->resetPage();
         $this->initListsForFields();
         
@@ -58,6 +60,13 @@ class Roles extends Component
         
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+
+    // Helper method to get the current firm ID
+    protected function getCurrentFirmId()
+    {
+        // Prioritize the passed firm ID over session firm ID
+        return $this->firmId ?: Session::get('firm_id');
     }
 
     protected function initListsForFields(): void
@@ -107,7 +116,7 @@ class Roles extends Component
     public function list()
     {
         return Role::query()
-            ->where('firm_id', Session::get('firm_id'))
+            ->where('firm_id', $this->getCurrentFirmId())
             ->when($this->filters['name'], fn($query, $value) => 
                 $query->where('name', 'like', "%{$value}%"))
             ->when($this->filters['description'], fn($query, $value) => 
@@ -135,7 +144,7 @@ class Roles extends Component
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
-        $validatedData['formData']['firm_id'] = session('firm_id');
+        $validatedData['formData']['firm_id'] = $this->getCurrentFirmId();
 
         if ($this->isEditing) {
             $role = Role::findOrFail($this->formData['id']);

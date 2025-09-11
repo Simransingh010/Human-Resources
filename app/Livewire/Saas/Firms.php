@@ -6,6 +6,7 @@ use App\Models\Saas\Agency;
 use App\Models\Saas\Firm;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\WithFileUploads;
@@ -40,11 +41,16 @@ class Firms extends Component
     public $favicon;
     public $squareLogo;
     public $wideLogo;
+    public $faviconUrl = '';
+    public $squareLogoUrl = '';
+    public $wideLogoUrl = '';
 
     public $selectedComponentIds = [];
     public $availablePanels = [];
     public $availableComponents = [];
     public $availableModules = [];
+    public $availableAppModules = [];
+    public $selectedAppName = null;
 
     public $selectedFirmForUsers = null;
     public $isEditingUser = false;
@@ -61,6 +67,42 @@ class Firms extends Component
 
     public $selectedPanelName = '';
 
+    // --- Role Modal State ---
+    public $showRoleModal = false;
+    public $roleModalUserId = null;
+    public $roleModalUserName = '';
+    public $roleModalSelectedRoles = [];
+    public $roleModalAvailableRoles = [];
+    public $previousRoleModalSelectedRoles = [];
+
+    // --- Action Modal State ---
+    public $showActionModal = false;
+    public $actionModalUserId = null;
+    public $actionModalUserName = '';
+    public $actionModalSelectedActions = [];
+    public $actionModalActionScopes = [];
+    public $actionModalAvailableActions = [];
+    public $actionModalGroupedActions = [];
+    public $actionModalAppList = [];
+    public $actionModalSelectedApp = null;
+    public $previousActionModalSelectedActions = [];
+
+    public $firmRolesModalFirmId = null;
+
+    // --- Filters/Search ---
+    public array $filters = [
+        'q' => '',
+        'firm_type' => '',
+        'agency_id' => '',
+        'status' => '', // '', 'active', 'inactive'
+    ];
+
+    public function openFirmRolesModal($firmId)
+    {
+        $this->firmRolesModalFirmId = $firmId;
+        $this->modal('firm-roles-modal')->show();
+    }
+
     public function mount()
     {
         $this->refreshStatuses();
@@ -68,16 +110,37 @@ class Firms extends Component
         $this->initListsForFields();
         $this->loadPanels();
         $this->loadAssignedPanels();
-
+        $this->filters = $this->filters + [
+            'q' => $this->filters['q'] ?? '',
+            'firm_type' => $this->filters['firm_type'] ?? '',
+            'agency_id' => $this->filters['agency_id'] ?? '',
+            'status' => $this->filters['status'] ?? '',
+        ];
     }
 
     #[\Livewire\Attributes\Computed]
     public function list()
     {
-        return Firm::query()
-            ->with('agency', 'firm', 'panels')
-            ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->paginate(20);
+        $page = request('page', 1);
+        $cacheKey = 'firms_list_' . md5(json_encode($this->filters) . '|' . $this->sortBy . '|' . $this->sortDirection . '|' . $page);
+        return Cache::remember($cacheKey, 60, function () {
+            return Firm::query()
+                ->with(['agency', 'firm', 'panels', 'media'])
+                ->when($this->filters['q'] ?? null, function ($query, $value) {
+                    $query->where(function ($q) use ($value) {
+                        $q->where('name', 'like', "%{$value}%")
+                          ->orWhere('short_name', 'like', "%{$value}%");
+                    });
+                })
+                ->when($this->filters['firm_type'] ?? null, fn($q, $val) => $q->where('firm_type', $val))
+                ->when($this->filters['agency_id'] ?? null, fn($q, $val) => $q->where('agency_id', $val))
+                ->when($this->filters['status'] ?? null, function ($q, $val) {
+                    if ($val === 'active') { $q->where('is_inactive', false); }
+                    if ($val === 'inactive') { $q->where('is_inactive', true); }
+                })
+                ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
+                ->paginate(20);
+        });
     }
 
     #[\Livewire\Attributes\Computed]
@@ -98,7 +161,7 @@ class Firms extends Component
             'formData.name' => 'required|string|max:255',
             'formData.short_name' => 'nullable|string|max:255',
             'formData.firm_type' => 'nullable|string|max:255',
-            'formData.agency_id' => 'nullable|integer|max:255',
+            'formData.agency_id' => 'nullable|integer|exists:agencies,id',
             'formData.parent_firm_id' => 'nullable|integer|exists:firms,id',
             'formData.is_master_firm' => 'boolean',
             'formData.is_inactive' => 'boolean',
@@ -135,6 +198,7 @@ class Firms extends Component
 
         // Reset the form and editing state after saving
         $this->resetForm();
+        Cache::flush(); // Invalidate list caches after changes
         $this->refreshStatuses();
         $this->refreshSetMasterStatus();
         $this->modal('mdl-firm')->close();
@@ -147,18 +211,21 @@ class Firms extends Component
 
     public function edit($id)
     {
-        $this->formData = Firm::findOrFail($id)->toArray();
+        $firm = Firm::with('media')->findOrFail($id);
+        $this->formData = $firm->toArray();
         $this->isEditing = true;
-        $this->selectedComponentIds = [];
-        $this->loadPanels();
-        $this->availableComponents = [];
-        $this->loadAssignedPanels($id);
-        $this->modal('panel-component-access')->show();
+        $this->selectedId = $id;
+        // Preload logo URLs for preview without DB hits in Blade
+        $this->faviconUrl = $firm->getFirstMediaUrl('favicon') ?: '';
+        $this->squareLogoUrl = $firm->getFirstMediaUrl('squareLogo') ?: '';
+        $this->wideLogoUrl = $firm->getFirstMediaUrl('wideLogo') ?: '';
+        $this->modal('mdl-firm')->show();
     }
 
     public function delete($id)
     {
         Firm::findOrFail($id)->delete();
+        Cache::flush();
         Flux::toast(
             variant: 'success',
             heading: 'Record Deleted.',
@@ -172,6 +239,12 @@ class Firms extends Component
         $this->formData['is_master_firm'] = 0; // or false
         $this->formData['is_inactive'] = 0; // or false
         $this->isEditing = false;
+        $this->favicon = null;
+        $this->squareLogo = null;
+        $this->wideLogo = null;
+        $this->faviconUrl = '';
+        $this->squareLogoUrl = '';
+        $this->wideLogoUrl = '';
     }
 
     public function refreshStatuses()
@@ -188,6 +261,7 @@ class Firms extends Component
 
         $this->statuses[$firmId] = $firm->is_inactive;
         $this->refreshStatuses();
+        Cache::flush();
     }
 
     public function refreshSetMasterStatus()
@@ -204,6 +278,7 @@ class Firms extends Component
 
         $this->setMasterStatuses[$firmId] = $firm->is_master_firm;
         $this->refreshSetMasterStatus();
+        Cache::flush();
     }
 
     protected function initListsForFields(): void
@@ -223,23 +298,15 @@ class Firms extends Component
     {
         $firm = Firm::findOrFail($this->formData['id']);
         $firm->clearMediaCollection($collection);
+        // Reflect removal immediately in previews
+        if ($collection === 'favicon') { $this->faviconUrl = ''; }
+        if ($collection === 'squareLogo') { $this->squareLogoUrl = ''; }
+        if ($collection === 'wideLogo') { $this->wideLogoUrl = ''; }
         Flux::toast(
             variant: 'success',
             heading: 'Logo Removed.',
             text: 'Logo has been removed successfully',
         );
-    }
-
-    public function openPanelComponentModal($firmId)
-    {
-        $this->selectedId = $firmId;
-        $this->selectedPanelId = null;
-        $this->selectedComponentIds = [];
-        $this->loadPanels();
-        $this->loadAssignedPanels($firmId);
-        $this->availableComponents = [];
-
-        $this->modal('panel-component-access')->show();
     }
 
     public function openFirmUsersModal($firmId)
@@ -375,12 +442,13 @@ class Firms extends Component
                 ->whereIn('panel_id', $removedPanels)
                 ->delete();
         }
-        Flux::modal('panel-component-acces')->close();
+        Flux::modal('panel-component-access')->close();
         \Flux::toast(
             variant: 'success',
             heading: 'Panels Updated',
             text: 'Panel assignments have been updated for this firm.'
         );
+        Cache::flush();
     }
 
     public function updatedSelectedPanelId($value)
@@ -394,51 +462,105 @@ class Firms extends Component
         if (!$panel) {
             $this->availableComponents = [];
             $this->availableModules = [];
+            $this->availableAppModules = [];
             $this->selectedComponentIds = [];
             return;
         }
-
-        // Check if this panel is already assigned to the firm
-        $isAssigned = \App\Models\Saas\FirmPanel::where('firm_id', $this->selectedId)
+        $firmId = $this->selectedId;
+        $isAssigned = \App\Models\Saas\FirmPanel::where('firm_id', $firmId)
             ->where('panel_id', $panelId)
             ->exists();
-
         $components = $panel->components()->with('modules')->get();
-
         if ($isAssigned) {
-            // EDIT MODE: Load components specifically for this firm-panel combo
             $this->selectedComponentIds = \App\Models\Saas\ComponentPanel::where('panel_id', $panelId)
-                ->where('firm_id', $this->selectedId)
+                ->where('firm_id', $firmId)
                 ->pluck('component_id')->toArray();
         } else {
-            // ASSIGN MODE: Start with no components selected.
             $this->selectedComponentIds = [];
         }
-
-        // Group by module name for the view
+        // Build $availableAppModules: [AppName => [ModuleName => [Component, ...], ...], ...]
+        $apps = \App\Models\Saas\App::with([
+            'modules.components' => function ($q) use ($panelId) {
+                $q->whereHas('panels', function ($q2) use ($panelId) {
+                    $q2->where('panels.id', $panelId);
+                });
+            }
+        ])->where('is_inactive', false)->get();
         $grouped = [];
-        foreach ($components as $component) {
-            foreach ($component->modules as $module) {
-                $grouped[$module->name][] = $component;
+        foreach ($apps as $app) {
+            foreach ($app->modules as $module) {
+                $componentsArr = [];
+                foreach ($module->components as $component) {
+                    $componentsArr[] = [
+                        'id' => $component->id,
+                        'name' => $component->name,
+                    ];
+                }
+                if (!empty($componentsArr)) {
+                    $grouped[$app->name][$module->name] = $componentsArr;
+                }
             }
         }
-        $this->availableModules = $grouped;
-        $this->availableComponents = $components;
+        $this->availableAppModules = $grouped;
+        if (empty($this->selectedAppName) && !empty($grouped)) {
+            $this->selectedAppName = array_key_first($grouped);
+        }
+        // For backward compatibility, also set availableModules and availableComponents
+        $groupedModules = [];
+        $processedComponents = [];
+        foreach ($components as $component) {
+            if (in_array($component->id, $processedComponents)) continue;
+            $processedComponents[] = $component->id;
+            if ($component->modules->isNotEmpty()) {
+                $firstModule = $component->modules->first();
+                $groupedModules[$firstModule->name][] = $component;
+            }
+        }
+        $this->availableModules = $groupedModules;
+        $this->availableComponents = $components->unique('id');
     }
 
-    public function toggleModuleComponents($moduleName)
+    public function toggleAppComponents($appName)
     {
-        $moduleComponents = $this->availableModules[$moduleName] ?? [];
-        if (empty($moduleComponents)) {
-            return;
+        $ids = [];
+        foreach ($this->availableAppModules[$appName] ?? [] as $moduleComponents) {
+            foreach ($moduleComponents as $comp) {
+                $ids[] = is_array($comp) ? $comp['id'] : $comp->id;
+            }
         }
-        $componentIdsInModule = collect($moduleComponents)->pluck('id')->all();
-        $allSelected = !array_diff($componentIdsInModule, $this->selectedComponentIds);
+        $allSelected = !array_diff($ids, $this->selectedComponentIds);
         if ($allSelected) {
-            $this->selectedComponentIds = array_values(array_diff($this->selectedComponentIds, $componentIdsInModule));
+            $this->selectedComponentIds = array_values(array_diff($this->selectedComponentIds, $ids));
         } else {
-            $this->selectedComponentIds = array_values(array_unique(array_merge($this->selectedComponentIds, $componentIdsInModule)));
+            $this->selectedComponentIds = array_unique(array_merge($this->selectedComponentIds, $ids));
         }
+    }
+
+    public function toggleModuleComponents($appName, $moduleName)
+    {
+        $moduleComponents = $this->availableAppModules[$appName][$moduleName] ?? [];
+        $ids = [];
+        foreach ($moduleComponents as $comp) {
+            $ids[] = is_array($comp) ? $comp['id'] : $comp->id;
+        }
+        $allSelected = !array_diff($ids, $this->selectedComponentIds);
+        if ($allSelected) {
+            $this->selectedComponentIds = array_values(array_diff($this->selectedComponentIds, $ids));
+        } else {
+            $this->selectedComponentIds = array_unique(array_merge($this->selectedComponentIds, $ids));
+        }
+    }
+
+    public function openPanelComponentModal($firmId)
+    {
+        $this->selectedId = $firmId;
+        $this->selectedPanelId = null;
+        $this->selectedComponentIds = [];
+        $this->loadPanels();
+        $this->loadAssignedPanels($firmId);
+        $this->availableComponents = [];
+
+        $this->modal('panel-component-access')->show();
     }
 
     public function openPanelComponentsModal($panelId)
@@ -499,6 +621,26 @@ class Firms extends Component
             heading: 'Panel Components Synced',
             text: 'Panel components have been updated for this firm.'
         );
+        Cache::flush();
+    }
+
+    // --- Filters helpers ---
+    public function applyFilters()
+    {
+        $this->resetPage();
+        Cache::flush();
+    }
+
+    public function clearFilters()
+    {
+        $this->filters = [
+            'q' => '',
+            'firm_type' => '',
+            'agency_id' => '',
+            'status' => '',
+        ];
+        $this->resetPage();
+        Cache::flush();
     }
 
     public function showPanelSync($userId)
@@ -523,6 +665,310 @@ class Firms extends Component
     public function render()
     {
         return view()->file(app_path('Livewire/Saas/blades/firms.blade.php'));
+    }
+
+    // --- Role Modal Methods ---
+    public function openRoleModal($userId)
+    {
+        $firmId = $this->selectedFirmForUsers?->id;
+        $user = User::findOrFail($userId);
+        $this->roleModalUserId = $userId;
+        $this->roleModalUserName = $user->name;
+        $this->roleModalAvailableRoles = \App\Models\Saas\Role::where('firm_id', $firmId)->pluck('name', 'id')->toArray();
+        $this->roleModalSelectedRoles = \App\Models\Saas\RoleUser::where('user_id', $userId)->where('firm_id', $firmId)->pluck('role_id')->map(fn($id) => (string)$id)->toArray();
+        $this->previousRoleModalSelectedRoles = $this->roleModalSelectedRoles;
+        $this->showRoleModal = true;
+        Flux::modal('user-role-modal')->show();
+    }
+    public function closeRoleModal()
+    {
+        $this->showRoleModal = false;
+        $this->roleModalUserId = null;
+        $this->roleModalUserName = '';
+        $this->roleModalSelectedRoles = [];
+        $this->roleModalAvailableRoles = [];
+    }
+    public function saveUserRoles()
+    {
+        $firmId = $this->selectedFirmForUsers?->id;
+        $userId = $this->roleModalUserId;
+        $selectedRoles = $this->roleModalSelectedRoles;
+        $roleUserIds = [];
+        foreach ($selectedRoles as $roleId) {
+            $roleUser = \App\Models\Saas\RoleUser::firstOrCreate([
+                'user_id' => $userId,
+                'role_id' => $roleId,
+                'firm_id' => $firmId,
+            ]);
+            $roleUserIds[] = $roleUser->id;
+        }
+        \App\Models\Saas\RoleUser::where('user_id', $userId)
+            ->where('firm_id', $firmId)
+            ->whereNotIn('role_id', $selectedRoles)
+            ->delete();
+        $this->syncUserActions($userId, $firmId);
+        $this->closeRoleModal();
+        Flux::toast(
+            variant: 'success',
+            heading: 'Roles updated.',
+            text: 'Roles and permissions have been updated for the user.',
+        );
+        Flux::modal('user-role-modal')->close();
+    }
+    // --- Action Modal Methods ---
+    public function openActionModal($userId)
+    {
+        $firmId = $this->selectedFirmForUsers?->id;
+        $user = User::findOrFail($userId);
+        $this->actionModalUserId = $userId;
+        $this->actionModalUserName = $user->name;
+        $ACTION_TYPE_BG = [
+            'G' => 'bg-blue-50',
+            'RL' => 'bg-yellow-50',
+            'BR' => 'bg-green-50',
+            'PR' => 'bg-pink-50',
+            'INDEPENDENT' => 'bg-gray-100',
+        ];
+        $ACTION_TYPE_LABELS = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT;
+        $ACTION_TYPE_LABELS['INDEPENDENT'] = 'Independent with no Type';
+        $apps = \App\Models\Saas\App::with([
+            'modules.components.actions.actioncluster' => function ($q) {
+                $q->where('is_inactive', false);
+            }
+        ])->where('is_inactive', false)->orderBy('id', 'asc')->get();
+        $assignedPanelIds = \App\Models\Saas\FirmPanel::where('firm_id', $firmId)->pluck('panel_id')->toArray();
+        $assignedComponentPanels = \App\Models\Saas\ComponentPanel::where('firm_id', $firmId)
+            ->select('component_id', 'panel_id')
+            ->get()
+            ->groupBy('component_id');
+        $assignedComponentIds = $assignedComponentPanels->keys()->toArray();
+        $grouped = [];
+        $processedComponents = [];
+        foreach ($apps as $app) {
+            $appHasComponents = false;
+            foreach ($app->modules as $module) {
+                $moduleHasComponents = false;
+                foreach ($module->components as $component) {
+                    if (!in_array($component->id, $assignedComponentIds)) continue;
+                    if (in_array($component->id, $processedComponents)) continue;
+                    $processedComponents[] = $component->id;
+                    $componentBelongsToAssignedPanel = false;
+                    if (isset($assignedComponentPanels[$component->id])) {
+                        $componentPanels = $assignedComponentPanels[$component->id]->pluck('panel_id')->toArray();
+                        $componentBelongsToAssignedPanel = !empty(array_intersect($componentPanels, $assignedPanelIds));
+                    }
+                    if (!$componentBelongsToAssignedPanel) continue;
+                    $grouped[$app->name][$module->name][$component->name] = [];
+                    $moduleHasComponents = true;
+                    $appHasComponents = true;
+                    foreach ($ACTION_TYPE_LABELS as $typeKey => $typeLabel) {
+                        if ($typeKey === 'INDEPENDENT') {
+                            $actionsOfType = collect($component->actions)->filter(function($a){ return empty($a->action_type); });
+                        } else {
+                            $actionsOfType = collect($component->actions)->where('action_type', $typeKey);
+                        }
+                        if ($actionsOfType->isEmpty()) continue;
+                        $actionsByCluster = $actionsOfType->groupBy(function($action) {
+                            return $action->actioncluster ? $action->actioncluster->name : 'Independent';
+                        });
+                        $clusters = [];
+                        foreach ($actionsByCluster as $clusterName => $actionsInCluster) {
+                            $parentActions = $actionsInCluster->where('parent_action_id', null);
+                            $childActions = $actionsInCluster->where('parent_action_id', '!=', null);
+                            $clusterGroups = [];
+                            foreach ($parentActions as $parent) {
+                                $children = $childActions->where('parent_action_id', $parent->id)->values()->all();
+                                $clusterGroups[] = [
+                                    'parent' => [
+                                        'id' => $parent->id,
+                                        'name' => $parent->name,
+                                        'code' => $parent->code,
+                                        'type' => $typeLabel,
+                                        'type_key' => $typeKey,
+                                    ],
+                                    'children' => collect($children)->map(function($child) use ($typeLabel, $typeKey) {
+                                        return [
+                                            'id' => $child->id,
+                                            'name' => $child->name,
+                                            'code' => $child->code,
+                                            'type' => $typeLabel,
+                                            'type_key' => $typeKey,
+                                        ];
+                                    })->values()->all(),
+                                ];
+                            }
+                            $orphaned = $childActions->filter(function($child) use ($parentActions) {
+                                return !$parentActions->contains('id', $child->parent_action_id);
+                            });
+                            foreach ($orphaned as $orphan) {
+                                $clusterGroups[] = [
+                                    'parent' => [
+                                        'id' => $orphan->id,
+                                        'name' => $orphan->name,
+                                        'code' => $orphan->code,
+                                        'type' => $typeLabel,
+                                        'type_key' => $typeKey,
+                                    ],
+                                    'children' => [],
+                                ];
+                            }
+                            $clusters[$clusterName] = $clusterGroups;
+                        }
+                        $grouped[$app->name][$module->name][$component->name][$typeKey] = [
+                            'type_label' => $typeLabel,
+                            'type_bg' => $ACTION_TYPE_BG[$typeKey] ?? 'bg-gray-50',
+                            'clusters' => $clusters
+                        ];
+                    }
+                }
+                if (!$moduleHasComponents) unset($grouped[$app->name][$module->name]);
+            }
+            if (!$appHasComponents) unset($grouped[$app->name]);
+        }
+        $this->actionModalGroupedActions = $grouped;
+        $this->actionModalAppList = array_keys($grouped);
+        $this->actionModalSelectedApp = $this->actionModalAppList[0] ?? null;
+        $existing = \App\Models\Saas\ActionUser::where('user_id', $userId)->where('firm_id', $firmId)->get();
+        $this->actionModalSelectedActions = $existing->pluck('action_id')->map(fn($id) => (string)$id)->toArray();
+        $this->previousActionModalSelectedActions = $this->actionModalSelectedActions;
+        $this->actionModalActionScopes = $existing->pluck('records_scope', 'action_id')->toArray();
+        $this->showActionModal = true;
+        Flux::modal('user-action-modal')->show();
+    }
+    public function closeActionModal()
+    {
+        $this->showActionModal = false;
+        $this->actionModalUserId = null;
+        $this->actionModalUserName = '';
+        $this->actionModalSelectedActions = [];
+        $this->actionModalActionScopes = [];
+        $this->actionModalGroupedActions = [];
+        $this->actionModalAppList = [];
+        $this->actionModalSelectedApp = null;
+    }
+    public function saveUserActions()
+    {
+        $firmId = $this->selectedFirmForUsers?->id;
+        $userId = $this->actionModalUserId;
+        $selectedActions = $this->actionModalSelectedActions;
+        $scopes = $this->actionModalActionScopes;
+        \App\Models\Saas\ActionUser::where('user_id', $userId)->where('firm_id', $firmId)
+            ->whereNotIn('action_id', $selectedActions)->delete();
+        foreach ($selectedActions as $actionId) {
+            \App\Models\Saas\ActionUser::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'firm_id' => $firmId,
+                    'action_id' => $actionId,
+                ],
+                [
+                    'records_scope' => $scopes[$actionId] ?? 'all',
+                ]
+            );
+        }
+        $this->closeActionModal();
+        Flux::toast(
+            variant: 'success',
+            heading: 'Actions updated.',
+            text: 'Direct actions have been updated for the user.',
+        );
+        Flux::modal('user-action-modal')->close();
+    }
+    public function syncUser($userId)
+    {
+        $firmId = $this->selectedFirmForUsers?->id;
+        $this->syncUserActions($userId, $firmId);
+        Flux::toast(
+            variant: 'success',
+            heading: 'Permissions Synced.',
+            text: 'User permissions have been synced with assigned roles.',
+        );
+    }
+    public function syncUserActions($userId, $firmId = null)
+    {
+        $firmId = $firmId ?: $this->selectedFirmForUsers?->id;
+        $roleIds = \App\Models\Saas\RoleUser::where('user_id', $userId)->where('firm_id', $firmId)->pluck('role_id')->toArray();
+        $actionRoles = \App\Models\Saas\ActionRole::whereIn('role_id', $roleIds)->where('firm_id', $firmId)->get();
+        $actionMap = [];
+        foreach ($actionRoles as $ar) {
+            $actionMap[$ar->action_id] = $ar->records_scope;
+        }
+        \App\Models\Saas\ActionUser::where('user_id', $userId)->where('firm_id', $firmId)
+            ->whereNotIn('action_id', array_keys($actionMap))->delete();
+        foreach ($actionMap as $actionId => $recordsScope) {
+            \App\Models\Saas\ActionUser::updateOrCreate(
+                [
+                    'user_id' => $userId,
+                    'firm_id' => $firmId,
+                    'action_id' => $actionId,
+                ],
+                [
+                    'records_scope' => $recordsScope,
+                ]
+            );
+        }
+    }
+
+    // --- Additional methods for modals ---
+    public function toggleRoleModalSelectedRole($roleId)
+    {
+        $roleId = (string) $roleId;
+        if (in_array($roleId, $this->roleModalSelectedRoles)) {
+            $this->roleModalSelectedRoles = array_values(array_diff($this->roleModalSelectedRoles, [$roleId]));
+        } else {
+            $this->roleModalSelectedRoles[] = $roleId;
+        }
+        $this->previousRoleModalSelectedRoles = $this->roleModalSelectedRoles;
+    }
+
+    public function toggleModule($appName, $moduleName)
+    {
+        $ids = collect($this->actionModalGroupedActions[$appName][$moduleName] ?? [])
+            ->flatten(2)
+            ->pluck('parent.id')
+            ->merge(collect($this->actionModalGroupedActions[$appName][$moduleName] ?? [])->flatten(2)->pluck('children.*.id')->flatten())
+            ->unique()
+            ->values()
+            ->all();
+        $allSelected = !array_diff($ids, $this->actionModalSelectedActions);
+        if ($allSelected) {
+            $this->actionModalSelectedActions = array_values(array_diff($this->actionModalSelectedActions, $ids));
+        } else {
+            $this->actionModalSelectedActions = array_unique(array_merge($this->actionModalSelectedActions, $ids));
+        }
+    }
+
+    public function toggleComponent($appName, $moduleName, $componentName)
+    {
+        $ids = collect($this->actionModalGroupedActions[$appName][$moduleName][$componentName] ?? [])
+            ->flatten(2)
+            ->pluck('parent.id')
+            ->merge(collect($this->actionModalGroupedActions[$appName][$moduleName][$componentName] ?? [])->flatten(2)->pluck('children.*.id')->flatten())
+            ->unique()
+            ->values()
+            ->all();
+        $allSelected = !array_diff($ids, $this->actionModalSelectedActions);
+        if ($allSelected) {
+            $this->actionModalSelectedActions = array_values(array_diff($this->actionModalSelectedActions, $ids));
+        } else {
+            $this->actionModalSelectedActions = array_unique(array_merge($this->actionModalSelectedActions, $ids));
+        }
+    }
+
+    public function toggleActionModalSelectedAction($actionId)
+    {
+        $actionId = (string) $actionId;
+        if (in_array($actionId, $this->actionModalSelectedActions)) {
+            $this->actionModalSelectedActions = array_values(array_diff($this->actionModalSelectedActions, [$actionId]));
+        } else {
+            $this->actionModalSelectedActions[] = $actionId;
+        }
+        $this->previousActionModalSelectedActions = $this->actionModalSelectedActions;
+    }
+
+    public function setActionScope($actionId, $scope)
+    {
+        $this->actionModalActionScopes[$actionId] = $scope;
     }
 
 }

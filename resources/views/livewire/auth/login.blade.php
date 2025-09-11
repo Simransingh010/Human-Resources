@@ -57,6 +57,12 @@ new #[Layout('components.layouts.auth')] class extends Component {
         // Few System Settings  be loaded  and saved in session
         session(['dateFormat' => 'd-M-Y']);
         session(['defaultwire' => 'panel.dashboard']);
+          // Set LOP deduction type only for firm ID 2
+          if (session('firm_id') == 2) {
+            session(['LOP_deduction_type'=> 'calculation_wise']);
+        } else {
+            session(['LOP_deduction_type'=> '']); // Keep blank for other firms
+        }
         session(['fy_start' => '2025-04-01']);
         session(['fy_end' => '2026-03-31']);
         session(['roundoff_precision' => 0]);

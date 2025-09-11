@@ -57,12 +57,16 @@ class EmpLeaveRequest extends Model
 
     public function getApplyFromAttribute($value)
     {
-        return $this->asDateTime($value)->format('Y-m-d');
+        // Parse the datetime and return only the date part in Y-m-d format
+        // This ensures we get the correct date regardless of timezone
+        return Carbon::parse($value)->toDateString();
     }
 
     public function getApplyToAttribute($value)
     {
-        return $this->asDateTime($value)->format('Y-m-d');
+        // Parse the datetime and return only the date part in Y-m-d format
+        // This ensures we get the correct date regardless of timezone
+        return Carbon::parse($value)->toDateString();
     }
 
     public function getCreatedAtAttribute($value)
@@ -113,6 +117,18 @@ class EmpLeaveRequest extends Model
     public function getStatusLabelAttribute()
     {
         return static::STATUS_SELECT[$this->status] ?? 'Unknown';
+    }
+
+    public function setApplyFromAttribute($value)
+    {
+        // Ensure the date is stored as a proper datetime with start of day
+        $this->attributes['apply_from'] = Carbon::parse($value)->startOfDay();
+    }
+
+    public function setApplyToAttribute($value)
+    {
+        // Ensure the date is stored as a proper datetime with start of day
+        $this->attributes['apply_to'] = Carbon::parse($value)->startOfDay();
     }
 
     public const STATUS_SELECT = [

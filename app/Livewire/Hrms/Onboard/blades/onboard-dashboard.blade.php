@@ -554,7 +554,7 @@ use Carbon\Carbon;
                 <flux:text size="lg" class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-4"> Calendar
                 </flux:text>
                 <div class="flex justify-center items-center h-full">
-                    <flux:calendar wire:model.live="selectedDate" size="2xl"  selectable-header class="w-full max-w-sm" />
+                    <flux:calendar fixed-weeks wire:model.live="selectedDate" size="2xl"  selectable-header class="w-full max-w-sm" />
                 </div>
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700/50">
                     <flux:text size="lg" class="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Holidays

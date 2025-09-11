@@ -106,20 +106,22 @@
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <flux:select
 
+                        <flux:select
+                                searchable
                             label="Employee"
-                            searchable
+
                             wire:model.live="selectedEmployee"
                         >
                             <option value="">Select Employee</option>
                             @foreach($listsForFields['employees'] as $id => $name)
                                 <option value="{{ $id }}">{{ $name }}</option>
                             @endforeach
-                        </flux:select>
+                        </flux:select
+>
                         @error('selectedEmployee') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
+                    <div class="relative">
                         <flux:select
                             variant="listbox"
                             multiple
@@ -132,6 +134,16 @@
                             @endforeach
                         </flux:select>
                         @error('selectedPayrollSlots') <span class="text-danger">{{ $message }}</span> @enderror
+
+                        <!-- Loader overlay -->
+                        <div
+                            wire:loading
+                            wire:target="selectedEmployee"
+                            class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-60 z-10"
+                            style="min-height: 40px;"
+                        >
+                            <flux:icon.loading />
+                        </div>
                     </div>
                     <div class="col-span-2">
                         <flux:textarea

@@ -21,6 +21,7 @@ use App\Models\Hrms\EmpLeaveBalance;
 use App\Models\Hrms\EmpLeaveTransaction;
 use Illuminate\Support\Facades\Notification; // if you need it elsewhere
 use App\Models\NotificationQueue;
+use App\Models\Hrms\EmpAttendance;
 use Carbon\Carbon;
 
 class TeamLeaves extends Component
@@ -794,7 +795,7 @@ class TeamLeaves extends Component
 
             $leaveRequest = EmpLeaveRequest::where('id', $id)
                 ->where('firm_id', Session::get('firm_id'))
-                ->with('employee') // eager‐load employee relation
+                ->with(['employee', 'leave_type']) // eager‐load employee relation
                 ->first();
 
             if (! $leaveRequest) {
@@ -987,6 +988,37 @@ class TeamLeaves extends Component
     }
 
     /**
+     * Update attendance records for an approved leave request.
+     *
+     * @param EmpLeaveRequest $leaveRequest
+     * @return void
+     */
+    protected function updateAttendanceForLeave(EmpLeaveRequest $leaveRequest): void
+    {
+        $startDate = Carbon::parse($leaveRequest->apply_from);
+        $endDate = Carbon::parse($leaveRequest->apply_to);
+
+        $isHalfDay = floatval($leaveRequest->apply_days) === 0.5;
+        $attendanceStatus = $isHalfDay ? 'HD' : 'L';
+        $finalDayWeightage = $isHalfDay ? 0.5 : 0; // 0 for full day leave, 0.5 for half day
+
+        for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+            EmpAttendance::updateOrCreate(
+                [
+                    'firm_id' => $leaveRequest->firm_id,
+                    'employee_id' => $leaveRequest->employee_id,
+                    'work_date' => $date->toDateString(),
+                ],
+                [
+                    'attendance_status_main' => $attendanceStatus,
+                    'final_day_weightage' => $finalDayWeightage,
+                    'attend_remarks' => 'Approved Leave: ' . ($leaveRequest->leave_type->leave_title ?? 'N/A'),
+                ]
+            );
+        }
+    }
+
+    /**
      * Get the approval level for the current user from the matching rule
      *
      * @param EmpLeaveRequest $leaveRequest
@@ -1030,10 +1062,9 @@ class TeamLeaves extends Component
                 ->first();
 
             if ($leaveBalance) {
-                // Update the balance
+                // Update consumed_days - the balance will be automatically recalculated
                 $leaveBalance->consumed_days += $leaveRequest->apply_days;
-                $leaveBalance->balance = $leaveBalance->allocated_days + $leaveBalance->carry_forwarded_days - $leaveBalance->consumed_days - $leaveBalance->lapsed_days;
-                $leaveBalance->save();
+                $leaveBalance->save(); // Model observer will recalculate balance
 
                 // Create a leave transaction record
                 EmpLeaveTransaction::create([
@@ -1048,6 +1079,7 @@ class TeamLeaves extends Component
                     'remarks' => 'Leave approved'
                 ]);
             }
+            $this->updateAttendanceForLeave($leaveRequest);
         }
     }
 

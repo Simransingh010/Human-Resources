@@ -77,7 +77,8 @@ class SalaryComponent extends Model
         'tds' => 'TDS',
 		'tax' => 'Tax',
 		'employee_contribution' => 'Employee Contribution',
-		'employer_contribution' => 'Employer Contribution'
+		'employer_contribution' => 'Employer Contribution',
+		'lop_deduction' => "Lop Deduction",
 	];
 
 	public const AMOUNT_TYPE_SELECT = [

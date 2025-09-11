@@ -58,7 +58,7 @@ class SalaryArrear extends Model
 	protected $casts = [
 		'firm_id' => 'int',
 		'employee_id' => 'int',
-		'c' => 'int',
+		'salary_component_id' => 'int',
 		'effective_from' => 'datetime',
 		'effective_to' => 'datetime',
 		'total_amount' => 'float',

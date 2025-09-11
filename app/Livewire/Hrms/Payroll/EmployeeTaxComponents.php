@@ -29,14 +29,14 @@ class EmployeeTaxComponents extends Component
 
     // Field configuration for form and table
     public array $fieldConfig = [
-        'employee_name' => ['label' => 'Employee Name', 'type' => 'text'],
+        'employee_name' => ['label' => 'Employee Name / Code', 'type' => 'text'],
         'email' => ['label' => 'Email', 'type' => 'text'],
         'phone' => ['label' => 'Phone', 'type' => 'text'],
     ];
 
     // Filter fields configuration
     public array $filterFields = [
-        'employee_name' => ['label' => 'Employee Name', 'type' => 'text'],
+        'employee_name' => ['label' => 'Employee Name / Code', 'type' => 'text'],
         'email' => ['label' => 'Email', 'type' => 'text'],
         'phone' => ['label' => 'Phone', 'type' => 'text'],
     ];
@@ -103,11 +103,15 @@ class EmployeeTaxComponents extends Component
                 ->where('salary_execution_group_id', $slot->salary_execution_group_id)
                 ->pluck('employee_id')
         )
+        ->with('emp_job_profile')
         ->when($this->filters['employee_name'], function($query, $value) {
             $query->where(function($q) use ($value) {
                 $q->where('fname', 'like', "%{$value}%")
                   ->orWhere('mname', 'like', "%{$value}%")
-                  ->orWhere('lname', 'like', "%{$value}%");
+                  ->orWhere('lname', 'like', "%{$value}%")
+                  ->orWhereHas('emp_job_profile', function($qq) use ($value) {
+                      $qq->where('employee_code', 'like', "%{$value}%");
+                  });
             });
         })
         ->when($this->filters['email'], fn($query, $value) => 
@@ -201,7 +205,7 @@ class EmployeeTaxComponents extends Component
                                 'salary_component_group_id' => $component->salary_component_group_id,
                                 'sequence' => 999,
                                 'nature' => 'deduction',
-                                'component_type' => 'tax',
+                                'component_type' => 'tds',
                                 'amount_type' => 'calculated_known',
                                 'taxable' => false,
                                 'calculation_json' => null,

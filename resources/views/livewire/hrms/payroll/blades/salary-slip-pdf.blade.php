@@ -8,13 +8,14 @@
         body {
             font-family: system-ui, ui-sans-serif, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
             margin: 0;
-            padding: 15px;
-            font-size: 9px;
+            padding: 24px;
+            font-size: 12px;
+            line-height: 1.6;
         }
 
         .logo-container {
             text-align: center;
-            margin-bottom: 8px;
+            margin-bottom: 16px;
         }
 
         .logo-container img {
@@ -23,22 +24,22 @@
 
         .title {
             text-align: center;
-            font-size: 14px;
+            font-size: 18px;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 16px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 6px;
-            font-size: 9px;
+            margin-bottom: 12px;
+            font-size: 12px;
         }
 
         td,
         th {
             border: 1px solid #000;
-            padding: 3px 4px;
+            padding: 8px 10px;
         }
 
         .text-right {
@@ -50,8 +51,8 @@
         }
 
         .note {
-            font-size: 8px;
-            margin-top: 6px;
+            font-size: 11px;
+            margin-top: 12px;
         }
 
         /* Remove inner borders for employee details table */
@@ -63,7 +64,7 @@
 
         .employee-details-table td, .employee-details-table th {
             border: none;
-            padding: 3px 4px;
+            padding: 8px 10px;
         }
 
         .employee-details-table tr:first-child td, .employee-details-table tr:first-child th {
@@ -80,6 +81,10 @@
 
         .employee-details-table tr td:last-child, .employee-details-table tr th:last-child {
             border-right: none;
+        }
+        .arrear-period {
+            font-size: 11px;
+            color: #555;
         }
     </style>
 </head>
@@ -161,9 +166,49 @@
 
                 @for($i = 0; $i < $maxRows; $i++)
                     <tr>
-                        <td>{{ isset($earnings[$i]) ? strtoupper($earnings[$i]['title']) : '' }}</td>
+                        <td>
+                            @if(isset($earnings[$i]))
+                                {{ strtoupper($earnings[$i]['title']) }}
+                                @if(!empty($earnings[$i]['is_arrear']) && $earnings[$i]['is_arrear'] && !empty($earnings[$i]['arrear_info']))
+                                    @php
+                                        $from = $earnings[$i]['arrear_info']['effective_from'] ? \Carbon\Carbon::parse($earnings[$i]['arrear_info']['effective_from'])->format('M Y') : '';
+                                        $to = $earnings[$i]['arrear_info']['effective_to'] ? \Carbon\Carbon::parse($earnings[$i]['arrear_info']['effective_to'])->format('M Y') : '';
+                                    @endphp
+                                    <br>
+                                    <span style="font-size:11px;color:#555;">Arrear Period:
+                                        @if($from && $to && $from != $to)
+                                            {{ $from }} - {{ $to }}
+                                        @elseif($from)
+                                            {{ $from }}
+                                        @elseif($to)
+                                            {{ $to }}
+                                        @endif
+                                    </span>
+                                @endif
+                            @endif
+                        </td>
                         <td class="text-right">{{ isset($earnings[$i]) ? number_format($earnings[$i]['amount'], 0) : '' }}</td>
-                        <td>{{ isset($deductions[$i]) ? strtoupper($deductions[$i]['title']) : '' }}</td>
+                        <td>
+                            @if(isset($deductions[$i]))
+                                {{ strtoupper($deductions[$i]['title']) }}
+                                @if(!empty($deductions[$i]['is_arrear']) && $deductions[$i]['is_arrear'] && !empty($deductions[$i]['arrear_info']))
+                                    @php
+                                        $from = $deductions[$i]['arrear_info']['effective_from'] ? \Carbon\Carbon::parse($deductions[$i]['arrear_info']['effective_from'])->format('M Y') : '';
+                                        $to = $deductions[$i]['arrear_info']['effective_to'] ? \Carbon\Carbon::parse($deductions[$i]['arrear_info']['effective_to'])->format('M Y') : '';
+                                    @endphp
+                                    <br>
+                                    <span style="font-size:11px;color:#555;">Arrear Period:
+                                        @if($from && $to && $from != $to)
+                                            {{ $from }} - {{ $to }}
+                                        @elseif($from)
+                                            {{ $from }}
+                                        @elseif($to)
+                                            {{ $to }}
+                                        @endif
+                                    </span>
+                                @endif
+                            @endif
+                        </td>
                         <td class="text-right">{{ isset($deductions[$i]) ? number_format($deductions[$i]['amount'], 0) : '' }}</td>
                     </tr>
                 @endfor

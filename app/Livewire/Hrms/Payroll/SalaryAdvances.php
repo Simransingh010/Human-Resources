@@ -33,6 +33,7 @@ class SalaryAdvances extends Component
     public $additional_rule_remarks = null;
     public $isEditing = false;
     public $editingId = null;
+    public $advanceItems = [];
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -149,6 +150,9 @@ class SalaryAdvances extends Component
     public function openAdvanceModal()
     {
         $this->reset(['selectedEmployee', 'advance_date', 'amount', 'installments', 'installment_amount', 'remarks', 'disburse_salary_component', 'recovery_salary_component', 'disburse_payroll_slot_id', 'recovery_wef_payroll_slot_id', 'additional_rule_remarks']);
+        $this->advanceItems = [
+            ['disburse_salary_component' => '', 'recovery_salary_component' => '', 'amount' => null]
+        ];
         $this->showAdvanceModal = true;
     }
 
@@ -156,6 +160,7 @@ class SalaryAdvances extends Component
     {
         $this->showAdvanceModal = false;
         $this->reset(['selectedEmployee', 'advance_date', 'amount', 'installments', 'installment_amount', 'remarks', 'disburse_salary_component', 'recovery_salary_component', 'disburse_payroll_slot_id', 'recovery_wef_payroll_slot_id', 'additional_rule_remarks']);
+        $this->advanceItems = [];
     }
 
     public function updatedAmount($value)
@@ -208,21 +213,97 @@ class SalaryAdvances extends Component
         }
     }
 
+    public function addAdvanceItem()
+    {
+        $this->advanceItems[] = ['disburse_salary_component' => '', 'recovery_salary_component' => '', 'amount' => null];
+    }
+
+    public function removeAdvanceItem($index)
+    {
+        if (isset($this->advanceItems[$index])) {
+            unset($this->advanceItems[$index]);
+            $this->advanceItems = array_values($this->advanceItems);
+        }
+    }
+
+    public function availableDisburseComponents(int $currentIndex): array
+    {
+        $allComponents = $this->listsForFields['disburseComponents'] ?? [];
+        $selectedComponents = collect($this->advanceItems)
+            ->pluck('disburse_salary_component')
+            ->filter()
+            ->values()
+            ->toArray();
+
+        $currentSelected = $this->advanceItems[$currentIndex]['disburse_salary_component'] ?? null;
+        $selectedOtherRows = array_values(array_filter(
+            $selectedComponents,
+            fn($component) => $component !== $currentSelected
+        ));
+
+        return array_filter(
+            $allComponents,
+            function ($title, $component) use ($selectedOtherRows) {
+                return !in_array($component, $selectedOtherRows, true);
+            },
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
+    public function availableRecoveryComponents(int $currentIndex): array
+    {
+        $allComponents = $this->listsForFields['recoveryComponents'] ?? [];
+        $selectedComponents = collect($this->advanceItems)
+            ->pluck('recovery_salary_component')
+            ->filter()
+            ->values()
+            ->toArray();
+
+        $currentSelected = $this->advanceItems[$currentIndex]['recovery_salary_component'] ?? null;
+        $selectedOtherRows = array_values(array_filter(
+            $selectedComponents,
+            fn($component) => $component !== $currentSelected
+        ));
+
+        return array_filter(
+            $allComponents,
+            function ($title, $component) use ($selectedOtherRows) {
+                return !in_array($component, $selectedOtherRows, true);
+            },
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
     public function saveAdvance()
     {
         try {
             $this->validate([
                 'selectedEmployee' => 'required|exists:employees,id',
                 'advance_date' => 'required|date',
-                'amount' => 'required|numeric|min:1',
                 'installments' => 'required|integer|min:1',
                 'remarks' => 'nullable|string|max:1000',
-                'disburse_salary_component' => 'nullable|string|max:255',
-                'recovery_salary_component' => 'nullable|string|max:255',
                 'disburse_payroll_slot_id' => 'nullable|exists:payroll_slots,id',
                 'recovery_wef_payroll_slot_id' => 'nullable|exists:payroll_slots,id',
                 'additional_rule_remarks' => 'nullable|string',
+                'advanceItems' => 'required|array|min:1',
+                'advanceItems.*.disburse_salary_component' => 'required|string|max:255',
+                'advanceItems.*.recovery_salary_component' => 'required|string|max:255',
+                'advanceItems.*.amount' => 'required|numeric|min:1',
             ]);
+            // Ensure disburse components are unique per submission
+            $disburseComponents = array_map(fn($i) => $i['disburse_salary_component'], $this->advanceItems);
+            if (count($disburseComponents) !== count(array_unique($disburseComponents))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'advanceItems' => ['Duplicate disburse components are not allowed.']
+                ]);
+            }
+            // Ensure recovery components are unique per submission
+            $recoveryComponents = array_map(fn($i) => $i['recovery_salary_component'], $this->advanceItems);
+            if (count($recoveryComponents) !== count(array_unique($recoveryComponents))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'advanceItems' => ['Duplicate recovery components are not allowed.']
+                ]);
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             $messages = collect($e->validator->errors()->all())->implode("<br>");
             Flux::toast(
@@ -234,32 +315,36 @@ class SalaryAdvances extends Component
         }
 
         try {
-            SalaryAdvance::create([
-                'firm_id' => Session::get('firm_id'),
-                'employee_id' => $this->selectedEmployee,
-                'advance_date' => $this->advance_date,
-                'amount' => $this->amount,
-                'installments' => $this->installments,
-                'installment_amount' => $this->installment_amount,
-                'advance_status' => 'pending',
-                'remarks' => $this->remarks,
-                'disburse_salary_component' => $this->disburse_salary_component,
-                'recovery_salary_component' => $this->recovery_salary_component,
-                'disburse_payroll_slot_id' => $this->disburse_payroll_slot_id,
-                'recovery_wef_payroll_slot_id' => $this->recovery_wef_payroll_slot_id,
-                'additional_rule_remarks' => $this->additional_rule_remarks,
-            ]);
+            foreach ($this->advanceItems as $item) {
+                $amount = $item['amount'];
+                $perInstallment = $this->installments > 0 ? round($amount / $this->installments, 2) : null;
+                SalaryAdvance::create([
+                    'firm_id' => Session::get('firm_id'),
+                    'employee_id' => $this->selectedEmployee,
+                    'advance_date' => $this->advance_date,
+                    'amount' => $amount,
+                    'installments' => $this->installments,
+                    'installment_amount' => $perInstallment,
+                    'advance_status' => 'pending',
+                    'remarks' => $this->remarks,
+                    'disburse_salary_component' => $item['disburse_salary_component'],
+                    'recovery_salary_component' => $item['recovery_salary_component'],
+                    'disburse_payroll_slot_id' => $this->disburse_payroll_slot_id,
+                    'recovery_wef_payroll_slot_id' => $this->recovery_wef_payroll_slot_id,
+                    'additional_rule_remarks' => $this->additional_rule_remarks,
+                ]);
+            }
             Flux::toast(
                 variant: 'success',
                 heading: 'Success',
-                text: 'Salary advance created successfully.',
+                text: 'Salary advances created successfully.',
             );
             $this->closeAdvanceModal();
         } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
                 heading: 'Error',
-                text: 'Failed to create salary advance: ' . $e->getMessage(),
+                text: 'Failed to create salary advances: ' . $e->getMessage(),
             );
         }
     }

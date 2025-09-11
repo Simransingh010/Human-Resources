@@ -127,10 +127,12 @@ class PermissionSync extends Component
             'modules.components.actions.childActions',
         ])->where('is_inactive', false)->orderBy('id')->get();
 
+        // Remove firm-specific component filtering - show all components and actions
         $actionHierarchy = [];
         foreach ($apps as $app) {
             foreach ($app->modules as $module) {
                 foreach ($module->components as $component) {
+                    // Show all components regardless of firm assignment
                     $actionsByType = [];
                     foreach ($ACTION_TYPE_LABELS as $typeKey => $typeLabel) {
                         $actionsOfType = ($typeKey === 'INDEPENDENT')
@@ -181,8 +183,18 @@ class PermissionSync extends Component
         }
 
         $grouped = [];
-        foreach ($this->userFirmsCollection as $firm) {
-            $grouped[$firm->name] = $actionHierarchy;
+        
+        // If a specific firm is selected, only show that firm's data
+        if ($this->firmId) {
+            $firm = $this->userFirmsCollection->firstWhere('id', $this->firmId);
+            if ($firm) {
+                $grouped[$firm->name] = $actionHierarchy;
+            }
+        } else {
+            // If no specific firm, show all firms (for multi-firm view)
+            foreach ($this->userFirmsCollection as $firm) {
+                $grouped[$firm->name] = $actionHierarchy;
+            }
         }
 
         $this->groupedActions = $grouped;

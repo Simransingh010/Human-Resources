@@ -47,6 +47,7 @@ class EmpLeaveBalances extends Component
     public array $filters = [];
     public array $visibleFields = [];
     public array $visibleFilterFields = [];
+    public $viewMode = 'accordion'; // 'table' or 'accordion'
 
     public $formData = [
         'id' => null,
@@ -163,6 +164,14 @@ class EmpLeaveBalances extends Component
             ->toArray();
 
         $validatedData['formData']['firm_id'] = session('firm_id');
+        
+        // Recalculate balance to ensure consistency
+        $validatedData['formData']['balance'] = $this->calculateBalance(
+            $validatedData['formData']['allocated_days'],
+            $validatedData['formData']['consumed_days'],
+            $validatedData['formData']['carry_forwarded_days'],
+            $validatedData['formData']['lapsed_days']
+        );
 
         if ($this->isEditing) {
             $leaveBalance = EmpLeaveBalance::findOrFail($this->formData['id']);
@@ -179,6 +188,43 @@ class EmpLeaveBalances extends Component
             variant: 'success',
             heading: 'Changes saved.',
             text: $toastMsg,
+        );
+    }
+
+    /**
+     * Calculate balance based on the formula
+     */
+    private function calculateBalance($allocatedDays, $consumedDays, $carryForwardedDays, $lapsedDays)
+    {
+        return $allocatedDays + $carryForwardedDays - $consumedDays - $lapsedDays;
+    }
+
+    /**
+     * Recalculate balance for all leave balances
+     */
+    public function recalculateAllBalances()
+    {
+        $leaveBalances = EmpLeaveBalance::where('firm_id', session('firm_id'))->get();
+        $updatedCount = 0;
+
+        foreach ($leaveBalances as $balance) {
+            $calculatedBalance = $this->calculateBalance(
+                $balance->allocated_days,
+                $balance->consumed_days,
+                $balance->carry_forwarded_days,
+                $balance->lapsed_days
+            );
+
+            if ($calculatedBalance != $balance->balance) {
+                $balance->update(['balance' => $calculatedBalance]);
+                $updatedCount++;
+            }
+        }
+
+        Flux::toast(
+            variant: 'success',
+            heading: 'Balance Recalculation Complete',
+            text: "Updated {$updatedCount} leave balance records.",
         );
     }
 
@@ -228,6 +274,105 @@ class EmpLeaveBalances extends Component
     {
         $this->selectedId = $id;
         $this->modal('leave-transactions')->show();
+    }
+
+    #[Computed]
+    public function groupedLeaveData()
+    {
+        $leaveBalances = EmpLeaveBalance::query()
+            ->with(['employee', 'leave_type'])
+            ->where('firm_id', Session::get('firm_id'))
+            ->when($this->filters['employee_id'], fn($query, $value) => 
+                $query->where('employee_id', $value))
+            ->when($this->filters['leave_type_id'], fn($query, $value) => 
+                $query->where('leave_type_id', $value))
+            ->when($this->filters['period_start'], fn($query, $value) => 
+                $query->where('period_start', '>=', $value))
+            ->when($this->filters['period_end'], fn($query, $value) => 
+                $query->where('period_end', '<=', $value))
+            ->when($this->filters['created_at'], fn($query, $value) => 
+                $query->whereDate('created_at', $value))
+            ->when($this->filters['updated_at'], fn($query, $value) => 
+                $query->whereDate('updated_at', $value))
+            ->orderBy('employee_id')
+            ->orderBy('leave_type_id')
+            ->orderBy('period_start')
+            ->get();
+
+        $grouped = [];
+        
+        foreach ($leaveBalances as $balance) {
+            $employeeId = $balance->employee_id;
+            $leaveTypeId = $balance->leave_type_id;
+            
+            if (!isset($grouped[$employeeId])) {
+                $grouped[$employeeId] = [
+                    'employee' => $balance->employee,
+                    'leave_types' => []
+                ];
+            }
+            
+            if (!isset($grouped[$employeeId]['leave_types'][$leaveTypeId])) {
+                $grouped[$employeeId]['leave_types'][$leaveTypeId] = [
+                    'leave_type' => $balance->leave_type,
+                    'periods' => []
+                ];
+            }
+            
+            $grouped[$employeeId]['leave_types'][$leaveTypeId]['periods'][] = $balance;
+        }
+        
+        return $grouped;
+    }
+
+    public function getPeriodLabel($balance)
+    {
+        $start = $balance->period_start ? $balance->period_start->format('M Y') : 'N/A';
+        $end = $balance->period_end ? $balance->period_end->format('M Y') : 'N/A';
+        
+        if ($start === $end) {
+            return $start;
+        }
+        
+        return "{$start} - {$end}";
+    }
+
+    public function getBalanceColor($balance)
+    {
+        if ($balance->balance <= 0) {
+            return 'text-red-600';
+        } elseif ($balance->balance <= 5) {
+            return 'text-yellow-600';
+        } else {
+            return 'text-green-600';
+        }
+    }
+
+    /**
+     * Get calculated balance for comparison
+     */
+    public function getCalculatedBalance($balance)
+    {
+        return $this->calculateBalance(
+            $balance->allocated_days,
+            $balance->consumed_days,
+            $balance->carry_forwarded_days,
+            $balance->lapsed_days
+        );
+    }
+
+    /**
+     * Check if balance is inconsistent
+     */
+    public function isBalanceInconsistent($balance)
+    {
+        $calculated = $this->getCalculatedBalance($balance);
+        return abs($calculated - $balance->balance) > 0.01; // Allow for small floating point differences
+    }
+
+    public function toggleViewMode()
+    {
+        $this->viewMode = $this->viewMode === 'accordion' ? 'table' : 'accordion';
     }
 
     public function render()

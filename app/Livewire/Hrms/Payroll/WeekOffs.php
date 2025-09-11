@@ -9,6 +9,7 @@ use App\Models\Hrms\Employee;
 use App\Models\Hrms\FlexiWeekOff;
 use Illuminate\Support\Facades\Session;
 use Livewire\Component;
+use Flux;
 
 class WeekOffs extends Component
 {
@@ -23,6 +24,13 @@ class WeekOffs extends Component
     public $searchName = '';
     public $sortBy = 'employee_name';
     public $sortDirection = 'asc';
+    public $editModalOpen = false;
+    public $editForm = [
+        'id' => null,
+        'status' => '',
+        'consumed_date' => '',
+    ];
+    public $statusOptions = [];
 
     public function mount()
     {
@@ -77,6 +85,36 @@ class WeekOffs extends Component
         $this->fetchWeekOffTable();
     }
 
+    public function editWeekOff($id)
+    {
+        $weekOff = \App\Models\Hrms\FlexiWeekOff::findOrFail($id);
+        $this->editForm['id'] = $weekOff->id;
+        $this->editForm['status'] = $weekOff->week_off_Status;
+        $this->editForm['consumed_date'] = $weekOff->consumedAttendance && $weekOff->consumedAttendance->work_date ? $weekOff->consumedAttendance->work_date->format('Y-m-d') : '';
+        $this->statusOptions = \App\Models\Hrms\FlexiWeekOff::WEEK_OFF_STATUS_MAIN_SELECT;
+        $this->editModalOpen = true;
+        Flux::modal('edit-weekoff-modal')->show();
+    }
+
+    public function updateWeekOff()
+    {
+        $weekOff = \App\Models\Hrms\FlexiWeekOff::findOrFail($this->editForm['id']);
+        $weekOff->week_off_Status = $this->editForm['status'];
+        // Update consumed date (nullable)
+        if ($this->editForm['consumed_date']) {
+            $attendance = \App\Models\Hrms\EmpAttendance::where('employee_id', $weekOff->employee_id)
+                ->whereDate('work_date', $this->editForm['consumed_date'])
+                ->first();
+            $weekOff->consumed_emp_attendance_id = $attendance ? $attendance->id : null;
+        } else {
+            $weekOff->consumed_emp_attendance_id = null;
+        }
+        $weekOff->save();
+        $this->editModalOpen = false;
+        $this->fetchWeekOffTable();
+        Flux::modal('edit-weekoff-modal')->close();
+    }
+
     private function fetchWeekOffTable()
     {
         $this->weekOffTable = [];
@@ -107,6 +145,7 @@ class WeekOffs extends Component
                 ];
                 $status = $statusWords[$weekOff->week_off_Status] ?? $weekOff->week_off_Status;
                 $rows[] = [
+                    'id' => $weekOff->id,
                     'employee_name' => trim($employee->fname . ' ' . $employee->lname),
                     'department' => $employee->emp_job_profile->department->title ?? '',
                     'availed_date' => $availedAttendance ? $availedAttendance->work_date->format('Y-m-d') : '',

@@ -20,7 +20,7 @@ class Roles extends Component
     public $sortDirection = 'asc';
     public $isEditing = false;
     public $selectedRoleId = null;
-
+    public $firmId = null; // Add this property to accept firm_id parameter
     // Field configuration for form and table
     public array $fieldConfig = [
         'name' => ['label' => 'Role Name', 'type' => 'text'],
@@ -48,8 +48,9 @@ class Roles extends Component
         'is_inactive' => false,
     ];
 
-    public function mount()
+    public function mount($firmId = null)
     {
+        $this->firmId = $firmId;
         $this->resetPage();
         $this->initListsForFields();
         
@@ -107,8 +108,16 @@ class Roles extends Component
     #[Computed]
     public function list()
     {
-        return Role::query()
-            ->whereNull('firm_id')  // Only show global roles
+        $query = Role::query();
+        
+        // If firm_id is provided, show firm-specific roles, otherwise show global roles
+        if ($this->firmId !== null) {
+            $query->where('firm_id', $this->firmId);
+        } else {
+            $query->whereNull('firm_id'); // Only show global roles
+        }
+        
+        return $query
             ->when($this->filters['name'], fn($query, $value) => 
                 $query->where('name', 'like', "%{$value}%"))
             ->when($this->filters['description'], fn($query, $value) => 
@@ -136,16 +145,20 @@ class Roles extends Component
             ->map(fn($val) => $val === '' ? null : $val)
             ->toArray();
 
-        // Don't set firm_id for global roles
-        $validatedData['formData']['firm_id'] = null;
+        // Set firm_id based on the current context
+        if ($this->firmId !== null) {
+            $validatedData['formData']['firm_id'] = $this->firmId;
+        } else {
+            $validatedData['formData']['firm_id'] = null; // Global role
+        }
 
         if ($this->isEditing) {
             $role = Role::findOrFail($this->formData['id']);
             $role->update($validatedData['formData']);
-            $toastMsg = 'Global role updated successfully';
+            $toastMsg = $this->firmId !== null ? 'Firm role updated successfully' : 'Global role updated successfully';
         } else {
             Role::create($validatedData['formData']);
-            $toastMsg = 'Global role added successfully';
+            $toastMsg = $this->firmId !== null ? 'Firm role added successfully' : 'Global role added successfully';
         }
 
         $this->resetForm();

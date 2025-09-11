@@ -111,7 +111,7 @@
         <form wire:submit.prevent="saveArrear">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">
+                    <flux:heading >
                         @if($isEditing) Edit Salary Arrear @else Create Salary Arrear @endif
                     </flux:heading>
                     <flux:subheading>
@@ -122,6 +122,7 @@
                     <div>
                         <flux:select
                             label="Employee"
+                            searchable
                             wire:model.live="selectedEmployee"
                         >
                             <option value="">Select Employee</option>
@@ -131,17 +132,52 @@
                         </flux:select>
                         @error('selectedEmployee') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
-                        <flux:select
-                            label="Component"
-                            wire:model.live="salary_component_id"
-                        >
-                            <option value="">Select Component</option>
-                            @foreach($listsForFields['components'] as $id => $title)
-                                <option value="{{ $id }}">{{ $title }}</option>
+                    <!-- Components Repeater -->
+                    <div class="col-span-2">
+                        <flux:heading >Components and Amounts</flux:heading>
+                        @error('arrearItems') <div class="text-danger">{{ $message }}</div> @enderror
+                        <div class="space-y-3 mt-2">
+                            @foreach($arrearItems as $idx => $it)
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                                    <div>
+                                        <flux:select
+                                            label="Component"
+                                            wire:model.live="arrearItems.{{ $idx }}.salary_component_id"
+                                        >
+                                            <option value="">Select Component</option>
+                                            @foreach($this->availableComponents($idx) as $id => $title)
+                                                <option value="{{ $id }}">{{ $title }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                        @error('arrearItems.'.$idx.'.salary_component_id') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+                                    <div>
+                                        <flux:input
+                                            type="number"
+                                            label="Total Amount"
+                                            wire:model.live="arrearItems.{{ $idx }}.amount"
+                                        />
+                                        @error('arrearItems.'.$idx.'.amount') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="text-sm text-gray-600">
+                                            @php
+                                                $amt = data_get($arrearItems[$idx] ?? [], 'amount');
+                                                $inst = (int) ($installments ?? 0);
+                                                $per = $amt && $inst > 0 ? round($amt / $inst, 2) : null;
+                                            @endphp
+                                            @if($per)
+                                                Per-installment: ₹{{ $per }}
+                                            @endif
+                                        </div>
+                                        <flux:button  size="sm" icon="minus" wire:click="removeArrearItem({{ $idx }})" />
+                                    </div>
+                                </div>
                             @endforeach
-                        </flux:select>
-                        @error('salary_component_id') <span class="text-danger">{{ $message }}</span> @enderror
+                            <div>
+                                <flux:button icon="plus" wire:click="addArrearItem">Add Component</flux:button>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <flux:date-picker
@@ -161,14 +197,7 @@
                         />
                         @error('effective_to') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
-                        <flux:input
-                            type="number"
-                            label="Total Amount"
-                            wire:model.live="total_amount"
-                        />
-                        @error('total_amount') <span class="text-danger">{{ $message }}</span> @enderror
-                    </div>
+                    
 {{--                    <div>--}}
 {{--                        <flux:input--}}
 {{--                            type="number"--}}
@@ -185,10 +214,7 @@
                         />
                         @error('installments') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
-                        <span class="text-danger">Installment Amount: ₹{{ $installment_amount }}</span>
-
-                    </div>
+                    
                     <div>
                         <flux:select
                             label="Status"
@@ -217,7 +243,7 @@
                         <flux:textarea
                             label="Additional Rule"
                             wire:model.live="additional_rule"
-                            rows="2"
+
                         />
                         @error('additional_rule') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
@@ -225,7 +251,7 @@
                         <flux:textarea
                             label="Remarks"
                             wire:model.live="remarks"
-                            rows="3"
+
                         />
                         @error('remarks') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>

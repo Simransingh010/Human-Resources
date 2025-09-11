@@ -4,7 +4,11 @@
         @livewire('panel.component-heading')
         <flux:modal.trigger name="mdl-role" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
-                New Global Role
+                @if(isset($firmId) && $firmId !== null)
+                    New Firm Role
+                @else
+                    New Global Role
+                @endif
             </flux:button>
         </flux:modal.trigger>
     </div>
@@ -103,10 +107,31 @@
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing) Edit Global Role @else Add Global Role @endif
+                        @if($isEditing)
+                            @if(isset($firmId) && $firmId !== null)
+                                Edit Firm Role
+                            @else
+                                Edit Global Role
+                            @endif
+                        @else
+                            @if(isset($firmId) && $firmId !== null)
+                                Add Firm Role
+                            @else
+                                Add Global Role
+                            @endif
+                        @endif
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif global role details. Global roles are not associated with any specific firm.
+                        @if($isEditing)
+                            Update
+                        @else
+                            Add new
+                        @endif
+                        @if(isset($firmId) && $firmId !== null)
+                            firm role details. Firm roles are associated with a specific firm.
+                        @else
+                            global role details. Global roles are not associated with any specific firm.
+                        @endif
                     </flux:subheading>
                 </div>
 
@@ -204,10 +229,16 @@
                         <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
                             <div class="space-y-6">
                                 <div>
-                                    <flux:heading size="lg">Delete Global Role?</flux:heading>
+                                    <flux:heading size="lg">
+                                        @if(isset($firmId) && $firmId !== null)
+                                            Delete Firm Role?
+                                        @else
+                                            Delete Global Role?
+                                        @endif
+                                    </flux:heading>
                                     <flux:text class="mt-2">
-                                        <p>You're about to delete this global role. This action cannot be undone.</p>
-                                        <p class="mt-2 text-red-500">Note: Global roles with assigned users or actions cannot be deleted.</p>
+                                        <p>You're about to delete this @if(isset($firmId) && $firmId !== null) firm @else global @endif role. This action cannot be undone.</p>
+                                        <p class="mt-2 text-red-500">Note: @if(isset($firmId) && $firmId !== null) Firm @else Global @endif roles with assigned users or actions cannot be deleted.</p>
                                     </flux:text>
                                 </div>
                                 <div class="flex gap-2">
@@ -228,7 +259,7 @@
     {{-- Shared Modal for Role Action Sync --}}
     <flux:modal name="role-action-sync"   class=" max-w-7xl min-h-[70vh] max-h-[85vh] overflow-y-auto">
         @if(isset($selectedRoleId) && $selectedRoleId)
-            <livewire:settings.role-based-access.role-action-sync :roleId="$selectedRoleId" :wire:key="'role-action-sync-' . $selectedRoleId" />
+            <livewire:saas.role-action-sync :roleId="$selectedRoleId" :firmId="$firmId ?? null" :wire:key="'role-action-sync-' . $selectedRoleId" />
         @endif
     </flux:modal>
 </div>

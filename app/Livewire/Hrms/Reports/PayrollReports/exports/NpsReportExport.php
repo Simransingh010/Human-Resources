@@ -3,6 +3,7 @@
 namespace App\Livewire\Hrms\Reports\PayrollReports\Exports;
 
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
+use App\Models\Hrms\PayrollSlot;
 use App\Models\Hrms\SalaryComponent;
 use App\Models\Hrms\Employee;
 use App\Models\Saas\Firm;
@@ -42,13 +43,15 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
         $this->firmName = $firm ? $firm->name : '';
 
         // First, collect the data to determine which NPS components are actually used
-        $this->data = $this->fetchEmployees($firmId);
-        
-        // Get all employee contribution components
+        // Get all employee contribution deduction components for the firm
         $this->npsComponents = SalaryComponent::where('firm_id', $firmId)
             ->where('component_type', 'employee_contribution')
             ->where('nature', 'deduction')
             ->get();
+
+        // Now collect the data with employees filtered to only those
+        // who have NPS components assigned to them
+        $this->data = $this->fetchEmployees($firmId);
 
     }
 
@@ -66,6 +69,54 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
                   });
             }
         ])->where('firm_id', $firmId);
+
+        // Compute relevant payroll slots overlapping the report period (and group if filtered)
+        $slotQuery = PayrollSlot::where('firm_id', $firmId)
+            ->where('from_date', '<=', $this->end)
+            ->where('to_date', '>=', $this->start);
+        if (!empty($this->filters['salary_execution_group_id'])) {
+            $slotQuery->where('salary_execution_group_id', $this->filters['salary_execution_group_id']);
+        }
+        $relevantSlotIds = $slotQuery->pluck('id');
+
+        // Ensure only employees that have NPS components assigned in salary_components_employees
+        $npsComponentIds = $this->npsComponents
+            ->filter(function ($component) {
+                $title = strtolower(trim($component->title ?? ''));
+                // Consider any component with 'nps' in its title as an NPS component
+                return strpos($title, 'nps') !== false;
+            })
+            ->pluck('id');
+
+        if ($npsComponentIds->isEmpty()) {
+            // No NPS components configured → no employees are eligible
+            $query->whereRaw('1 = 0');
+        } else {
+            $start = $this->start;
+            $end = $this->end;
+            $query->whereHas('salary_components_employees', function ($q) use ($npsComponentIds, $start, $end, $firmId) {
+                $q->where('firm_id', $firmId)
+                  ->whereIn('salary_component_id', $npsComponentIds)
+                  // Effective during the period
+                  ->where('effective_from', '<=', $end)
+                  ->where(function ($eff) use ($start) {
+                      $eff->whereNull('effective_to')
+                          ->orWhere('effective_to', '>=', $start);
+                  });
+            });
+        }
+
+        // Exclude employees on hold for any relevant payroll slot in the period
+        if ($relevantSlotIds->isNotEmpty()) {
+            $ids = $relevantSlotIds->toArray();
+            $query->whereNotExists(function ($sub) use ($firmId, $ids) {
+                $sub->selectRaw('1')
+                    ->from('salary_holds as sh')
+                    ->whereColumn('sh.employee_id', 'employees.id')
+                    ->where('sh.firm_id', $firmId)
+                    ->whereIn('sh.payroll_slot_id', $ids);
+            });
+        }
 
         // Apply salary execution group filter if selected
         if (!empty($this->filters['salary_execution_group_id'])) {
@@ -100,7 +151,64 @@ class NpsReportExport extends DefaultValueBinder implements FromCollection, With
             });
         }
 
-        return $query->get();
+        $employees = $query->get();
+
+        // Exclude employees hired after the period end
+        $filtered = $employees->filter(function ($employee) use ($firmId) {
+            // Check if employee was hired before or during the report period
+            $jobProfile = $employee->emp_job_profile;
+            if ($jobProfile && $jobProfile->doh) {
+                // If employee was hired after the end of the report period, exclude them
+                if ($jobProfile->doh->isAfter($this->end)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        // Sort employees by salary execution groups for Firm ID 27
+        if ($firmId == 27) {
+            $filtered = $this->sortEmployeesBySalaryGroups($filtered);
+        }
+
+        return $filtered->values();
+    }
+
+    // Helper method to sort employees by salary execution groups for Firm ID 27
+    private function sortEmployeesBySalaryGroups($employees)
+    {
+        // Define the desired sequence for Firm ID 27
+        $desiredSequence = [
+            'Director',
+            'Faculty Regular', 
+            'Faculty Contractual',
+            'Staff Permanent',
+            'Staff Contractual'
+        ];
+
+        // Create a mapping of group titles to their priority
+        $priorityMap = array_flip($desiredSequence);
+
+        return $employees->sortBy(function($employee) use ($priorityMap) {
+            // Get the first salary execution group for this employee
+            $salaryGroup = $employee->salary_execution_groups->first();
+            
+            if (!$salaryGroup) {
+                // If no salary group, put at the end
+                return 999;
+            }
+
+            $groupTitle = $salaryGroup->title;
+            
+            // Check if the group title is in our desired sequence
+            if (isset($priorityMap[$groupTitle])) {
+                return $priorityMap[$groupTitle];
+            }
+
+            // If not in our sequence, put at the end
+            return 999;
+        });
     }
 
     public function collection()

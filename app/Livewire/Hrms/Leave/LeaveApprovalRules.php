@@ -66,6 +66,7 @@ class LeaveApprovalRules extends Component
         'approver_id' => ['label' => 'Approver', 'type' => 'select', 'listKey' => 'approvers_list'],
         'approval_mode' => ['label' => 'Approval Mode', 'type' => 'select', 'listKey' => 'approval_modes'],
         'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status_list'],
+        'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees_list'],
     ];
 
     public array $listsForFields = [];
@@ -118,7 +119,7 @@ class LeaveApprovalRules extends Component
 
         // Set default visible fields
         $this->visibleFields = ['leave_type_id', 'approver_id', 'approval_level', 'approval_mode', 'auto_approve', 'is_inactive'];
-        $this->visibleFilterFields = ['leave_type_id', 'approver_id', 'approval_mode', 'is_inactive'];
+        $this->visibleFilterFields = ['leave_type_id', 'approver_id', 'approval_mode', 'is_inactive', 'employee_id'];
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
@@ -149,7 +150,14 @@ class LeaveApprovalRules extends Component
         $this->listsForFields['approvers_list'] = User::whereHas('firms', function ($query) use ($firmId) {
             $query->where('firms.id', $firmId);
         })
-            ->pluck('name', 'id')
+            ->get(['id', 'name', 'phone'])
+            ->mapWithKeys(function ($user) {
+                $displayName = $user->name;
+                if ($user->phone) {
+                    $displayName .= ' (' . $user->phone . ')';
+                }
+                return [$user->id => $displayName];
+            })
             ->toArray();
 
         $this->listsForFields['approval_modes'] = [
@@ -173,6 +181,19 @@ class LeaveApprovalRules extends Component
             ->toArray();
         $this->listsForFields['employmentTypelist'] = \App\Models\Settings\EmploymentType::where('firm_id', $firmId)
             ->pluck('title', 'id')
+            ->toArray();
+
+        // Add employees list for filtering
+        $this->listsForFields['employees_list'] = Employee::where('firm_id', $firmId)
+            ->where('is_inactive', false)
+            ->get(['id', 'fname', 'lname', 'phone'])
+            ->mapWithKeys(function ($employee) {
+                $displayName = $employee->fname . ' ' . $employee->lname;
+                if ($employee->phone) {
+                    $displayName .= ' (' . $employee->phone . ')';
+                }
+                return [$employee->id => $displayName];
+            })
             ->toArray();
     }
 
@@ -215,7 +236,7 @@ class LeaveApprovalRules extends Component
     public function list()
     {
         return LeaveApprovalRule::query()
-            ->with(['leave_type', 'user'])
+            ->with(['leave_type', 'user', 'employees'])
             ->where('firm_id', Session::get('firm_id'))
             ->when($this->filters['leave_type_id'], fn($query, $value) =>
                 $query->where('leave_type_id', $value))
@@ -225,6 +246,10 @@ class LeaveApprovalRules extends Component
                 $query->where('approval_mode', $value))
             ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
                 $query->where('is_inactive', $value))
+            ->when($this->filters['employee_id'], fn($query, $value) =>
+                $query->whereHas('employees', function ($q) use ($value) {
+                    $q->where('employee_id', $value);
+                }))
             ->orderBy($this->sortBy, $this->sortDirection)
             ->paginate($this->perPage, ['*'], $this->paginationMainTable);
     }

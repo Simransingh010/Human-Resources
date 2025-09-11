@@ -54,7 +54,6 @@ class EmpSalaryTracks extends Component
         'net_salary' => ['label' => 'Net Salary', 'type' => 'number'],
         'period' => ['label' => 'Period', 'type' => 'text']
     ];
-
     // Filter fields configuration
     public array $filterFields = [
         'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees']
@@ -67,6 +66,7 @@ class EmpSalaryTracks extends Component
 
     public function mount($slotId = null)
     {
+//        dd($slotId);
         $this->resetPage();
         $this->slotId = $slotId;
         $this->initListsForFields();
@@ -241,17 +241,46 @@ class EmpSalaryTracks extends Component
             foreach ($this->rawComponents as $component) {
                 $groupId = $component->salary_component->salary_component_group_id ?? null;
                 $nature = $component->nature;
+                $isArrear = $component->component_type === 'salary_arrear';
+                $arrearInfo = null;
+                if ($isArrear && $component->salary_arrear_id) {
+                    $arrear = \App\Models\Hrms\SalaryArrear::find($component->salary_arrear_id);
+                    if ($arrear) {
+                        $arrearInfo = [
+                            'effective_from' => $arrear->effective_from,
+                            'effective_to' => $arrear->effective_to,
+                        ];
+                    }
+                }
                 if ($groupId) {
                     $groupTitle = $component->salary_component->salary_component_group?->title ?? 'Other';
                     $grouped[$nature][$groupId]['title'] = $groupTitle;
                     $grouped[$nature][$groupId]['amount'] = ($grouped[$nature][$groupId]['amount'] ?? 0) + $component->amount_payable;
                 } else {
+                    $title = $component->salary_component->title;
+                    if ($isArrear) {
+                        $title .= ' (Arrear';
+                        if ($arrearInfo) {
+                            $from = $arrearInfo['effective_from'] ? \Carbon\Carbon::parse($arrearInfo['effective_from'])->format('M Y') : '';
+                            $to = $arrearInfo['effective_to'] ? \Carbon\Carbon::parse($arrearInfo['effective_to'])->format('M Y') : '';
+                            if ($from && $to && $from != $to) {
+                                $title .= ' for ' . $from . ' - ' . $to;
+                            } elseif ($from) {
+                                $title .= ' for ' . $from;
+                            } elseif ($to) {
+                                $title .= ' for ' . $to;
+                            }
+                        }
+                        $title .= ')';
+                    }
                     $ungrouped[$nature][] = [
-                        'title' => $component->salary_component->title,
+                        'title' => $title,
                         'amount' => $component->amount_payable,
                         'nature' => $nature,
                         'component_type' => $component->component_type,
-                        'amount_type' => $component->amount_type
+                        'amount_type' => $component->amount_type,
+                        'is_arrear' => $isArrear,
+                        'arrear_info' => $arrearInfo
                     ];
                 }
             }

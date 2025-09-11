@@ -94,4 +94,9 @@ class Panel extends Model
         return $this->belongsToMany(Component::class, 'component_panel')
                      ->withPivot('id');
     }
+
+    public function firms()
+    {
+        return $this->belongsToMany(Firm::class, 'firm_panel');
+    }
 }

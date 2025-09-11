@@ -11,14 +11,12 @@ use App\Models\Hrms\EmployeeTaxRegime;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\EmployeesSalaryExecutionGroup;
 use App\Models\Hrms\PayrollSlot;
-use App\Models\Hrms\SalaryExecutionGroup;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Cache;
 use Flux;
-use Illuminate\Support\Facades\DB;
 
 class BulkEmployeeSalaryComponents extends Component
 {
@@ -26,17 +24,18 @@ class BulkEmployeeSalaryComponents extends Component
 
     public $perPage = 10;
     public $sortBy = 'fname';
-public $Salarycomponents = [];
     public $sortDirection = 'asc';
     public $selectedEmployees = [];
+    public $components = [];
     public $componentAmounts = [];
     public $employees = [];
+    public $employeeComponents = [];
     public array $bulkupdate = [];
 
     // Salary Slip Modal Properties
     public $showSalarySlipModal = false;
     public $selectedEmployee = null;
-    public $cmpnts = [];
+    public $salaryComponents = [];
     public $totalEarnings = 0;
     public $totalDeductions = 0;
     public $netSalary = 0;
@@ -46,7 +45,7 @@ public $Salarycomponents = [];
     public array $filterFields = [
         'department_id' => ['label' => 'Department', 'type' => 'select', 'listKey' => 'departments'],
         'designation_id' => ['label' => 'Designation', 'type' => 'select', 'listKey' => 'designations'],
-        'salary_execution_group_id' => ['label' => 'Salary Execution Group', 'type' => 'select', 'listKey' => 'executionGroups'],
+        'employee_search' => ['label' => 'Employee', 'type' => 'text'],
         'search' => ['label' => 'Search', 'type' => 'text'],
     ];
 
@@ -54,15 +53,13 @@ public $Salarycomponents = [];
     public array $filters = [];
     public array $visibleFilterFields = [];
 
-    public $readyToLoad = false;
-
     public function mount()
     {
         $this->initListsForFields();
         $this->loadComponents();
 
         // Set default visible filter fields
-        $this->visibleFilterFields = ['department_id', 'designation_id', 'salary_execution_group_id', 'search'];
+        $this->visibleFilterFields = ['department_id', 'designation_id', 'employee_search', 'search'];
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
@@ -81,36 +78,55 @@ public $Salarycomponents = [];
             ->where('is_inactive', false)
             ->pluck('title', 'id')
             ->toArray();
-
-        // Get salary execution groups for dropdown
-        $this->listsForFields['executionGroups'] = SalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
-            ->where('is_inactive', false)
-            ->pluck('title', 'id')
-            ->toArray();
     }
 
     protected function loadComponents()
     {
-        // Cache components since they rarely change
-        $cacheKey = 'salary_components_' . Session::get('firm_id');
-        
-        $this->components = Cache::remember($cacheKey, 3600, function () {
-            return SalaryComponent::where('firm_id', Session::get('firm_id'))
-                ->whereIn('amount_type', ['static_known'])
-                ->orderBy('title')
-                ->get()
-     ->map(function ($component) {
-                    return [
-                        'id' => $component->id,
-                        'title' => $component->title,
-                        'nature' => $component->nature,
-                        'component_type' => $component->component_type,
-                        'amount_type' => $component->amount_type,
-                        'is_calculated' => str_contains($component->amount_type, 'calculated_'),
-                    ];
-                })
-                ->toArray();
-        });
+        $this->components = SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->get()
+            ->filter(function ($component) {
+                // Only include components with static_known or static_unknown amount_type
+                return in_array($component->amount_type, ['static_known', ]);
+            })
+            ->sortBy('title')
+            ->map(function ($component) {
+                return [
+                    'id' => $component->id,
+                    'title' => $component->title,
+                    'nature' => $component->nature,
+                    'component_type' => $component->component_type,
+                    'amount_type' => $component->amount_type,
+                    'is_calculated' => str_contains($component->amount_type, 'calculated_'),
+                ];
+            })
+            ->toArray();
+    }
+
+    protected function loadEmployeeComponents($employeeIds)
+    {
+
+
+        $this->employeeComponents = SalaryComponentsEmployee::whereIn('employee_id', $employeeIds)
+            ->where('firm_id', Session::get('firm_id'))
+            ->where(function ($query) {
+                $query->whereNull('effective_to')
+                    ->orWhere('effective_to', '>', now());
+            })
+            ->get()
+            ->map(function ($component) {
+                // Initialize bulkupdate with current values
+                $this->bulkupdate[$component->employee_id][$component->salary_component_id] = $component->amount;
+
+                return [
+                    'employee_id' => $component->employee_id,
+                    'component_id' => $component->salary_component_id,
+                    'amount' => $component->amount,
+                    'amount_type' => $component->amount_type,
+                    'nature' => $component->nature
+                ];
+            })
+            ->groupBy('employee_id')
+            ->toArray();
     }
 
     public function isComponentActive($employeeId, $componentId): bool
@@ -221,70 +237,46 @@ public $Salarycomponents = [];
         }
     }
 
-    public function load()
-    {
-        $this->readyToLoad = true;
-    }
-
-    #[Computed]
-    public function components(): array
-    {
-        $cacheKey = 'salary_components_' . Session::get('firm_id');
-        return Cache::remember($cacheKey, 3600, fn() =>
-            SalaryComponent::select('id','title','nature','component_type','amount_type')
-                ->where('firm_id', Session::get('firm_id'))
-                ->where('amount_type', 'static_known')
-                ->orderBy('title')
-                ->get()
-                ->toArray()
-        );
-    }
-
     #[Computed]
     public function list()
     {
-        if (!$this->readyToLoad) {
-            return new \Illuminate\Pagination\LengthAwarePaginator([],0,$this->perPage);
-        }
-        $query = Employee::query()
+        $query = SalaryComponentsEmployee::query()
             ->select([
-                'employees.id as employee_id',
-                DB::raw('MAX(employees.fname) as fname'),
-                DB::raw('MAX(employees.lname) as lname'),
-                DB::raw('MAX(employees.email) as email'),
-                DB::raw('MAX(employees.phone) as phone'),
-                DB::raw('MAX(employee_job_profiles.employee_code) as employee_code'),
-                DB::raw('MAX(departments.title) as department_title'),
-                DB::raw('MAX(designations.title) as designation_title'),
-                DB::raw('GROUP_CONCAT(CONCAT("\"", sce.salary_component_id, "\":", sce.amount) SEPARATOR ",") as component_amounts_str'),
+                'salary_components_employees.employee_id',
+                'employees.fname',
+                'employees.mname',
+                'employees.lname',
+                'employees.email',
+                'employees.phone',
+                'employees.gender',
+                'employee_job_profiles.employee_code',
+                'employee_job_profiles.department_id',
+                'employee_job_profiles.designation_id',
+                'departments.title as department_title',
+                'designations.title as designation_title'
             ])
+            ->join('employees', 'employees.id', '=', 'salary_components_employees.employee_id')
             ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
             ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
             ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
-            ->leftJoin('salary_components_employees as sce', function($join) {
-                $join->on('sce.employee_id', '=', 'employees.id')
-                     ->where('sce.firm_id', Session::get('firm_id'))
-                     ->whereNull('sce.deleted_at')
-                     ->where(function($q) {
-                         $q->whereNull('sce.effective_to')
-                           ->orWhere('sce.effective_to', '>', now());
-                     });
+            ->where('salary_components_employees.firm_id', Session::get('firm_id'))
+            ->where(function ($query) {
+                $query->whereNull('salary_components_employees.effective_to')
+                    ->orWhere('salary_components_employees.effective_to', '>', now());
             })
-            ->where('employees.firm_id', Session::get('firm_id'))
             ->where('employees.is_inactive', false)
             ->when($this->filters['department_id'], fn($query, $value) =>
                 $query->where('employee_job_profiles.department_id', $value))
             ->when($this->filters['designation_id'], fn($query, $value) =>
                 $query->where('employee_job_profiles.designation_id', $value))
-            ->when($this->filters['salary_execution_group_id'], function($query, $value) {
-                $query->whereExists(function ($subquery) use ($value) {
-                    $subquery->select('id')
-                        ->from('employees_salary_execution_group')
-                        ->whereColumn('employee_id', 'employees.id')
-                        ->where('salary_execution_group_id', $value)
-                        ->where('firm_id', Session::get('firm_id'));
-                });
-            })
+            ->when($this->filters['employee_search'], fn($query, $value) =>
+                $query->where(function ($q) use ($value) {
+                    $q->where('employees.fname', 'like', "%{$value}%")
+                        ->orWhere('employees.lname', 'like', "%{$value}%")
+                        ->orWhere('employees.email', 'like', "%{$value}%")
+                        ->orWhere('employees.phone', 'like', "%{$value}%")
+                        ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
+                }))
             ->when($this->filters['search'], fn($query, $value) =>
                 $query->where(function ($q) use ($value) {
                     $q->where('employees.fname', 'like', "%{$value}%")
@@ -293,24 +285,37 @@ public $Salarycomponents = [];
                         ->orWhere('employees.phone', 'like', "%{$value}%")
                         ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
                 }))
-            ->groupBy('employees.id')
-            ->orderBy('fname', $this->sortDirection);
+            ->groupBy([
+                'salary_components_employees.employee_id',
+                'employees.fname',
+                'employees.mname',
+                'employees.lname',
+                'employees.email',
+                'employees.phone',
+                'employees.gender',
+                'employee_job_profiles.employee_code',
+                'employee_job_profiles.department_id',
+                'employee_job_profiles.designation_id',
+                'departments.title',
+                'designations.title'
+            ])
+            ->orderBy($this->sortBy, $this->sortDirection);
 
-        $paginator = $query->paginate($this->perPage);
-        return $paginator->through(function($row) {
-            return array_merge($row->toArray(), [
-                'component_amounts' => $row->component_amounts_str
-                    ? json_decode('{' . $row->component_amounts_str . '}', true)
-                    : []
-            ]);
-        });
+        $employees = $query->paginate($this->perPage);
+
+        // Load components for displayed employees
+        $this->loadEmployeeComponents($employees->pluck('employee_id')->toArray());
+
+        return $employees;
     }
 
-    public function updateComponentAmount(int $empId, int $compId, float $amount)
+    public function updateComponentAmount($employeeId, $componentId)
     {
         try {
-            $component = SalaryComponentsEmployee::where('employee_id', $empId)
-                ->where('salary_component_id', $compId)
+            $amount = $this->bulkupdate[$employeeId][$componentId] ?? 0;
+
+            $component = SalaryComponentsEmployee::where('employee_id', $employeeId)
+                ->where('salary_component_id', $componentId)
                 ->where('firm_id', Session::get('firm_id'))
                 ->where(function ($query) {
                     $query->whereNull('effective_to')
@@ -424,8 +429,11 @@ public $Salarycomponents = [];
     public function syncCalculations($employeeId)
     {
         try {
+//        dd("Syncing calculations for employee ID: {$employeeId}");
             // Get the employee
             $employee = Employee::findOrFail($employeeId);
+
+
 
             // Get calculated components
             $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
@@ -436,7 +444,7 @@ public $Salarycomponents = [];
                 })
                 ->with('salary_component')
                 ->get()
-                ->map(function ($employeeComponent) use ($employeeId) {
+                ->map(function ($employeeComponent) use ($employeeId) {// we used "use ($employeeId)" to pass the employeeId to the function because there was error for some users "undefined variable $employeeId"
                     if (empty($employeeComponent->calculation_json)) {
                         throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
                     }
@@ -447,12 +455,19 @@ public $Salarycomponents = [];
                     ];
                 });
 
+//            dd($calculatedComponents);
+//            dd("Syncing calculations for employee ID: {$employeeId}");
+
+
+
+
             // Build dependency graph
             $graph = $this->buildDependencyGraph($calculatedComponents);
 
             // Get calculation order
             try {
                 $calculationOrder = $this->getCalculationOrder($graph);
+//dd($calculationOrder);
             } catch (\Exception $e) {
                 throw new \Exception("Error in calculation dependencies: " . $e->getMessage());
             }
@@ -509,194 +524,6 @@ public $Salarycomponents = [];
                 variant: 'error',
                 heading: 'Error',
                 text: $e->getMessage()
-            );
-        }
-    }
-
-    public function syncAllCalculations()
-    {
-        try {
-            // Get the base query without pagination
-            $query = SalaryComponentsEmployee::query()
-                ->select([
-                    'salary_components_employees.employee_id',
-                    'employees.fname',
-                    'employees.mname',
-                    'employees.lname',
-                    'employees.email',
-                    'employees.phone',
-                    'employees.gender',
-                    'employee_job_profiles.employee_code',
-                    'employee_job_profiles.department_id',
-                    'employee_job_profiles.designation_id',
-                    'departments.title as department_title',
-                    'designations.title as designation_title'
-                ])
-                ->join('employees', 'employees.id', '=', 'salary_components_employees.employee_id')
-                ->join('employee_job_profiles', 'employees.id', '=', 'employee_job_profiles.employee_id')
-                ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
-                ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
-                ->where('salary_components_employees.firm_id', Session::get('firm_id'))
-                ->where(function ($query) {
-                    $query->whereNull('salary_components_employees.effective_to')
-                        ->orWhere('salary_components_employees.effective_to', '>', now());
-                })
-                ->where('employees.is_inactive', false)
-                ->when($this->filters['department_id'], fn($query, $value) =>
-                    $query->where('employee_job_profiles.department_id', $value))
-                ->when($this->filters['designation_id'], fn($query, $value) =>
-                    $query->where('employee_job_profiles.designation_id', $value))
-                ->when($this->filters['salary_execution_group_id'], function($query, $value) {
-                    $query->whereExists(function ($subquery) use ($value) {
-                        $subquery->select('id')
-                            ->from('employees_salary_execution_group')
-                            ->whereColumn('employee_id', 'employees.id')
-                            ->where('salary_execution_group_id', $value)
-                            ->where('firm_id', Session::get('firm_id'));
-                    });
-                })
-                ->when($this->filters['search'], fn($query, $value) =>
-                    $query->where(function ($q) use ($value) {
-                        $q->where('employees.fname', 'like', "%{$value}%")
-                            ->orWhere('employees.lname', 'like', "%{$value}%")
-                            ->orWhere('employees.email', 'like', "%{$value}%")
-                            ->orWhere('employees.phone', 'like', "%{$value}%")
-                            ->orWhere('employee_job_profiles.employee_code', 'like', "%{$value}%");
-                    }))
-                ->groupBy([
-                    'salary_components_employees.employee_id',
-                    'employees.fname',
-                    'employees.mname',
-                    'employees.lname',
-                    'employees.email',
-                    'employees.phone',
-                    'employees.gender',
-                    'employee_job_profiles.employee_code',
-                    'employee_job_profiles.department_id',
-                    'employee_job_profiles.designation_id',
-                    'departments.title',
-                    'designations.title'
-                ])
-                ->orderBy($this->sortBy, $this->sortDirection);
-
-            // Get all employee IDs from the query
-            $employeeIds = $query->pluck('employee_id')->toArray();
-            $totalEmployees = count($employeeIds);
-            
-            $successCount = 0;
-            $errorCount = 0;
-            $errorMessages = [];
-
-            Flux::toast(
-                variant: 'info',
-                heading: 'Starting Sync',
-                text: "Starting calculations for {$totalEmployees} employees..."
-            );
-
-            foreach ($employeeIds as $employeeId) {
-                try {
-                    // Get the employee
-                    $employee = Employee::findOrFail($employeeId);
-
-                    // Get calculated components
-                    $calculatedComponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
-                        ->where('firm_id', Session::get('firm_id'))
-                        ->whereHas('salary_component', function ($query) {
-                            $query->where('amount_type', 'calculated_known')
-                                  ->where('component_type', '!=', 'tds');
-                        })
-                        ->with('salary_component')
-                        ->get()
-                        ->map(function ($employeeComponent) use ($employeeId) {
-                            if (empty($employeeComponent->calculation_json)) {
-                                throw new \Exception("No calculation formula defined for component {$employeeComponent->salary_component->title} for employee ID {$employeeId}");
-                            }
-                            return [
-                                'id' => $employeeComponent->salary_component->id,
-                                'title' => $employeeComponent->salary_component->title,
-                                'calculation_json' => $employeeComponent->calculation_json
-                            ];
-                        });
-
-                    // Build dependency graph
-                    $graph = $this->buildDependencyGraph($calculatedComponents);
-
-                    // Get calculation order
-                    $calculationOrder = $this->getCalculationOrder($graph);
-
-                    // Get initial component values
-                    $componentValues = $this->getComponentValuesForEmployee($employeeId);
-
-                    // Calculate components in order
-                    foreach ($calculationOrder as $componentId) {
-                        $component = $graph[$componentId]['component'];
-
-                        if (empty($component['calculation_json'])) {
-                            throw new \Exception("No calculation formula defined for component {$component['title']}");
-                        }
-
-                        // Calculate value using all previously calculated values
-                        $calculatedValue = $this->executeCalculation($component['calculation_json'], $componentValues);
-
-                        // Update the component value in database
-                        SalaryComponentsEmployee::where('employee_id', $employeeId)
-                            ->where('salary_component_id', $componentId)
-                            ->where('firm_id', Session::get('firm_id'))
-                            ->update([
-                                'amount' => $calculatedValue
-                            ]);
-
-                        // Update component values for next calculations
-                        $componentValues[$componentId] = $calculatedValue;
-                        $componentValues[$component['title']] = $calculatedValue;
-
-                        // Mark as calculated in graph
-                        $graph[$componentId]['calculated'] = true;
-                    }
-
-                    // After calculating other components, calculate tax
-                    $this->calculateTax($employeeId);
-                    $successCount++;
-
-                    // Show progress toast every 10 employees
-                    if ($successCount % 10 === 0) {
-                        Flux::toast(
-                            variant: 'info',
-                            heading: 'Progress Update',
-                            text: "Processed {$successCount} of {$totalEmployees} employees..."
-                        );
-                    }
-
-                } catch (\Exception $e) {
-                    $errorCount++;
-                    $errorMessages[] = "Employee ID {$employeeId}: " . $e->getMessage();
-                }
-            }
-
-            // Reload employee components for all employees
-            $this->loadEmployeeComponents($employeeIds);
-
-            // Show summary toast
-            if ($errorCount === 0) {
-                Flux::toast(
-                    variant: 'success',
-                    heading: 'All Calculations Updated',
-                    text: "Successfully updated calculations for {$successCount} employees"
-                );
-            } else {
-                Flux::toast(
-                    variant: 'warning',
-                    heading: 'Partial Success',
-                    text: "Updated {$successCount} employees, failed for {$errorCount} employees. Check logs for details."
-                );
-                \Log::error("Bulk sync errors: " . implode("\n", $errorMessages));
-            }
-
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: "Failed to sync calculations: " . $e->getMessage()
             );
         }
     }
@@ -840,7 +667,7 @@ $health_education_cess = .04 * $totalTax;
                 [
                     'amount' => $monthlyTax,
                     'nature' => 'deduction',
-                    'component_type' => 'tax',
+                    'component_type' => 'tds',
                     'amount_type' => 'calculated_known',
                     'effective_from' => now(),
                 ]
@@ -933,6 +760,7 @@ $health_education_cess = .04 * $totalTax;
 
             ->value('id');
     }
+    
 
     protected function extractRequiredComponents($node)
     {
@@ -1101,15 +929,12 @@ $health_education_cess = .04 * $totalTax;
     public function showSalarySlip($employeeId)
     {
         try {
-            // Force modal to close before updating data
-            $this->showSalarySlipModal = false;
-
             // Load employee with job profile
             $this->selectedEmployee = Employee::with('emp_job_profile.department', 'emp_job_profile.designation')
                 ->findOrFail($employeeId);
 
-            // Get salary components for the employee with their base component details (eager load group)
-            $Salarycomponents = SalaryComponentsEmployee::where('employee_id', $employeeId)
+            // Get salary components for the employee with their base component details
+            $components = SalaryComponentsEmployee::where('employee_id', $employeeId)
                 ->where('firm_id', Session::get('firm_id'))
                 ->where(function ($query) {
                     $query->whereNull('effective_to')
@@ -1117,52 +942,49 @@ $health_education_cess = .04 * $totalTax;
                 })
                 ->with([
                     'salary_component' => function ($query) {
-                        $query->select('id', 'title', 'nature', 'component_type', 'amount_type', 'calculation_json', 'salary_component_group_id')
-                              ->with('salary_component_group:id,title');
+                        $query->select('id', 'title', 'nature', 'component_type', 'amount_type', 'calculation_json');
                     }
                 ])
                 ->get();
 
-            $this->cmpnts = [];
+            $this->salaryComponents = [];
             $this->totalEarnings = 0;
             $this->totalDeductions = 0;
 
+            // Group components by nature (earnings/deductions)
             foreach ($components as $component) {
-                $salaryComponent = $component->salary_component;
-                if (!$salaryComponent && $component->salary_component_id) {
-                    $salaryComponent = \App\Models\Hrms\SalaryComponent::find($component->salary_component_id);
-                }
-                if (!$salaryComponent) {
+                // Skip if salary_component relation is not loaded
+                if (!$component->salary_component) {
                     continue;
                 }
-                $nature = $component->nature;
-                $item = [
-                    'title' => $salaryComponent->title,
+
+                $componentData = [
+                    'title' => $component->salary_component->title,
                     'amount' => $component->amount,
-                    'nature' => $nature,
+                    'nature' => $component->nature,
                     'component_type' => $component->component_type,
                     'amount_type' => $component->amount_type,
-                    'calculation_json' => $component->calculation_json,
-                    'effective_from' => $component->effective_from,
+                    'calculation_json' => $component->calculation_json
                 ];
-                $this->cmpnts[] = $item;
-                if ($nature === 'earning') {
+
+                $this->salaryComponents[] = $componentData;
+
+                // Calculate totals based on nature
+                if ($component->nature === 'earning') {
                     $this->totalEarnings += $component->amount;
-                } elseif ($nature === 'deduction') {
+                } elseif ($component->nature === 'deduction') {
                     $this->totalDeductions += $component->amount;
                 }
             }
 
-            // Sort by nature (earnings first), then title
-            $this->cmpnts = collect($this->cmpnts)->sortBy([
-                ['nature', 'desc'],
+            // Sort components by nature and title
+            $this->salaryComponents = collect($this->salaryComponents)->sortBy([
+                ['nature', 'desc'], // earnings first
                 ['title', 'asc']
             ])->values()->all();
 
             $this->netSalary = $this->totalEarnings - $this->totalDeductions;
             $this->netSalaryInWords = $this->numberToWords($this->netSalary);
-
-            // Open the modal after updating cmpnts
             $this->showSalarySlipModal = true;
 
         } catch (\Exception $e) {
@@ -1178,7 +1000,7 @@ $health_education_cess = .04 * $totalTax;
     {
         $this->showSalarySlipModal = false;
         $this->selectedEmployee = null;
-        $this->cmpnts = [];
+        $this->salaryComponents = [];
         $this->totalEarnings = 0;
         $this->totalDeductions = 0;
         $this->netSalary = 0;
@@ -1200,76 +1022,6 @@ $health_education_cess = .04 * $totalTax;
             heading: 'Coming Soon',
             text: 'PDF download functionality will be available soon.',
         );
-    }
-
-    public function debugSalarySlip($employeeId)
-    {
-        try {
-            // Get raw components data
-            $components = SalaryComponentsEmployee::where('employee_id', $employeeId)
-                ->where('firm_id', Session::get('firm_id'))
-                ->where(function ($query) {
-                    $query->whereNull('effective_to')
-                        ->orWhere('effective_to', '>', now());
-                })
-                ->with([
-                    'salary_component' => function ($query) {
-                        $query->select('id', 'title', 'nature', 'component_type', 'amount_type', 'calculation_json', 'salary_component_group_id')
-                              ->with('salary_component_group:id,title');
-                    }
-                ])
-                ->get();
-
-            $debugData = [
-                'total_components' => $components->count(),
-                'components' => [],
-                'natures_found' => [],
-                'group_ids_found' => []
-            ];
-
-            foreach ($components as $component) {
-                $salaryComponent = $component->salary_component;
-                $debugData['components'][] = [
-                    'id' => $component->id,
-                    'salary_component_id' => $component->salary_component_id,
-                    'amount' => $component->amount,
-                    'nature' => $component->nature,
-                    'nature_raw' => $component->getRawOriginal('nature'),
-                    'has_salary_component' => $salaryComponent ? 'yes' : 'no',
-                    'salary_component_title' => $salaryComponent ? $salaryComponent->title : 'null',
-                    'salary_component_nature' => $salaryComponent ? $salaryComponent->nature : 'null',
-                    'group_id' => $salaryComponent ? $salaryComponent->salary_component_group_id : 'null',
-                    'group_title' => $salaryComponent && $salaryComponent->salary_component_group ? $salaryComponent->salary_component_group->title : 'null'
-                ];
-
-                if (!in_array($component->nature, $debugData['natures_found'])) {
-                    $debugData['natures_found'][] = $component->nature;
-                }
-
-                if ($salaryComponent && $salaryComponent->salary_component_group_id && !in_array($salaryComponent->salary_component_group_id, $debugData['group_ids_found'])) {
-                    $debugData['group_ids_found'][] = $salaryComponent->salary_component_group_id;
-                }
-            }
-
-            // Log the debug data
-            \Log::info('Debug Salary Slip Data:', $debugData);
-
-            // Show debug info in toast
-            Flux::toast(
-                variant: 'info',
-                heading: 'Debug Info',
-                text: "Total components: {$debugData['total_components']}, Natures: " . implode(', ', $debugData['natures_found']) . ", Groups: " . count($debugData['group_ids_found']),
-            );
-
-            return $debugData;
-
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Debug Error',
-                text: $e->getMessage(),
-            );
-        }
     }
 
     public function render()

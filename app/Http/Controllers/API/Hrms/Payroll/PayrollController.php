@@ -17,6 +17,8 @@ use App\Models\Hrms\Employee;
 use App\Models\Hrms\PayrollSlot;
 use App\Models\Hrms\PayrollSlotsCmd;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
+use App\Services\SalarySlipService;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PayrollController extends Controller
 {
@@ -515,7 +517,7 @@ class PayrollController extends Controller
                 return response()->json([
                     'message_type' => 'info',
                     'message_display' => 'none',
-                    'message' => 'No payroll slots found for the specified period',
+                    'message' => 'No payroll slots found for the specified period, Please Publish Salary to see slots',
                     'data' => [
                         'salary_execution_groups' => $employee->salary_execution_groups->map(function($group) {
                             return [
@@ -761,6 +763,81 @@ class PayrollController extends Controller
                 'message_display' => 'popup',
                 'message' => 'Server error: ' . $e->getMessage(),
                 'data' => []
+            ], 500);
+        }
+    }
+
+    /**
+     * Download salary slip PDF for an employee and payroll slot
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
+     */
+    public function downloadSalarySlipPdf(Request $request)
+    {
+        $request->validate([
+            'payroll_slot_id' => 'required|integer|exists:payroll_slots,id',
+        ]);
+
+        $user = $request->user();
+        if (!$user) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $employee = $user->employee;
+        if (!$employee) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Employee profile not found'
+            ], 404);
+        }
+
+        $employeeId = $employee->id;
+        $payrollSlotId = $request->input('payroll_slot_id');
+        $firmId = $employee->firm_id;
+
+        try {
+            $service = new \App\Services\SalarySlipService();
+            $data = $service->getSalarySlipData($employeeId, $payrollSlotId, $firmId);
+
+            // Generate filename
+            $employeeName = $data['selectedEmployee']->fname . '_' . $data['selectedEmployee']->lname;
+            $period = $data['rawComponents']->first() ? date('F_Y', strtotime($data['rawComponents']->first()->salary_period_from)) : '';
+            $filename = $employeeName . '_Salary_Slip_' . $period . '_' . uniqid() . '.pdf';
+
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('livewire.hrms.payroll.blades.salary-slip-pdf', $data);
+            $pdf->setPaper('a4');
+
+            // Store PDF in public/documents
+            $publicPath = public_path('documents');
+            if (!file_exists($publicPath)) {
+                mkdir($publicPath, 0777, true);
+            }
+            $pdfPath = $publicPath . DIRECTORY_SEPARATOR . $filename;
+            file_put_contents($pdfPath, $pdf->output());
+
+            // Generate public URL
+            $downloadUrl = asset('documents/' . $filename);
+
+            return response()->json([
+                'message_type' => 'success',
+                'message_display' => 'popup',
+                'message' => 'Salary slip generated successfully.',
+                'data' => [
+                    'download_url' => $downloadUrl,
+                    'filename' => $filename
+                ]
+            ], 200);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Failed to generate salary slip: ' . $e->getMessage(),
             ], 500);
         }
     }

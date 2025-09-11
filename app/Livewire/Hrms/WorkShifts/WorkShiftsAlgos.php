@@ -880,9 +880,74 @@ class WorkShiftsAlgos extends Component
         return $status;
     }
 
+    public function debugAlgorithm($algoId)
+    {
+        try {
+            $algo = WorkShiftsAlgo::findOrFail($algoId);
+            $today = Carbon::today();
+            
+            $debugInfo = [
+                'algo_id' => $algoId,
+                'work_shift_id' => $algo->work_shift_id,
+                'start_date' => $algo->start_date,
+                'end_date' => $algo->end_date,
+                'start_time' => $algo->start_time,
+                'end_time' => $algo->end_time,
+                'today' => $today->format('Y-m-d'),
+                'is_today_in_range' => $today->between($algo->start_date, $algo->end_date),
+                'days_until_start' => $today->diffInDays($algo->start_date, false),
+                'days_until_end' => $today->diffInDays($algo->end_date, false),
+                'week_off_pattern' => $algo->week_off_pattern,
+                'is_inactive' => $algo->is_inactive
+            ];
+            
+            // Check if there are any existing WorkShiftDay records
+            $existingDays = \App\Models\Hrms\WorkShiftDay::where('work_shift_id', $algo->work_shift_id)
+                ->where('firm_id', session('firm_id'))
+                ->count();
+            
+            $debugInfo['existing_work_shift_days'] = $existingDays;
+            
+            // Check employee assignments
+            $assignedEmployees = \App\Models\Hrms\EmpWorkShift::where('work_shift_id', $algo->work_shift_id)
+                ->where('firm_id', session('firm_id'))
+                ->get();
+            
+            $debugInfo['assigned_employees'] = $assignedEmployees->map(function($emp) {
+                return [
+                    'employee_id' => $emp->employee_id,
+                    'start_date' => $emp->start_date,
+                    'end_date' => $emp->end_date,
+                    'is_active_today' => Carbon::today()->between($emp->start_date, $emp->end_date ?? Carbon::now()->addYears(10))
+                ];
+            })->toArray();
+            
+            \Log::info("Algorithm Debug Info", $debugInfo);
+            
+            Flux::toast(
+                variant: 'info',
+                heading: 'Debug Info',
+                text: 'Check browser console and server logs for algorithm debug information.',
+            );
+            
+            // Also show in browser console
+            $this->dispatch('console-log', ['Algorithm Debug:', $debugInfo]);
+            
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Debug Failed',
+                text: 'Failed to debug algorithm: ' . $e->getMessage(),
+            );
+        }
+    }
+
     public function syncWorkShiftDays($algoId)
     {
         try {
+            // Before syncing, rollback any previous sync batch for this specific algo (idempotent re-sync)
+            $this->rollbackSyncForAlgo($algoId);
+
             DB::beginTransaction();
 
             $algo = WorkShiftsAlgo::findOrFail($algoId);
@@ -890,6 +955,16 @@ class WorkShiftsAlgos extends Component
             // Validate required fields
             if (!$algo->start_date || !$algo->end_date || !$algo->start_time || !$algo->end_time) {
                 throw new \Exception('Start date, end date, start time and end time are required.');
+            }
+
+            // Validate that algorithm dates are valid
+            $today = Carbon::today();
+            if ($today->lt($algo->start_date)) {
+                throw new \Exception('Algorithm start date (' . $algo->start_date->format('Y-m-d') . ') is in the future. Cannot sync until start date.');
+            }
+            
+            if ($today->gt($algo->end_date)) {
+                throw new \Exception('Algorithm end date (' . $algo->end_date->format('Y-m-d') . ') is in the past. Cannot sync expired algorithms.');
             }
 
             // Check for overlapping algorithms for the same work shift
@@ -946,8 +1021,27 @@ class WorkShiftsAlgos extends Component
                 ->with('employee')
                 ->get();
 
+            // DEBUG: Log the sync details
+            \Log::info("WorkShift Sync Debug", [
+                'algo_id' => $algoId,
+                'algo_work_shift_id' => $algo->work_shift_id,
+                'algo_start_date' => $algo->start_date,
+                'algo_end_date' => $algo->end_date,
+                'assigned_employees_count' => $assignedEmployees->count(),
+                'assigned_employees' => $assignedEmployees->map(function($emp) {
+                    return [
+                        'employee_id' => $emp->employee_id,
+                        'work_shift_id' => $emp->work_shift_id,
+                        'start_date' => $emp->start_date,
+                        'end_date' => $emp->end_date
+                    ];
+                })->toArray()
+            ]);
+
             // Generate days
             $period = CarbonPeriod::create($algo->start_date, $algo->end_date);
+            $daysCreated = 0;
+            $daysSkipped = 0;
 
             foreach ($period as $date) {
                 // Check if a WorkShiftDay already exists for this work_shift_id and date
@@ -955,9 +1049,10 @@ class WorkShiftsAlgos extends Component
                     ->whereDate('work_date', $date)
                     ->first();
                 if ($existingDay) {
-                    // Skip this day, do not overwrite
-                    continue;
+                    $daysSkipped++;
+                    continue; // Skip this day, do not overwrite
                 }
+                
                 $dayStatus = $this->getDayStatus($date, $weekOffPattern, $algo->holiday_calendar_id);
 
                 $workShiftDay = new WorkShiftDay([
@@ -971,6 +1066,7 @@ class WorkShiftsAlgos extends Component
                 ]);
 
                 $workShiftDay->save();
+                $daysCreated++;
 
                 $batch->items()->create([
                     'operation' => 'insert',
@@ -979,57 +1075,66 @@ class WorkShiftsAlgos extends Component
                     'new_data' => json_encode($workShiftDay->getAttributes())
                 ]);
 
-                // Create EmpAttendance entries for week off days and holidays
-                if (in_array($dayStatus['day_status_main'], ['W', 'H'])) {
-                    foreach ($assignedEmployees as $empWorkShift) {
-                        // Check if employee assignment is active for this date
-                        $isEmployeeActive = true;
-                        if ($empWorkShift->start_date && $empWorkShift->start_date > $date) {
-                            $isEmployeeActive = false;
-                        }
-                        if ($empWorkShift->end_date && $empWorkShift->end_date < $date) {
-                            $isEmployeeActive = false;
-                        }
-
-                        if (!$isEmployeeActive) {
-                            continue;
-                        }
-
-                        // Check if attendance already exists for this employee and date
-                        $existingAttendance = \App\Models\Hrms\EmpAttendance::where([
-                            'employee_id' => $empWorkShift->employee_id,
-                            'work_date' => $date->format('Y-m-d'),
-                        ])->first();
-
-                        if ($existingAttendance) {
-                            // Skip if attendance already exists
-                            continue;
-                        }
-
-                        // Create attendance record for week off/holiday
-                        $empAttendance = new \App\Models\Hrms\EmpAttendance([
-                            'firm_id' => session('firm_id'),
-                            'employee_id' => $empWorkShift->employee_id,
-                            'work_date' => $date->format('Y-m-d'),
-                            'work_shift_day_id' => $workShiftDay->id,
-                            'attendance_status_main' => $dayStatus['day_status_main'], // 'W' for Week Off, 'H' for Holiday
-                            'ideal_working_hours' => 0, // No working hours for week off/holiday
-                            'actual_worked_hours' => 0, // No actual hours for week off/holiday
-                            'final_day_weightage' => $dayStatus['paid_percent'] / 100, // Convert percentage to decimal
-                            'attend_remarks' => $dayStatus['day_status_main'] === 'W' ? 'Week Off' : 'Holiday'
-                        ]);
-
-                        $empAttendance->save();
-
-                        $batch->items()->create([
-                            'operation' => 'insert',
-                            'model_type' => get_class($empAttendance),
-                            'model_id' => $empAttendance->id,
-                            'new_data' => json_encode($empAttendance->getAttributes())
-                        ]);
+                // Create EmpAttendance entries for every assigned employee
+                foreach ($assignedEmployees as $empWorkShift) {
+                    // Check if employee assignment is active for this date
+                    $isEmployeeActive = true;
+                    if ($empWorkShift->start_date && $empWorkShift->start_date > $date) {
+                        $isEmployeeActive = false;
                     }
+                    if ($empWorkShift->end_date && $empWorkShift->end_date < $date) {
+                        $isEmployeeActive = false;
+                    }
+
+                    if (!$isEmployeeActive) {
+                        continue;
+                    }
+
+                    // Skip if an attendance already exists for this employee and date
+                    $existingAttendance = \App\Models\Hrms\EmpAttendance::where([
+                        'employee_id' => $empWorkShift->employee_id,
+                        'work_date' => $date->format('Y-m-d'),
+                    ])->first();
+
+                    if ($existingAttendance) {
+                        continue;
+                    }
+
+                    // Create attendance record:
+                    // - For Week Off / Holiday: status 'W'/'H', weightage from day status
+                    // - For working day: placeholder with null status and zeroes
+                    $isOffDay = in_array($dayStatus['day_status_main'], ['W', 'H']);
+
+                    $empAttendance = new \App\Models\Hrms\EmpAttendance([
+                        'firm_id' => session('firm_id'),
+                        'employee_id' => $empWorkShift->employee_id,
+                        'work_date' => $date->format('Y-m-d'),
+                        'work_shift_day_id' => $workShiftDay->id,
+                        'attendance_status_main' => $isOffDay ? $dayStatus['day_status_main'] : null,
+                        'ideal_working_hours' => 0,
+                        'actual_worked_hours' => 0,
+                        'final_day_weightage' => $isOffDay ? ($dayStatus['paid_percent'] / 100) : 0,
+                        'attend_remarks' => $isOffDay ? ($dayStatus['day_status_main'] === 'W' ? 'Week Off' : 'Holiday') : null,
+                    ]);
+
+                    $empAttendance->save();
+
+                    $batch->items()->create([
+                        'operation' => 'insert',
+                        'model_type' => get_class($empAttendance),
+                        'model_id' => $empAttendance->id,
+                        'new_data' => json_encode($empAttendance->getAttributes())
+                    ]);
                 }
             }
+
+            // DEBUG: Log the results
+            \Log::info("WorkShift Sync Results", [
+                'algo_id' => $algoId,
+                'days_created' => $daysCreated,
+                'days_skipped' => $daysSkipped,
+                'total_period_days' => $period->count()
+            ]);
 
             DB::commit();
 
@@ -1038,11 +1143,17 @@ class WorkShiftsAlgos extends Component
             Flux::toast(
                 variant: 'success',
                 heading: 'Sync Complete',
-                text: 'Work shift days and employee attendance records have been generated successfully.',
+                text: "Work shift days and employee attendance records have been generated successfully. Created: {$daysCreated} days, Skipped: {$daysSkipped} days.",
             );
 
         } catch (\Exception $e) {
             DB::rollBack();
+
+            \Log::error("WorkShift Sync Failed", [
+                'algo_id' => $algoId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
             Flux::toast(
                 variant: 'error',
@@ -1052,12 +1163,73 @@ class WorkShiftsAlgos extends Component
         }
     }
 
+    /**
+     * Silently rollback the last sync batch for a specific algo without UI toasts.
+     * Safe to call before a new sync to ensure idempotent regeneration.
+     */
+    private function rollbackSyncForAlgo($algoId): void
+    {
+        // Find the latest sync batch for this specific algo by its batch title
+        $batchTitle = "Sync Work Shift Days for Algo #{$algoId}";
+        $batch = Batch::where('modulecomponent', 'work_shifts_algo')
+            ->where('action', 'sync_days')
+            ->where('title', $batchTitle)
+            ->latest()
+            ->first();
+
+        if (!$batch) {
+            return; // Nothing to rollback for this algo
+        }
+
+        DB::transaction(function () use ($batch) {
+            $createdWorkShiftDayIds = $batch->items()
+                ->where('operation', 'insert')
+                ->where('model_type', WorkShiftDay::class)
+                ->pluck('model_id')
+                ->toArray();
+
+            $createdEmpAttendanceIds = $batch->items()
+                ->where('operation', 'insert')
+                ->where('model_type', \App\Models\Hrms\EmpAttendance::class)
+                ->pluck('model_id')
+                ->toArray();
+
+            if (!empty($createdEmpAttendanceIds)) {
+                // Delete off-day attendances and untouched placeholders created by this batch
+                \App\Models\Hrms\EmpAttendance::whereIn('id', $createdEmpAttendanceIds)
+                    ->where(function ($q) {
+                        $q->whereIn('attendance_status_main', ['W', 'H'])
+                          ->orWhereNull('attendance_status_main'); // placeholder rows
+                    })
+                    ->forceDelete();
+            }
+
+            if (!empty($createdWorkShiftDayIds)) {
+                $toDelete = \App\Models\Hrms\WorkShiftDay::whereIn('id', $createdWorkShiftDayIds)
+                    ->whereDoesntHave('emp_attendances')
+                    ->pluck('id')
+                    ->toArray();
+                if (!empty($toDelete)) {
+                    \App\Models\Hrms\WorkShiftDay::whereIn('id', $toDelete)->forceDelete();
+                }
+            }
+
+            // Mark batch as rolled back
+            $batch->update(['action' => 'sync_days_rolled_back']);
+        });
+
+        // Update cached statuses to reflect rollback
+        $this->loadBatchStatuses();
+    }
+
     public function rollbackSync($algoId)
     {
         try {
-            // Find the latest sync batch for this algo
+            // Find the latest sync batch for this specific algo by its batch title
+            $batchTitle = "Sync Work Shift Days for Algo #{$algoId}";
             $batch = Batch::where('modulecomponent', 'work_shifts_algo')
                 ->where('action', 'sync_days')
+                ->where('title', $batchTitle)
                 ->latest()
                 ->first();
 
@@ -1076,12 +1248,18 @@ class WorkShiftsAlgos extends Component
                 $createdEmpAttendanceIds = $batch->items()
                     ->where('operation', 'insert')
                     ->where('model_type', \App\Models\Hrms\EmpAttendance::class)
+                    
                     ->pluck('model_id')
                     ->toArray();
 
                 // Delete EmpAttendance records that were created during this sync
                 if (!empty($createdEmpAttendanceIds)) {
-                    \App\Models\Hrms\EmpAttendance::whereIn('id', $createdEmpAttendanceIds)->forceDelete();
+                    \App\Models\Hrms\EmpAttendance::whereIn('id', $createdEmpAttendanceIds)
+                        ->where(function ($q) {
+                            $q->whereIn('attendance_status_main', ['W', 'H'])
+                              ->orWhereNull('attendance_status_main'); // placeholder rows
+                        })
+                        ->forceDelete();
                 }
 
                 // Delete WorkShiftDay records that do NOT have any remaining EmpAttendance records

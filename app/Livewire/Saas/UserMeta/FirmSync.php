@@ -38,15 +38,24 @@ class FirmSync extends Component
 
     protected function initListsForFields(): void
     {
-        // For L1_firm users, show only their assigned firms
+        // Exclude the firm in which the user is an employee
+        $employeeFirmId = $this->user->employee ? $this->user->employee->firm_id : null;
         if ($this->user->role_main === 'L1_firm') {
-            $this->listsForFields['firmlist'] = $this->user->firms()
+            $firmsQuery = $this->user->firms();
+            if ($employeeFirmId) {
+                $firmsQuery->where('firms.id', '!=', $employeeFirmId);
+            }
+            $this->listsForFields['firmlist'] = $firmsQuery
                 ->orderBy('firms.name')
                 ->pluck('firms.name', 'firms.id')
                 ->toArray();
         } else {
-            // For other roles (like admins), show all firms
-            $this->listsForFields['firmlist'] = Firm::orderBy('name')
+            $firmsQuery = Firm::query();
+            if ($employeeFirmId) {
+                $firmsQuery->where('id', '!=', $employeeFirmId);
+            }
+            $this->listsForFields['firmlist'] = $firmsQuery
+                ->orderBy('name')
                 ->pluck('name', 'id')
                 ->toArray();
         }

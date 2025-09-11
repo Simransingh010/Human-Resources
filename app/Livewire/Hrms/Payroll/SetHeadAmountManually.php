@@ -31,6 +31,9 @@ class SetHeadAmountManually extends Component
     public $salary_execution_group_id;
     public $slot;
     public $payroll_slots_cmd_id;
+    public $assignedMatrix = []; // [employee_id][component_id] = true/false
+
+    public $searchName = '';
 
     public function mount($payrollSlotId)
     {
@@ -45,7 +48,7 @@ class SetHeadAmountManually extends Component
         $this->salcomponentEmployees = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
             ->where('amount_type', 'static_unknown')
             ->whereIn('employee_id', $employeeIds)
-            ->with(['salary_component', 'employee'])
+            ->with(['salary_component', 'employee.emp_job_profile'])
             ->get()
             ->groupBy('employee_id')
             ->map(function ($group) {
@@ -59,12 +62,24 @@ class SetHeadAmountManually extends Component
                 ->whereIn('employee_id', $employeeIds);
         })->get();
 
-        // Initialize all to empty string
+        // Initialize all to empty string and assigned matrix
         foreach ($this->salcomponentEmployees as $salcomponentEmployee) {
             foreach ($this->salcomponents as $salcomponent) {
                 $this->entries[$salcomponentEmployee->id][$salcomponent->id] = '';
                 $this->componentRemarks[$salcomponentEmployee->id][$salcomponent->id] = '';
+                $this->assignedMatrix[$salcomponentEmployee->id][$salcomponent->id] = false;
             }
+        }
+
+        // Build assignment matrix based on existing assignments
+        $assignments = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
+            ->where('amount_type', 'static_unknown')
+            ->whereIn('employee_id', $employeeIds)
+            ->whereIn('salary_component_id', $this->salcomponents->pluck('id'))
+            ->get();
+
+        foreach ($assignments as $assn) {
+            $this->assignedMatrix[$assn->employee_id][$assn->salary_component_id] = true;
         }
 
         // Load previously saved entries and remarks from payroll_components_employees_tracks
@@ -89,44 +104,115 @@ class SetHeadAmountManually extends Component
         $this->payroll_slots_cmd_id = $payroll_slots_cmd_rec->id;
     }
 
+    public function getFilteredSalcomponentEmployeesProperty()
+    {
+        if (empty(trim($this->searchName))) {
+            return $this->salcomponentEmployees;
+        }
+
+        return $this->salcomponentEmployees->filter(function ($employee) {
+            $fullName = trim($employee->fname . ' ' . ($employee->mname ?? '') . ' ' . $employee->lname);
+            $employeeCode = optional($employee->emp_job_profile)->employee_code;
+            $query = strtolower(trim($this->searchName));
+            return str_contains(strtolower($fullName), $query) || ($employeeCode && str_contains(strtolower($employeeCode), $query));
+        });
+    }
+
     public function saveSingleEntry($employeeId, $componentId, $value)
     {
+        // Guard: component must be assigned to the employee
+        $isAssigned = $this->assignedMatrix[$employeeId][$componentId] ?? false;
+        if (!$isAssigned) {
+
+            Flux::toast(
+                variant: 'error',
+                heading: 'Not assigned',
+                text: 'This head is not assigned to the employee. Please assign it first.'
+            );
+            return;
+        }
+
         $this->entries[$employeeId][$componentId] = $value;
-        $amount = is_numeric($value) ? (float)$value : 0;
+        if ($value === '' || $value === null) {
+            $amount = 0;
+        } else {
+            if (!is_numeric($value)) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Invalid amount',
+                    text: 'Please enter a numeric amount.'
+                );
+                return;
+            }
+            $amount = (float)$value;
+        }
         $salcomponentEmployeesDet = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
             ->where('salary_component_id', $componentId)
             ->where('employee_id', $employeeId)
             ->first();
 
-        PayrollComponentsEmployeesTrack::updateOrCreate(
-            [
-                'payroll_slot_id' => $this->slot->id,
-                'employee_id' => $employeeId,
-                'salary_component_id' => $componentId,
-                'salary_period_from' => $this->slot->from_date,
-                'salary_period_to' => $this->slot->to_date,
-            ],
-            [
-                'payroll_slots_cmd_id' => $this->payroll_slots_cmd_id,
-                'salary_template_id' => $salcomponentEmployeesDet->salary_template_id,
-                'salary_component_group_id' => $salcomponentEmployeesDet->salary_component_group_id,
-                'amount_full' => $amount,
-                'amount_payable' => $amount,
-                'amount_paid' => 0,
-                'firm_id' => $this->slot->firm_id,
-                'nature' => $salcomponentEmployeesDet->nature,
-                'component_type' => $salcomponentEmployeesDet->component_type,
-                'amount_type' => $salcomponentEmployeesDet->amount_type,
-                'sequence' => $salcomponentEmployeesDet->sequence,
-                'taxable' => $salcomponentEmployeesDet->taxable,
-                'calculation_json' => $salcomponentEmployeesDet->calculation_json,
-                'salary_advance_id' => NULL,
-                'salary_arrear_id' => NULL,
-                'user_id' => auth()->user()->id,
-                'salary_cycle_id' => $this->slot->salary_cycle_id,
-                'remarks' => $this->componentRemarks[$employeeId][$componentId] ?? null
-            ]
-        );
+        if (!$salcomponentEmployeesDet) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Missing assignment',
+                text: 'Component is not assigned to this employee.'
+            );
+            return;
+        }
+
+        try {
+            PayrollComponentsEmployeesTrack::updateOrCreate(
+                [
+                    'payroll_slot_id' => $this->slot->id,
+                    'employee_id' => $employeeId,
+                    'salary_component_id' => $componentId,
+                    'salary_period_from' => $this->slot->from_date,
+                    'salary_period_to' => $this->slot->to_date,
+                ],
+                [
+                    'payroll_slots_cmd_id' => $this->payroll_slots_cmd_id,
+                    'salary_template_id' => $salcomponentEmployeesDet->salary_template_id,
+                    'salary_component_group_id' => $salcomponentEmployeesDet->salary_component_group_id,
+                    'amount_full' => $amount,
+                    'amount_payable' => $amount,
+                    'amount_paid' => 0,
+                    'firm_id' => $this->slot->firm_id,
+                    'nature' => $salcomponentEmployeesDet->nature,
+                    'component_type' => $salcomponentEmployeesDet->component_type,
+                    'amount_type' => $salcomponentEmployeesDet->amount_type,
+                    'sequence' => $salcomponentEmployeesDet->sequence,
+                    'taxable' => $salcomponentEmployeesDet->taxable,
+                    'calculation_json' => $salcomponentEmployeesDet->calculation_json,
+                    'salary_advance_id' => NULL,
+                    'salary_arrear_id' => NULL,
+                    'user_id' => auth()->user()->id,
+                    'salary_cycle_id' => $this->slot->salary_cycle_id,
+                    'remarks' => $this->componentRemarks[$employeeId][$componentId] ?? null,
+                    'entry_type' => 'override'
+                ]
+            );
+
+            $employee = $this->salcomponentEmployees->firstWhere('id', $employeeId);
+            $component = $this->salcomponents->firstWhere('id', $componentId);
+            $employeeName = $employee ? trim(($employee->fname ?? '') . ' ' . ($employee->mname ?? '') . ' ' . ($employee->lname ?? '')) : (string) $employeeId;
+            $employeeCode = $employee && $employee->emp_job_profile ? $employee->emp_job_profile->employee_code : null;
+            if ($employeeCode) {
+                $employeeName .= ' (' . $employeeCode . ')';
+            }
+            $componentName = $component ? ($component->title . (isset($component->nature) ? ' [' . $component->nature . ']' : '')) : (string) $componentId;
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Saved',
+                text: $employeeName . ' — ' . $componentName . ': ' . number_format((float) $amount, 2)
+            );
+        } catch (\Throwable $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error saving entry',
+                text: $e->getMessage()
+            );
+        }
     }
 
     public function saveRemarks($employeeId, $componentId)

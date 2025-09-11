@@ -33,6 +33,7 @@ class SalaryArrears extends Component
     public $remarks = '';
     public $isEditing = false;
     public $editingId = null;
+    public $arrearItems = [];
 
     // Field configuration for form and table
     public array $fieldConfig = [
@@ -144,6 +145,9 @@ class SalaryArrears extends Component
         $this->reset(['selectedEmployee', 'salary_component_id', 'effective_from', 'effective_to', 'total_amount', 'paid_amount', 'installments', 'installment_amount', 'arrear_status', 'disburse_wef_payroll_slot_id', 'additional_rule', 'remarks']);
         $this->isEditing = false;
         $this->editingId = null;
+        $this->arrearItems = [
+            ['salary_component_id' => '', 'amount' => null]
+        ];
         $this->modal('mdl-salary-arrear')->show();
     }
 
@@ -152,6 +156,7 @@ class SalaryArrears extends Component
         $this->reset(['selectedEmployee', 'salary_component_id', 'effective_from', 'effective_to', 'total_amount', 'paid_amount', 'installments', 'installment_amount', 'arrear_status', 'disburse_wef_payroll_slot_id', 'additional_rule', 'remarks']);
         $this->isEditing = false;
         $this->editingId = null;
+        $this->arrearItems = [];
         $this->modal('mdl-salary-arrear')->close();
     }
 
@@ -208,22 +213,68 @@ class SalaryArrears extends Component
         }
     }
 
+    public function availableComponents(int $currentIndex): array
+    {
+        $allComponents = $this->listsForFields['components'] ?? [];
+        $selectedComponentIds = collect($this->arrearItems)
+            ->pluck('salary_component_id')
+            ->filter()
+            ->values()
+            ->toArray();
+
+        $currentSelected = $this->arrearItems[$currentIndex]['salary_component_id'] ?? null;
+        $selectedOtherRows = array_values(array_filter(
+            $selectedComponentIds,
+            fn($id) => (string)$id !== (string)$currentSelected
+        ));
+
+        // Filter out components chosen in other rows
+        return array_filter(
+            $allComponents,
+            function ($title, $id) use ($selectedOtherRows) {
+                return !in_array((string)$id, array_map('strval', $selectedOtherRows), true);
+            },
+            ARRAY_FILTER_USE_BOTH
+        );
+    }
+
+    public function addArrearItem()
+    {
+        $this->arrearItems[] = ['salary_component_id' => '', 'amount' => null];
+    }
+
+    public function removeArrearItem($index)
+    {
+        if (isset($this->arrearItems[$index])) {
+            unset($this->arrearItems[$index]);
+            $this->arrearItems = array_values($this->arrearItems);
+        }
+    }
+
     public function saveArrear()
     {
         try {
             $this->validate([
                 'selectedEmployee' => 'required|exists:employees,id',
-                'salary_component_id' => 'required|exists:salary_components,id',
                 'effective_from' => 'required|date',
                 'effective_to' => 'required|date|after_or_equal:effective_from',
-                'total_amount' => 'required|numeric|min:1',
                 'paid_amount' => 'nullable|numeric|min:0',
                 'installments' => 'required|integer|min:1',
                 'arrear_status' => 'required|string',
-                'disburse_wef_payroll_slot_id' => 'nullable|exists:payroll_slots,id',
+                'disburse_wef_payroll_slot_id' => 'nullable|integer',
                 'additional_rule' => 'nullable|string',
                 'remarks' => 'nullable|string|max:1000',
+                'arrearItems' => 'required|array|min:1',
+                'arrearItems.*.salary_component_id' => 'required|exists:salary_components,id',
+                'arrearItems.*.amount' => 'required|numeric|min:1',
             ]);
+            // Ensure components are unique per submission
+            $componentIds = array_map(fn($i) => $i['salary_component_id'], $this->arrearItems);
+            if (count($componentIds) !== count(array_unique($componentIds))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'arrearItems' => ['Duplicate components are not allowed.']
+                ]);
+            }
         } catch (\Illuminate\Validation\ValidationException $e) {
             $messages = collect($e->validator->errors()->all())->implode("<br>");
             Flux::toast(
@@ -235,32 +286,36 @@ class SalaryArrears extends Component
         }
 
         try {
-            SalaryArrear::create([
-                'firm_id' => Session::get('firm_id'),
-                'employee_id' => $this->selectedEmployee,
-                'salary_component_id' => $this->salary_component_id,
-                'effective_from' => $this->effective_from,
-                'effective_to' => $this->effective_to,
-                'total_amount' => $this->total_amount,
-                'paid_amount' => 0,
-                'installments' => $this->installments,
-                'installment_amount' => $this->installment_amount,
-                'arrear_status' => $this->arrear_status ?? 'pending',
-                'disburse_wef_payroll_slot_id' => $this->disburse_wef_payroll_slot_id,
-                'additional_rule' => $this->additional_rule,
-                'remarks' => $this->remarks,
-            ]);
+            foreach ($this->arrearItems as $item) {
+                $amount = $item['amount'];
+                $perInstallment = $this->installments > 0 ? round($amount / $this->installments, 2) : null;
+                SalaryArrear::create([
+                    'firm_id' => Session::get('firm_id'),
+                    'employee_id' => $this->selectedEmployee,
+                    'salary_component_id' => $item['salary_component_id'],
+                    'effective_from' => $this->effective_from,
+                    'effective_to' => $this->effective_to,
+                    'total_amount' => $amount,
+                    'paid_amount' => 0,
+                    'installments' => $this->installments,
+                    'installment_amount' => $perInstallment,
+                    'arrear_status' => $this->arrear_status ?? 'pending',
+                    'disburse_wef_payroll_slot_id' => $this->disburse_wef_payroll_slot_id,
+                    'additional_rule' => $this->additional_rule,
+                    'remarks' => $this->remarks,
+                ]);
+            }
             Flux::toast(
                 variant: 'success',
                 heading: 'Success',
-                text: 'Salary arrear created successfully.',
+                text: 'Salary arrears created successfully.',
             );
             $this->closeArrearModal();
         } catch (\Exception $e) {
             Flux::toast(
                 variant: 'error',
                 heading: 'Error',
-                text: 'Failed to create salary arrear: ' . $e->getMessage(),
+                text: 'Failed to create salary arrears: ' . $e->getMessage(),
             );
         }
     }

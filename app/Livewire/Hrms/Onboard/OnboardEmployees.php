@@ -9,6 +9,7 @@ use App\Models\Hrms\Employee;
 use Flux;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\On;
+use Illuminate\Support\Facades\DB;
 
 class OnboardEmployees extends Component
 {
@@ -148,81 +149,138 @@ class OnboardEmployees extends Component
 
     public function saveEmployee()
     {
-        $employee = $this->employeeData['id']
-            ? Employee::findOrFail($this->employeeData['id'])
-            : null;
+        try {
+            $employee = $this->employeeData['id']
+                ? Employee::findOrFail($this->employeeData['id'])
+                : null;
 
-        // Figure out which user ID to ignore (null for new)
-        $ignoreUserId = $employee
-            ? optional($employee->user)->id
-            : null;
+            // Figure out which user ID to ignore (null for new)
+            $ignoreUserId = $employee
+                ? optional($employee->user)->id
+                : null;
 
-        $this->validate([
-            'employeeData.fname'     => 'required|string|max:255',
-            'employeeData.mname'     => 'nullable|string|max:255',
-            'employeeData.lname'     => 'nullable|string|max:255',
-            'employeeData.email'     => [
-                'required','email',
-                Rule::unique('users','email')->ignore($ignoreUserId, 'id'),
-            ],
-            'employeeData.phone'     => 'required|string|max:20',
-            'employeeData.gender'    => 'required|in:1,2,3',
-        ]);
-        
-        if ($this->employeeData['id']) {
-            // Update existing employee
-            $employee = Employee::findOrFail($this->employeeData['id']);
-            $employee->update($this->employeeData);
+            // Validate uniqueness for employees within the same firm
+            $firmId = $this->employeeData['firm_id'] ?? session('firm_id');
+            $employeeId = $this->employeeData['id'] ?? null;
 
-            if ($employee->user) {
-                $updates = [];
-                $newName = trim($this->employeeData['fname'] . " " . $this->employeeData['lname']);
-        
-                if ($employee->user->email !== $this->employeeData['email']) {
-                    $updates['email'] = $this->employeeData['email'];
-                }
-        
-                if ($employee->user->phone !== $this->employeeData['phone']) {
-                    $updates['phone'] = $this->employeeData['phone'];
-                }
-        
-                if ($employee->user->name !== $newName) {
-                    $updates['name'] = $newName;
-                }
-        
-                if (!empty($updates)) {
-                    $employee->user->update($updates);
-                }
+            $phoneExists = Employee::where('firm_id', $firmId)
+                ->where('phone', $this->employeeData['phone'])
+                ->when($employeeId, function ($q) use ($employeeId) {
+                    $q->where('id', '!=', $employeeId);
+                })
+                ->exists();
+            if ($phoneExists) {
+                Flux::toast(
+                    heading: 'Duplicate Phone',
+                    text: 'An employee with this phone number already exists in this firm.',
+                    variant: 'error'
+                );
+                return;
             }
-            
-            $toast = 'Employee updated successfully.';
-        } else {
-            // Create new employee
-            $this->employeeData['firm_id'] = session('firm_id');
-            $employee = Employee::create($this->employeeData);
+            $emailExists = Employee::where('firm_id', $firmId)
+                ->where('email', $this->employeeData['email'])
+                ->when($employeeId, function ($q) use ($employeeId) {
+                    $q->where('id', '!=', $employeeId);
+                })
+                ->exists();
+            if ($emailExists) {
+                Flux::toast(
+                    heading: 'Duplicate Email',
+                    text: 'An employee with this email already exists in this firm.',
+                    variant: 'error'
+                );
+                return;
+            }
 
-            // Create user account
-            $this->createUserAccount($employee);
+            $this->validate([
+                'employeeData.fname'     => 'required|string|max:255',
+                'employeeData.mname'     => 'nullable|string|max:255',
+                'employeeData.lname'     => 'nullable|string|max:255',
+                'employeeData.email'     => [
+                    'required','email',
+                    Rule::unique('users','email')->ignore($ignoreUserId, 'id'),
+                ],
+                'employeeData.phone'     => 'required|string|max:20',
+                'employeeData.gender'    => 'required|in:1,2,3',
+            ]);
 
-            $this->selectedEmpId = $employee->id;
-            $this->employeeData['id'] = $employee->id;
-            $toast = 'Employee added successfully.';
+            DB::beginTransaction();
+            try {
+                if ($this->employeeData['id']) {
+                    // Update existing employee
+                    $employee = Employee::findOrFail($this->employeeData['id']);
+                    $employee->update($this->employeeData);
+
+                    if ($employee->user) {
+                        $updates = [];
+                        $newName = trim($this->employeeData['fname'] . " " . $this->employeeData['lname']);
+
+                        if ($employee->user->email !== $this->employeeData['email']) {
+                            // Check if email is unique in users table
+                            if (User::where('email', $this->employeeData['email'])->where('id', '!=', $employee->user->id)->exists()) {
+                                throw new \Exception('A user with this email already exists.');
+                            }
+                            $updates['email'] = $this->employeeData['email'];
+                        }
+                        if ($employee->user->phone !== $this->employeeData['phone']) {
+                            // Check if phone is unique in users table
+                            if (User::where('phone', $this->employeeData['phone'])->where('id', '!=', $employee->user->id)->exists()) {
+                                throw new \Exception('A user with this phone already exists.');
+                            }
+                            $updates['phone'] = $this->employeeData['phone'];
+                        }
+                        if ($employee->user->name !== $newName) {
+                            $updates['name'] = $newName;
+                        }
+                        if (!empty($updates)) {
+                            $employee->user->update($updates);
+                        }
+                    }
+                    $toast = 'Employee updated successfully.';
+                } else {
+                    // Create new employee
+                    $this->employeeData['firm_id'] = $firmId;
+                    $employee = Employee::create($this->employeeData);
+
+                    // Create user account
+                    $this->createUserAccount($employee);
+
+                    $this->selectedEmpId = $employee->id;
+                    $this->employeeData['id'] = $employee->id;
+                    $toast = 'Employee added successfully.';
+                }
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                Flux::toast(
+                    heading: 'Error',
+                    text: $e->getMessage(),
+                    variant: 'error'
+                );
+                return;
+            }
+
+            // Mark step 1 as completed
+            $this->handleStepCompleted(1);
+
+            // Emit events to refresh parent components
+            $this->dispatch('employee-updated', employeeId: $employee->id);
+            $this->dispatch('employee-saved');
+
+            Flux::toast(
+                heading: 'Changes saved',
+                text: $toast,
+            );
+
+            // Close the modal
+            $this->dispatch('close-modal', 'edit-employee');
+        } catch (\Throwable $e) {
+            Flux::toast(
+                heading: 'Error',
+                text: $e->getMessage(),
+                variant: 'error'
+            );
         }
-
-        // Mark step 1 as completed
-        $this->handleStepCompleted(1);
-
-        // Emit events to refresh parent components
-        $this->dispatch('employee-updated', employeeId: $employee->id);
-        $this->dispatch('employee-saved');
-
-        Flux::toast(
-            heading: 'Changes saved',
-            text: $toast,
-        );
-        
-        // Close the modal
-        $this->dispatch('close-modal', 'edit-employee');
     }
 
     protected function createUserAccount($employee)

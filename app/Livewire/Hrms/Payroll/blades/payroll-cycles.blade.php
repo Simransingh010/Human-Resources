@@ -10,7 +10,11 @@
 
     <flux:card class="">
         <div class="flex gap-2">
-            <div class="px-4 w-[448px]">
+            <div class="px-4 w-[448px] relative">
+                <!-- Loading Spinner for Cycle Selection -->
+                <div wire:loading.flex wire:target="selectedCycleId" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur rounded">
+                    <flux:icon.loading class="w-6 h-6 text-blue-500 animate-spin" />
+                </div>
                 <flux:select wire:model.live="selectedCycleId" label="Select Payroll Cycle" id="industry"
                              name="industry"
                              class="">
@@ -48,12 +52,20 @@
                 </button>
 
                 <!-- Scrollable Slots -->
-                <div x-ref="slotScroll" class="flex overflow-x-auto space-x-4 py-2 scrollbar-hide"
+                <div x-ref="slotScroll" class="flex overflow-x-auto space-x-4 py-2 scrollbar-hide relative"
                      style="scroll-behavior: smooth;">
+                    <!-- Loading Spinner Overlay -->
+                    <div wire:loading.flex wire:target="loadPayrollSlots" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur">
+                        <flux:icon.loading class="w-8 h-8 text-blue-500 animate-spin" />
+                    </div>
                     @forelse($payrollSlots as $slot)
                         <div wire:click="loadSlotDetails({{$slot->id}})"
-                             class="border cursor-btn flex-shrink-0 min-w-[160px] p-2 rounded-lg text-center
+                             class="border cursor-btn flex-shrink-0 min-w-[160px] p-2 rounded-lg text-center relative
                                                                @if($slot->payroll_slot_status == 'ST') bg-yellow-400/25 @elseif($slot->payroll_slot_status == 'CM') bg-green-400/20 @else bg-red-400/20 @endif">
+                            <!-- Loading Spinner for Individual Slot -->
+                            <div wire:loading.flex wire:target="loadSlotDetails({{$slot->id}})" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur rounded-lg">
+                                <flux:icon.loading class="w-6 h-6 text-blue-500 animate-spin" />
+                            </div>
                             <div class="">
                                 {{-- {{ \Carbon\Carbon::parse($slot->from_date)->format('M Y') }}--}}
                                 {{ $slot->title }}
@@ -93,8 +105,20 @@
     @if($selectedGroupId)
         <div class="flex gap-3">
             <!-- Right: Form Card -->
-            <flux:card class="w-full md:w-2/3">
-                @if($payrollSlotDetails?->payroll_slot_status == 'PN' || $payrollSlotDetails?->payroll_slot_status == 'NX')
+            <flux:card class="w-full md:w-2/3 relative ">
+                <!-- Loading Spinner Overlay for Main Content -->
+                <div wire:loading.flex wire:target="loadSlotDetails, loadPayrollSlots" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur">
+                    <flux:icon.loading class="w-10 h-10 text-blue-500 animate-spin" />
+                </div>
+                @if(!$payrollSlotDetails)
+                    <div class="mt-3">
+                        <flux:callout icon="information-circle" variant="secondary" inline>
+                            <flux:callout.heading>Select a Payroll Slot</flux:callout.heading>
+{{--                            <flux:callout.description>Please select a payroll slot from the list above to view its details and manage the payroll process.</flux:callout.description>--}}
+                        </flux:callout>
+{{--                        </flux:callout>--}}
+                    </div>
+                @elseif($payrollSlotDetails?->payroll_slot_status == 'PN' || $payrollSlotDetails?->payroll_slot_status == 'NX')
                     <flux:callout icon="cube" variant="success" inline>
                         <flux:callout.heading>Start Payroll Cycles</flux:callout.heading>
                         <x-slot name="actions">
@@ -131,6 +155,9 @@
                                 }
                                 elseif($step->step_code_main == 'salary_arrears') {
                                     $icon = 'minus-circle'; // Using minus-circle icon for arrears
+                                }
+                                elseif($step->step_code_main == 'review_override_components') {
+                                    $icon = 'eye';
                                 }
                             @endphp
                             <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
@@ -209,6 +236,10 @@
                                                 </flux:button>
                                             </flux:tooltip>
                                             <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
+                                                         wire:click="reviewOverrideComponentsStep({{ $payrollSlotDetails->id }})">
+                                                Review Overrides
+                                            </flux:button>
+                                            <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
                                                          wire:click="overrideAmountsStep({{ $payrollSlotDetails->id }})">
                                                 Override Amounts
                                             </flux:button>
@@ -237,6 +268,20 @@
                                             </flux:button>
                                         </flux:tooltip>
                                     @endif
+
+{{--                                    @if($step->step_code_main == 'review_override_components')--}}
+{{--                                        <flux:tooltip content="Mark Complete">--}}
+{{--                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"--}}
+{{--                                                         wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">--}}
+{{--                                            </flux:button>--}}
+{{--                                        </flux:tooltip>--}}
+{{--                                        <flux:tooltip content="View Logs">--}}
+{{--                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"--}}
+{{--                                                         wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">--}}
+{{--                                            </flux:button>--}}
+{{--                                        </flux:tooltip>--}}
+
+{{--                                    @endif--}}
 
                                     @if($step->step_code_main == 'tds_calculation')
 
@@ -335,179 +380,25 @@
                             </x-slot>
                         </flux:callout>
                     </div>
-                    @elseif($payrollSlotDetails?->payroll_slot_status == 'ST' || $payrollSlotDetails?->payroll_slot_status == 'RS')
+                    @elseif($payrollSlotDetails?->payroll_slot_status == 'PB')
                     <div class="mt-3">
-                        <h4 class="text-sm font-medium text-gray-700 mb-2">Payroll Steps</h4>
-                        @foreach($payrollSteps as $step)
-                            @php
-                                $icon = 'document'; // default icon
-                                if($step->step_code_main == 'fetch_attendance') {
-                                    $icon = 'user-group';
-                                } elseif($step->step_code_main == 'lop_attendance') {
-                                    $icon = 'cog-8-tooth';
-                                } elseif($step->step_code_main == 'tds_calculation') {
-                                    $icon = 'arrow-path-rounded-square';
-                                }
-                                elseif($step->step_code_main == 'static_unknown') {
-                                    $icon = 'currency-rupee';
-                                }
-                                elseif($step->step_code_main == 'override_amounts') {
-                                    $icon = 'currency-rupee';
-                                }
-                                elseif($step->step_code_main == 'salary_holds') {
-                                    $icon = 'lock-closed';
-                                }
-                                elseif($step->step_code_main == 'salary_advances') {
-                                    $icon = 'banknotes';
-                                }
-                                elseif($step->step_code_main == 'salary_arrears') {
-                                    $icon = 'minus-circle'; // Using minus-circle icon for arrears
-                                }
-                            @endphp
-                            <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
-                                <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
-                                <x-slot name="actions">
-                                    @if($step->step_code_main == 'fetch_attendance')
-                                        <flux:tooltip content="Mark Complete">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
-                                                         wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="View Logs">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
-                                                         wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="View Details">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
-                                                         wire:click="openAttendanceStep({{ $step->id }}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        @if($payrollSlotDetails?->payroll_slot_status !== 'IP')
-                                        <flux:tooltip content="Fetch Attendance">
-                                            <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
-                                                         wire:click="runPayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                                Fetch
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        @endif
-                                    @endif
+                        <flux:callout class="bg-red-50" icon="computer-desktop" variant="warning" inline>
+                            <flux:callout.heading>
+                                <div class="flex items-center gap-2">
+                                    <span>Payroll Process Published</span>
+                                    <flux:badge variant="pill">Published</flux:badge>
+                                </div>
 
-                                    @if($step->step_code_main == 'lop_attendance')
-                                        <flux:tooltip content="Mark Complete">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
-                                                         wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="View Logs">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
-                                                         wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="Lop Adjustment">
-                                            <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
-                                                         wire:click="lopAdjustmentStep({{ $payrollSlotDetails->id }})">
-                                                Adjustment
-                                            </flux:button>
-                                        </flux:tooltip>
-                                    @endif
+                            </flux:callout.heading>
+                            <x-slot name="actions">
+                                <flux:button wire:click="showSalaryTracks({{ $payrollSlotDetails->id }})"
+                                             class="cursor-btn mt-2"
+                                             size="xs">Details
+                                </flux:button>
 
-                                    @if($step->step_code_main == 'static_unknown')
-                                        <flux:tooltip content="Mark Complete">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
-                                                         wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="View Logs">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
-                                                         wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
-                                                     wire:click="staticUnknownComponentsStep({{ $payrollSlotDetails->id }})">
-                                            Manually Entry
-                                        </flux:button>
-                                    @endif
-                                        @if($step->step_code_main == 'override_amounts')
-                                            <flux:tooltip content="Mark Complete">
-                                                <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
-                                                             wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                                </flux:button>
-                                            </flux:tooltip>
-                                            <flux:tooltip content="View Logs">
-                                                <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
-                                                             wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                                </flux:button>
-                                            </flux:tooltip>
-                                            <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
-                                                         wire:click="overrideAmountsStep({{ $payrollSlotDetails->id }})">
-                                                Override Amounts
-                                            </flux:button>
-                                        @endif
-
-                                    @if($step->step_code_main == 'salary_holds')
-                                        <flux:tooltip content="View Holds">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
-                                                         wire:click="viewSalaryHolds({{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                    @endif
-
-                                    @if($step->step_code_main == 'salary_advances')
-                                        <flux:tooltip content="View Advances">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
-                                                         wire:click="viewSalaryAdvances({{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                    @endif
-
-                                    @if($step->step_code_main == 'salary_arrears')
-                                        <flux:tooltip content="View Arrears">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'eye'"
-                                                         wire:click="viewSalaryArrears({{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                    @endif
-
-                                    @if($step->step_code_main == 'tds_calculation')
-
-                                        <flux:tooltip content="Mark Complete">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'check-circle'"
-                                                         wire:click="completePayrollStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:tooltip content="View Logs">
-                                            <flux:button class="cursor-btn mt-2" size="xs" :icon="'document-duplicate'"
-                                                         wire:click="showLogs({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            </flux:button>
-                                        </flux:tooltip>
-                                        <flux:button class="cursor-btn mt-2" variant="primary" size="xs"
-                                                     wire:click="tdsCalculationStep({{ $payrollSlotDetails->id }})">
-                                            Auto Calculate
-                                        </flux:button>
-                                        <flux:button class="cursor-btn mt-2" size="xs"
-                                                     wire:click="employeeTaxComponentsStep({{$step->id}}, {{ $payrollSlotDetails->id }})">
-                                            Manually Entry
-                                        </flux:button>
-                                    @endif
-
-                                </x-slot>
-                            </flux:callout>
-                        @endforeach
-                        <div class="mt-3">
-                            <flux:callout class="" icon="plus-circle" variant="warning" inline>
-                                <flux:callout.heading>Click here to complete Payroll</flux:callout.heading>
-                                <x-slot name="actions">
-                                    <flux:button variant="primary" class="cursor-btn"
-                                                 wire:click="completePayroll({{ $payrollSlotDetails->id }}, {{ $selectedCycleId }}, {{ $selectedGroupId }})">
-                                        Complete
-                                    </flux:button>
-                                </x-slot>
-                            </flux:callout>
-                        </div>
-                        <div class="mt-4 flex justify-end">
-
-                        </div>
+                               
+                            </x-slot>
+                        </flux:callout>
                     </div>
                 @else
                     <div class="mt-3">
@@ -518,8 +409,18 @@
                     </div>
                 @endif
             </flux:card>
-            <flux:card class="w-[448px]">
+            <flux:card class="w-[448px] relative">
+                <!-- Loading Spinner Overlay for Logs -->
+                <div wire:loading.flex wire:target="loadSlotDetails, loadPayrollSlots" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur overflow-auto h-24">
+                    <flux:icon.loading class="w-8 h-8 text-blue-500 animate-spin" />
+                </div>
                 <h4 class="font-semibold mb-2">Logs</h4>
+                @if(!$payrollSlotDetails)
+                    <div class="text-gray-400 text-center py-8">
+                        <flux:icon.information-circle class="w-8 h-8 mx-auto mb-2" />
+                        <p class="text-sm">Select a payroll slot to view logs</p>
+                    </div>
+                @else
                 <ul class="space-y-4">
                     @foreach($payrollSlotCmds as $cmds)
                         @php
@@ -535,6 +436,7 @@
                         </li>
                     @endforeach
                 </ul>
+                @endif
             </flux:card>
         </div>
     @endif
@@ -714,6 +616,14 @@
         @if($selectedSlotId)
             <livewire:hrms.payroll.salary-arrears-step :payroll-slot-id="$selectedSlotId"
                                                       :wire:key="'salary-arrears-step-'.$selectedSlotId"/>
+        @endif
+    </flux:modal>
+
+    <!-- Add Review Override Components Modal -->
+    <flux:modal name="review-override-components" title="Review Override Components" class="max-w-7xl">
+        @if($selectedSlotId)
+            <livewire:hrms.payroll.review-override-components :payroll-slot-id="$selectedSlotId"
+                                                             :wire:key="'review-override-components-'.$selectedSlotId"/>
         @endif
     </flux:modal>
 

@@ -311,6 +311,7 @@
             <flux:table.column>Level</flux:table.column>
             <flux:table.column>Period</flux:table.column>
             <flux:table.column>Days Range</flux:table.column>
+            <flux:table.column>Assigned Employees</flux:table.column>
             <flux:table.column>Status</flux:table.column>
             <flux:table.column>Actions</flux:table.column>
         </flux:table.columns>
@@ -370,6 +371,26 @@
                     </flux:table.cell>
                     <flux:table.cell>
                         {{ $rule->min_days ?? 0 }} - {{ $rule->max_days ?? 'No Limit' }}
+                    </flux:table.cell>
+                    <flux:table.cell>
+                        @if($rule->employees->count() > 0)
+                            <div class="max-w-xs">
+                                <div class="flex flex-wrap gap-1">
+                                    @foreach($rule->employees->take(3) as $employee)
+                                        <flux:badge size="sm" variant="outline" class="text-xs">
+                                            {{ $employee->fname }} {{ $employee->lname }}
+                                        </flux:badge>
+                                    @endforeach
+                                    @if($rule->employees->count() > 3)
+                                        <flux:badge size="sm" variant="outline" class="text-xs">
+                                            +{{ $rule->employees->count() - 3 }} more
+                                        </flux:badge>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            <span class="text-gray-400 text-sm">No employees assigned</span>
+                        @endif
                     </flux:table.cell>
                     <flux:table.cell>
                         <flux:switch wire:model.live="statuses.{{ $rule->id }}"

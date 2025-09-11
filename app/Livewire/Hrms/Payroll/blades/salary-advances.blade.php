@@ -143,58 +143,69 @@
                     <div>
                         <flux:input
                             type="number"
-                            label="Amount"
-                            wire:model.live="amount"
-                        />
-                        @error('amount') <span class="text-danger">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <flux:input
-                            type="number"
                             label="Installments"
                             wire:model.live="installments"
                         />
                         @error('installments') <span class="text-danger">{{ $message }}</span> @enderror
                     </div>
-                    <div>
-                        <flux:input
-                            type="number"
-                            label="Installment Amount"
-                            :value="$installment_amount"
-                            readonly
-                            disabled
-                        />
-                        @if($installment_amount === null)
-                            <span class="text-gray-400 text-xs">Enter amount and installments to calculate</span>
-                        @endif
-                    </div>
-                    <div>
-                        <flux:select
-                            label="Disburse Salary Component"
-                            wire:model.live="disburse_salary_component"
-                        >
-                            <option value="">Select Disburse Component</option>
-                            @forelse($listsForFields['disburseComponents'] as $val => $label)
-                                <option value="{{ $val }}">{{ $label }}</option>
-                            @empty
-                                <option value="">No advance components found</option>
-                            @endforelse
-                        </flux:select>
-                        @error('disburse_salary_component') <span class="text-danger">{{ $message }}</span> @enderror
-                    </div>
-                    <div>
-                        <flux:select
-                            label="Recovery Salary Component"
-                            wire:model.live="recovery_salary_component"
-                        >
-                            <option value="">Select Recovery Component</option>
-                            @forelse($listsForFields['recoveryComponents'] as $val => $label)
-                                <option value="{{ $val }}">{{ $label }}</option>
-                            @empty
-                                <option value="">No arrear components found</option>
-                            @endforelse
-                        </flux:select>
-                        @error('recovery_salary_component') <span class="text-danger">{{ $message }}</span> @enderror
+                    <!-- Advance Items Repeater -->
+                    <div class="col-span-2">
+                        <flux:heading>Advance Components and Amounts</flux:heading>
+                        @error('advanceItems') <div class="text-danger">{{ $message }}</div> @enderror
+                        <div class="space-y-3 mt-2">
+                            @foreach($advanceItems as $idx => $item)
+                                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+                                    <div>
+                                        <flux:select
+                                            label="Disburse Component"
+                                            wire:model.live="advanceItems.{{ $idx }}.disburse_salary_component"
+                                        >
+                                            <option value="">Select Disburse Component</option>
+                                            @foreach($this->availableDisburseComponents($idx) as $val => $label)
+                                                <option value="{{ $val }}">{{ $label }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                        @error('advanceItems.'.$idx.'.disburse_salary_component') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+                                    <div>
+                                        <flux:select
+                                            label="Recovery Component"
+                                            wire:model.live="advanceItems.{{ $idx }}.recovery_salary_component"
+                                        >
+                                            <option value="">Select Recovery Component</option>
+                                            @foreach($this->availableRecoveryComponents($idx) as $val => $label)
+                                                <option value="{{ $val }}">{{ $label }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                        @error('advanceItems.'.$idx.'.recovery_salary_component') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+                                    <div>
+                                        <flux:input
+                                            type="number"
+                                            label="Amount"
+                                            wire:model.live="advanceItems.{{ $idx }}.amount"
+                                        />
+                                        @error('advanceItems.'.$idx.'.amount') <span class="text-danger">{{ $message }}</span> @enderror
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="text-sm text-gray-600">
+                                            @php
+                                                $amt = data_get($advanceItems[$idx] ?? [], 'amount');
+                                                $inst = (int) ($installments ?? 0);
+                                                $per = $amt && $inst > 0 ? round($amt / $inst, 2) : null;
+                                            @endphp
+                                            @if($per)
+                                                Per-installment: ₹{{ $per }}
+                                            @endif
+                                        </div>
+                                        <flux:button size="sm" icon="minus" wire:click="removeAdvanceItem({{ $idx }})" />
+                                    </div>
+                                </div>
+                            @endforeach
+                            <div>
+                                <flux:button icon="plus" wire:click="addAdvanceItem">Add Advance</flux:button>
+                            </div>
+                        </div>
                     </div>
                     <div>
                         <flux:select

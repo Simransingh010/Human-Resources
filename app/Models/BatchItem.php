@@ -65,4 +65,19 @@ class BatchItem extends Model
 	{
 		return $this->belongsTo(SalaryComponentsEmployee::class, 'model_id');
 	}
+
+	public function employee()
+	{
+		return $this->hasOne(\App\Models\Hrms\Employee::class, 'user_id', 'model_id');
+	}
+
+	public function role()
+	{
+		return $this->belongsTo(\App\Models\Saas\RoleUser::class, 'model_id');
+	}
+
+	public function panelUser()
+	{
+		return $this->belongsTo(\App\Models\Saas\PanelUser::class, 'model_id');
+	}
 }

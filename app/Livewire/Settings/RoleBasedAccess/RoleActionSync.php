@@ -21,9 +21,11 @@ class RoleActionSync extends Component
     public $selectedAppName = null;
     public $selectedComponentId = null;
     public array $groupedActions = [];
+    public $firmId = null; // Add property to accept firm ID
 
-    public function mount($roleId)
+    public function mount($roleId, $firmId = null)
     {
+        $this->firmId = $firmId;
         $this->role = Role::findOrFail($roleId);
         $this->selectedActions = $this->role->actions()->select('actions.id')->pluck('id')->toArray();
         $this->previousSelectedActions = $this->selectedActions;
@@ -44,6 +46,12 @@ class RoleActionSync extends Component
             $this->selectedAppName = array_key_first($this->groupedActions);
         }
     }
+
+    // Helper method to get the current firm ID
+    protected function getCurrentFirmId()
+    {
+        return $this->firmId ?? Session::get('firm_id');
+    }
     
     protected function buildHierarchy()
     {
@@ -53,6 +61,17 @@ class RoleActionSync extends Component
             }
 
         ])->where('is_inactive', false)->orderBy('id', 'asc')->get();
+
+        // Get firm ID from the role
+        $firmId = $this->getCurrentFirmId();
+        
+        // If this is a firm-specific role (firm_id is set), filter components by firm assignment
+        if ($firmId !== null) {
+            // Get all component IDs that are assigned to this firm
+            $assignedComponentIds = \App\Models\Saas\ComponentPanel::where('firm_id', $firmId)
+                ->pluck('component_id')
+                ->toArray();
+        }
 
         $hierarchy = [];
         foreach ($apps as $app) {
@@ -68,6 +87,11 @@ class RoleActionSync extends Component
                     'components' => [],
                 ];
                 foreach ($module->components as $component) {
+                    // Skip components that are not assigned to the firm (for firm-specific roles)
+                    if ($firmId !== null && !in_array($component->id, $assignedComponentIds)) {
+                        continue;
+                    }
+                    
                     $componentArr = [
                         'id' => $component->id,
                         'name' => $component->name,
@@ -92,7 +116,7 @@ class RoleActionSync extends Component
 
     public function save($closeModal = true)
     {
-        $firmId = Session::get('firm_id');
+        $firmId = $this->getCurrentFirmId();
         $existingActionIds = $this->role->actions()->pluck('actions.id')->toArray();
         $actionsToAdd = array_diff($this->selectedActions, $existingActionIds);
         $actionsToRemove = array_diff($existingActionIds, $this->selectedActions);
@@ -161,16 +185,34 @@ class RoleActionSync extends Component
         ];
         $ACTION_TYPE_LABELS = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT;
         $ACTION_TYPE_LABELS['INDEPENDENT'] = 'Independent with no Type';
+        
+        // Get all apps with relationships
         $apps = AppModel::with([
             'modules.components.actions.actioncluster' => function ($q) {
                 $q->where('is_inactive', false);
             }
         ])->where('is_inactive', false)->orderBy('id', 'asc')->get();
 
+        // Get firm ID from the role
+        $firmId = $this->getCurrentFirmId();
+        
+        // If this is a firm-specific role (firm_id is set), filter components by firm assignment
+        if ($firmId !== null) {
+            // Get all component IDs that are assigned to this firm
+            $assignedComponentIds = \App\Models\Saas\ComponentPanel::where('firm_id', $firmId)
+                ->pluck('component_id')
+                ->toArray();
+        }
+
         $grouped = [];
         foreach ($apps as $app) {
             foreach ($app->modules as $module) {
                 foreach ($module->components as $component) {
+                    // Skip components that are not assigned to the firm (for firm-specific roles)
+                    if ($firmId !== null && !in_array($component->id, $assignedComponentIds)) {
+                        continue;
+                    }
+                    
                     $grouped[$app->name][$module->name][$component->name] = [];
                     // For each action type
                     foreach ($ACTION_TYPE_LABELS as $typeKey => $typeLabel) {

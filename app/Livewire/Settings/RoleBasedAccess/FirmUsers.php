@@ -133,6 +133,7 @@ class FirmUsers extends Component
         return User::whereHas('firms', function($q) use ($firmId) {
                 $q->where('firms.id', $firmId);
             })
+            ->whereIn('role_main', ['L0_emp', 'L1_firm'])
             ->when($this->filters['name'], fn($query, $value) => 
                 $query->where('name', 'like', "%{$value}%"))
             ->when($this->filters['email'], fn($query, $value) => 
@@ -312,7 +313,6 @@ class FirmUsers extends Component
         $user = User::findOrFail($userId);
         $this->actionModalUserId = $userId;
         $this->actionModalUserName = $user->name;
-        // Advanced grouping: app/module/component/type/cluster
         $ACTION_TYPE_BG = [
             'G' => 'bg-blue-50',
             'RL' => 'bg-yellow-50',
@@ -322,16 +322,61 @@ class FirmUsers extends Component
         ];
         $ACTION_TYPE_LABELS = \App\Models\Saas\Action::ACTION_TYPE_MAIN_SELECT;
         $ACTION_TYPE_LABELS['INDEPENDENT'] = 'Independent with no Type';
+        
+        // Get all apps with relationships
         $apps = \App\Models\Saas\App::with([
             'modules.components.actions.actioncluster' => function ($q) {
                 $q->where('is_inactive', false);
             }
         ])->where('is_inactive', false)->orderBy('id', 'asc')->get();
+        
+        // Get panels assigned to this firm
+        $assignedPanelIds = \App\Models\Saas\FirmPanel::where('firm_id', $firmId)->pluck('panel_id')->toArray();
+        
+        // Get components assigned to this firm (from ComponentPanel) with their panel assignments
+        $assignedComponentPanels = \App\Models\Saas\ComponentPanel::where('firm_id', $firmId)
+            ->select('component_id', 'panel_id')
+            ->get()
+            ->groupBy('component_id');
+        
+        $assignedComponentIds = $assignedComponentPanels->keys()->toArray();
+        
         $grouped = [];
+        $processedComponents = []; // Track processed components to avoid duplication
+        
         foreach ($apps as $app) {
+            $appHasComponents = false;
+            
             foreach ($app->modules as $module) {
+                $moduleHasComponents = false;
+                
                 foreach ($module->components as $component) {
+                    // Check if this component is assigned to the firm
+                    if (!in_array($component->id, $assignedComponentIds)) {
+                        continue;
+                    }
+                    
+                    // Avoid component duplication
+                    if (in_array($component->id, $processedComponents)) {
+                        continue;
+                    }
+                    $processedComponents[] = $component->id;
+                    
+                    // Check if this component belongs to any panel assigned to the firm
+                    $componentBelongsToAssignedPanel = false;
+                    if (isset($assignedComponentPanels[$component->id])) {
+                        $componentPanels = $assignedComponentPanels[$component->id]->pluck('panel_id')->toArray();
+                        $componentBelongsToAssignedPanel = !empty(array_intersect($componentPanels, $assignedPanelIds));
+                    }
+                    
+                    if (!$componentBelongsToAssignedPanel) {
+                        continue;
+                    }
+                    
                     $grouped[$app->name][$module->name][$component->name] = [];
+                    $moduleHasComponents = true;
+                    $appHasComponents = true;
+                    
                     foreach ($ACTION_TYPE_LABELS as $typeKey => $typeLabel) {
                         if ($typeKey === 'INDEPENDENT') {
                             $actionsOfType = collect($component->actions)->filter(function($a){ return empty($a->action_type); });
@@ -339,14 +384,17 @@ class FirmUsers extends Component
                             $actionsOfType = collect($component->actions)->where('action_type', $typeKey);
                         }
                         if ($actionsOfType->isEmpty()) continue;
+                        
                         $actionsByCluster = $actionsOfType->groupBy(function($action) {
                             return $action->actioncluster ? $action->actioncluster->name : 'Independent';
                         });
+                        
                         $clusters = [];
                         foreach ($actionsByCluster as $clusterName => $actionsInCluster) {
                             $parentActions = $actionsInCluster->where('parent_action_id', null);
                             $childActions = $actionsInCluster->where('parent_action_id', '!=', null);
                             $clusterGroups = [];
+                            
                             foreach ($parentActions as $parent) {
                                 $children = $childActions->where('parent_action_id', $parent->id)->values()->all();
                                 $clusterGroups[] = [
@@ -368,9 +416,11 @@ class FirmUsers extends Component
                                     })->values()->all(),
                                 ];
                             }
+                            
                             $orphaned = $childActions->filter(function($child) use ($parentActions) {
                                 return !$parentActions->contains('id', $child->parent_action_id);
                             });
+                            
                             foreach ($orphaned as $orphan) {
                                 $clusterGroups[] = [
                                     'parent' => [
@@ -385,6 +435,7 @@ class FirmUsers extends Component
                             }
                             $clusters[$clusterName] = $clusterGroups;
                         }
+                        
                         $grouped[$app->name][$module->name][$component->name][$typeKey] = [
                             'type_label' => $typeLabel,
                             'type_bg' => $ACTION_TYPE_BG[$typeKey] ?? 'bg-gray-50',
@@ -392,13 +443,24 @@ class FirmUsers extends Component
                         ];
                     }
                 }
+                
+                // Remove empty modules
+                if (!$moduleHasComponents) {
+                    unset($grouped[$app->name][$module->name]);
+                }
+            }
+            
+            // Remove empty apps
+            if (!$appHasComponents) {
+                unset($grouped[$app->name]);
             }
         }
+        
         $this->actionModalGroupedActions = $grouped;
         $this->actionModalAppList = array_keys($grouped);
         $this->actionModalSelectedApp = $this->actionModalAppList[0] ?? null;
+        
         // Mount previous direct permissions from ActionUser
-
         $existing = \App\Models\Saas\ActionUser::where('user_id', $userId)->where('firm_id', $firmId)->get();
 
         $this->actionModalSelectedActions = $existing->pluck('action_id')->map(fn($id) => (string)$id)->toArray();
@@ -521,7 +583,9 @@ class FirmUsers extends Component
         $firmId = Session::get('firm_id');
         $userIds = User::whereHas('firms', function($q) use ($firmId) {
             $q->where('firms.id', $firmId);
-        })->pluck('id');
+        })
+        ->whereIn('role_main', ['L0_emp', 'L1_firm'])
+        ->pluck('id');
         foreach ($userIds as $userId) {
             $this->syncUserActions($userId, $firmId);
         }

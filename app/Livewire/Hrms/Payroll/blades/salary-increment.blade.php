@@ -100,249 +100,279 @@
                                     </div>
                                 </div>
 
-                                <!-- Salary Components Table -->
-                                <div class="mt-6">
-                                    <flux:heading size="lg">Current Salary Components</flux:heading>
-                                    <flux:table class="mt-4">
-                                        <flux:table.columns>
-                                            <flux:table.column 
-                                                sortable 
-                                                :sorted="$sortBy === 'sequence'" 
-                                                :direction="$sortDirection" 
-                                                wire:click="sort('sequence')"
-                                            >Component</flux:table.column>
-                                            <flux:table.column 
-                                                sortable 
-                                                :sorted="$sortBy === 'amount'" 
-                                                :direction="$sortDirection" 
-                                                wire:click="sort('amount')"
-                                            >Amount</flux:table.column>
-                                            <flux:table.column>Type</flux:table.column>
-                                            <flux:table.column>Effective From</flux:table.column>
-                                            <flux:table.column>Effective To</flux:table.column>
-                                            <flux:table.column>Actions</flux:table.column>
-                                        </flux:table.columns>
+                                <!-- Structure Periods + Components Layout -->
+                                <div class="mt-6 flex gap-6 min-h-[300px]">
+                                    <!-- Vertical Structure Periods List (like slots) -->
+                                    <div class="w-64 border rounded bg-white p-2 flex flex-col gap-2">
+                                        <div class="font-semibold mb-2">Salary Structure Periods</div>
+                                        <div class="flex justify-end mb-2">
+                                            <flux:button  wire:click="resyncFromChangeLogs">Sync Old Changes</flux:button>
+                                        </div>
+                                        @if($structurePeriods && $structurePeriods->count())
+                                            @foreach($structurePeriods as $period)
+                                                <button type="button"
+                                                    wire:click="selectStructure('{{ $period['key'] }}')"
+                                                    class="w-full text-left px-3 py-2 rounded border @if($selectedStructureKey === $period['key']) bg-blue-100 border-blue-500 @elseif($period['is_active']) bg-green-400/20 @else bg-gray-200 @endif">
+                                                    <div class="font-medium">
+                                                        {{ $period['from']->format('d M Y') }} - {{ $period['to'] ? $period['to']->format('d M Y') : 'Present' }}
+                                                    </div>
+                                                    <div class="text-xs mt-1">
+                                                        <span class="inline-block px-2 py-0.5 rounded text-white text-xs @if($period['is_active']) bg-green-500 @else bg-zinc-500 @endif">
+                                                            {{ $period['is_active'] ? 'Active' : 'Inactive' }}
+                                                        </span>
+                                                        <span class="ml-2 text-gray-600">{{ $period['components_count'] }} components</span>
+                                                    </div>
+                                                </button>
+                                            @endforeach
+                                        @else
+                                            <div class="text-gray-400">No structures</div>
+                                        @endif
+                                    </div>
 
-                                        <flux:table.rows>
-                                            @foreach($salaryComponents as $salaryItem)
-                                                <flux:table.row :key="$salaryItem['id']">
-                                                    <flux:table.cell>
-                                                        <div>
-                                                            <div class="font-medium">{{ $salaryItem['title'] }}</div>
-                                                            @php
-                                                                $today = \Carbon\Carbon::today();
-                                                                $from = $salaryItem['effective_from'] ? \Carbon\Carbon::createFromFormat('d M Y', $salaryItem['effective_from']) : null;
-                                                                $to = $salaryItem['effective_to'] ? \Carbon\Carbon::createFromFormat('d M Y', $salaryItem['effective_to']) : null;
-                                                                if ($from && $from->gt($today)) {
-                                                                    $status = 'Scheduled';
-                                                                    $badgeColor = 'blue';
-                                                                } elseif ($to && $to->lt($today)) {
-                                                                    $status = 'Expired';
-                                                                    $badgeColor = 'zinc';
-                                                                } else {
-                                                                    $status = 'Active';
-                                                                    $badgeColor = 'green';
-                                                                }
-                                                            @endphp
-                                                            <div class="mt-1">
-                                                                <flux:badge color="{{ $badgeColor }}">{{ $status }}</flux:badge>
-                                                            </div>
-                                                            @if($salaryItem['group'])
-                                                                <div class="text-sm text-gray-500">{{ $salaryItem['group'] }}</div>
-                                                            @endif
-                                                        </div>
-                                                    </flux:table.cell>
-                                                    <flux:table.cell class="font-medium">
-                                                        <flux:badge 
-                                                            :color="$salaryItem['nature'] === 'earning' ? 'green' : ($salaryItem['nature'] === 'deduction' ? 'red' : 'gray')"
-                                                        >
-                                                            ₹{{ number_format($salaryItem['amount'], 2) }}
-                                                        </flux:badge>
-                                                    </flux:table.cell>
-                                                    <flux:table.cell>
-                                                        <div class="text-sm">
-                                                            {{ ucfirst($salaryItem['component_type']) }}
-                                                            @if($salaryItem['amount_type'])
-                                                                <span class="text-gray-500">({{ str_replace('_', ' ', $salaryItem['amount_type']) }})</span>
-                                                            @endif
-                                                        </div>
-                                                    </flux:table.cell>
-                                                    <flux:table.cell>
-                                                        {{ $salaryItem['effective_from'] }}
-                                                    </flux:table.cell>
-                                                    <flux:table.cell>
-                                                        {{ $salaryItem['effective_to'] }}
-                                                    </flux:table.cell>
-                                                    <flux:table.cell>
-                                                        <div class="flex space-x-2">
-                                                            <flux:dropdown>
-                                                            <flux:button icon="ellipsis-horizontal" />
+                                    <!-- Components Table for selected period -->
+                                    <div class="flex-1">
+                                        <flux:heading size="lg">Components in Selected Period</flux:heading>
+                                        <flux:table class="mt-4">
+                                            <flux:table.columns>
+                                                <flux:table.column 
+                                                    sortable 
+                                                    :sorted="$sortBy === 'sequence'" 
+                                                    :direction="$sortDirection" 
+                                                    wire:click="sort('sequence')"
+                                                >Component</flux:table.column>
+                                                <flux:table.column 
+                                                    sortable 
+                                                    :sorted="$sortBy === 'amount'" 
+                                                    :direction="$sortDirection" 
+                                                    wire:click="sort('amount')"
+                                                >Amount</flux:table.column>
+                                                <flux:table.column>Type</flux:table.column>
+                                                <flux:table.column>Effective From</flux:table.column>
+                                                <flux:table.column>Effective To</flux:table.column>
+                                                <flux:table.column>Actions</flux:table.column>
+                                            </flux:table.columns>
 
-                                                                <flux:menu>
-                                                                    @if($salaryItem['amount_type'] === 'static_known')
-                                                                        <flux:menu.item 
-                                                                            wire:click="editComponent({{ $salaryItem['id'] }})"
-                                                                            icon="pencil"
-                                                                        >
-                                                                            Increment/Decrement
-                                                                        </flux:menu.item>
-                                                                    @elseif($salaryItem['amount_type'] === 'calculated_known')
-                                                                        <flux:menu.item 
-                                                                            wire:click="openCalculationRule({{ $salaryItem['id'] }})"
-                                                                            icon="calculator"
-                                                                        >
-                                                                            Configure Formula
-                                                                        </flux:menu.item>
-                                                                    @endif
-                                                                    <flux:menu.separator />
-                                                                    <flux:modal.trigger name="delete-{{ $salaryItem['id'] }}">
-                                                                        <flux:menu.item icon="trash" class="text-red-600">
-                                                                            Delete
-                                                                        </flux:menu.item>
-                                                                    </flux:modal.trigger>
-                                                                </flux:menu>
-                                                            </flux:dropdown>
-
-                                                            <!-- Delete Confirmation Modal -->
-                                                            <flux:modal name="delete-{{ $salaryItem['id'] }}" class="min-w-[22rem]">
-                                                                <div class="space-y-6">
-                                                                    <div>
-                                                                        <flux:heading size="lg">Delete Salary Component?</flux:heading>
-                                                                        <flux:text class="mt-2">
-                                                                            <p>You're about to delete this salary component. This action cannot be undone.</p>
-                                                                            <p class="mt-2 text-red-500">Note: This will affect employee's salary calculation.</p>
-                                                                        </flux:text>
-                                                                    </div>
-                                                                    <div class="flex gap-2">
-                                                                        <flux:spacer/>
-                                                                        <flux:modal.close>
-                                                                            <flux:button variant="ghost">Cancel</flux:button>
-                                                                        </flux:modal.close>
-                                                                        <flux:button 
-                                                                            variant="danger" 
-                                                                            icon="trash" 
-                                                                            wire:click="deleteComponent({{ $salaryItem['id'] }})"
-                                                                        />
-                                                                    </div>
+                                            <flux:table.rows>
+                                                @foreach(($structureComponents && $structureComponents->count() ? $structureComponents : $salaryComponents) as $salaryItem)
+                                                    <flux:table.row :key="$salaryItem['id']">
+                                                        <flux:table.cell>
+                                                            <div>
+                                                                <div class="font-medium">{{ $salaryItem['title'] }}</div>
+                                                                @php
+                                                                    $today = \Carbon\Carbon::today();
+                                                                    $from = $salaryItem['effective_from'] ? \Carbon\Carbon::createFromFormat('d M Y', $salaryItem['effective_from']) : null;
+                                                                    $to = $salaryItem['effective_to'] ? \Carbon\Carbon::createFromFormat('d M Y', $salaryItem['effective_to']) : null;
+                                                                    if ($from && $from->gt($today)) {
+                                                                        $status = 'Scheduled';
+                                                                        $badgeColor = 'blue';
+                                                                    } elseif ($to && $to->lt($today)) {
+                                                                        $status = 'Expired';
+                                                                        $badgeColor = 'zinc';
+                                                                    } else {
+                                                                        $status = 'Active';
+                                                                        $badgeColor = 'green';
+                                                                    }
+                                                                @endphp
+                                                                <div class="mt-1">
+                                                                    <flux:badge color="{{ $badgeColor }}">{{ $status }}</flux:badge>
                                                                 </div>
-                                                            </flux:modal>
+                                                                @if($salaryItem['group'])
+                                                                    <div class="text-sm text-gray-500">{{ $salaryItem['group'] }}</div>
+                                                                @endif
+                                                            </div>
+                                                        </flux:table.cell>
+                                                        <flux:table.cell class="font-medium">
+                                                            <flux:badge 
+                                                                :color="$salaryItem['nature'] === 'earning' ? 'green' : ($salaryItem['nature'] === 'deduction' ? 'red' : 'gray')"
+                                                            >
+                                                                ₹{{ number_format((float) $salaryItem['amount'], 2) }}
+                                                            </flux:badge>
+                                                        </flux:table.cell>
+                                                        <flux:table.cell>
+                                                            <div class="text-sm">
+                                                                {{ ucfirst($salaryItem['component_type']) }}
+                                                                @if($salaryItem['amount_type'])
+                                                                    <span class="text-gray-500">({{ str_replace('_', ' ', $salaryItem['amount_type']) }})</span>
+                                                                @endif
+                                                            </div>
+                                                        </flux:table.cell>
+                                                        <flux:table.cell>
+                                                            {{ $salaryItem['effective_from'] }}
+                                                        </flux:table.cell>
+                                                        <flux:table.cell>
+                                                            {{ $salaryItem['effective_to'] }}
+                                                        </flux:table.cell>
+                                                        <flux:table.cell>
+                                                            <div class="flex space-x-2">
+                                                                <flux:dropdown>
+                                                                <flux:button icon="ellipsis-horizontal" />
 
-                                                            <!-- Increment/Decrement Modal -->
-                                                            <flux:modal name="increment-{{ $salaryItem['id'] }}" class="md:w-[40rem]">
-                                                                <div class="space-y-6">
-                                                                    <div>
-                                                                        <flux:heading size="lg">Modify Salary Component</flux:heading>
-                                                                        <flux:text class="mt-2 text-lg">
-                                                                            Current Amount: <span class="font-semibold text-green-600">₹{{ number_format($salaryItem['amount'], 2) }}</span>
-                                                                        </flux:text>
-                                                                    </div>
-
-                                                                    <!-- Date Range Fields -->
-                                                                    <div class="grid grid-cols-2 gap-4">
-                                                                        <div>
-                                                                        <div>DEBUG: {{ $start_date }}</div>
-                                                                            <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                                                                            <flux:date-picker wire:model.live="start_date" placeholder="Start Date" />
-                                                                        </div>
-                                                                        <div>
-                                                                            <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
-                                                                            <flux:date-picker wire:model.live="end_date" placeholder="End Date (Optional)" />
-                                                                        </div>
-                                                                    </div>
-
-                                                                    <!-- Grid Layout for Controls -->
-                                                                    <div class="grid grid-cols-2 gap-4">
-                                                                        <!-- Modification Type -->
-                                                                        <div>
-                                                                            <flux:select 
-                                                                                wire:model.live="incrementType"
-                                                                                label="Modification Type"
+                                                                    <flux:menu>
+                                                                        @if($salaryItem['amount_type'] === 'static_known')
+                                                                            <flux:menu.item 
+                                                                                wire:click="editComponent({{ $salaryItem['id'] }})"
+                                                                                icon="pencil"
                                                                             >
-                                                                                <flux:select.option value="fixed_amount">Fixed Amount</flux:select.option>
-                                                                                <flux:select.option value="percentage">Percentage</flux:select.option>
-                                                                                <flux:select.option value="new_amount">New Fixed Amount</flux:select.option>
-                                                                            </flux:select>
-                                                                        </div>
-
-                                                                        <!-- Operation Type -->
-                                                                        <div>
-                                                                            <flux:select 
-                                                                                wire:model.live="operation"
-                                                                                label="Operation"
+                                                                                Increment/Decrement
+                                                                            </flux:menu.item>
+                                                                        @elseif($salaryItem['amount_type'] === 'calculated_known')
+                                                                            <flux:menu.item 
+                                                                                wire:click="openCalculationRule({{ $salaryItem['id'] }})"
+                                                                                icon="calculator"
                                                                             >
-                                                                                <flux:select.option value="increase">Increase</flux:select.option>
-                                                                                <flux:select.option value="decrease">Decrease</flux:select.option>
-                                                                            </flux:select>
-                                                                        </div>
+                                                                                Configure Formula
+                                                                            </flux:menu.item>
+                                                                        @endif
+                                                                        <flux:menu.separator />
+                                                                        <flux:modal.trigger name="delete-{{ $salaryItem['id'] }}">
+                                                                            <flux:menu.item icon="trash" class="text-red-600">
+                                                                                Delete
+                                                                            </flux:menu.item>
+                                                                        </flux:modal.trigger>
+                                                                    </flux:menu>
+                                                                </flux:dropdown>
 
-                                                                        <!-- Value Input -->
-                                                                        <div class="col-span-2">
-                                                                            <flux:input
-                                                                                type="number"
-                                                                                wire:model.live="modificationValue"
-                                                                                :label="$incrementType === 'percentage' ? 'Enter Percentage (%)' : ($incrementType === 'new_amount' ? 'Enter New Amount (₹)' : 'Enter Amount (₹)')"
-                                                                                :placeholder="$incrementType === 'percentage' ? 'Enter percentage (0-100)' : ($incrementType === 'new_amount' ? 'Enter new fixed amount' : 'Enter amount to add/subtract')"
-                                                                                :max="$incrementType === 'percentage' ? 100 : null"
-                                                                                min="0"
+                                                                <!-- Delete Confirmation Modal -->
+                                                                <flux:modal name="delete-{{ $salaryItem['id'] }}" class="min-w-[22rem]">
+                                                                    <div class="space-y-6">
+                                                                        <div>
+                                                                            <flux:heading size="lg">Delete Salary Component?</flux:heading>
+                                                                            <flux:text class="mt-2">
+                                                                                <p>You're about to delete this salary component. This action cannot be undone.</p>
+                                                                                <p class="mt-2 text-red-500">Note: This will affect employee's salary calculation.</p>
+                                                                            </flux:text>
+                                                                        </div>
+                                                                        <div class="flex gap-2">
+                                                                            <flux:spacer/>
+                                                                            <flux:modal.close>
+                                                                                <flux:button variant="ghost">Cancel</flux:button>
+                                                                            </flux:modal.close>
+                                                                            <flux:button 
+                                                                                variant="danger" 
+                                                                                icon="trash" 
+                                                                                wire:click="deleteComponent({{ $salaryItem['id'] }})"
                                                                             />
                                                                         </div>
+                                                                    </div>
+                                                                </flux:modal>
 
-                                                                        <!-- Remarks Field -->
-                                                                        <div class="col-span-2 mt-4">
-                                                                            <flux:input
-                                                                                wire:model="remarks"
-                                                                                label="Remarks"
-                                                                                description="Please provide a reason for this salary modification."
-                                                                                placeholder="e.g., Annual increment, Performance bonus, etc."
-                                                                            />
+                                                                <!-- Increment/Decrement Modal -->
+                                                                <flux:modal name="increment-{{ $salaryItem['id'] }}" class="md:w-[40rem]">
+                                                                    <div class="space-y-6">
+                                                                        <div>
+                                                                            <flux:heading size="lg">Modify Salary Component</flux:heading>
+                                                                            <flux:text class="mt-2 text-lg">
+                                                                                Current Amount: <span class="font-semibold text-green-600">₹{{ number_format((float) $salaryItem['amount'], 2) }}</span>
+                                                                            </flux:text>
                                                                         </div>
 
-                                                                    </div>
-
-                                                                    <!-- Final Amount Preview -->
-                                                                    <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
-                                                                        <div class="flex justify-between items-center">
-                                                                            <flux:heading>Final Amount</flux:heading>
-                                                                            <div class="text-2xl font-bold text-green-600">
-                                                                                ₹{{ number_format($calculatedFinalAmount, 2) }}
+                                                                        <!-- Date Range Fields -->
+                                                                        <div class="grid grid-cols-2 gap-4">
+                                                                            <div>
+                                                                            <div>DEBUG: {{ $start_date }}</div>
+                                                                                <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                                                                                <flux:date-picker wire:model.live="start_date" placeholder="Start Date" />
+                                                                            </div>
+                                                                            <div>
+                                                                                <label class="block text-sm font-medium text-gray-700 mb-1">End Date (Optional)</label>
+                                                                                <flux:date-picker wire:model.live="end_date" placeholder="End Date (Optional)" />
                                                                             </div>
                                                                         </div>
-                                                                        <div class="mt-2 text-gray-600 text-sm">
-                                                                            @if($modificationValue)
-                                                                                @if($incrementType === 'fixed_amount')
-                                                                                    ₹{{ number_format($currentAmount, 2) }} {{ $operation === 'increase' ? '+' : '-' }} ₹{{ number_format($modificationValue, 2) }}
-                                                                                @elseif($incrementType === 'percentage')
-                                                                                    ₹{{ number_format($currentAmount, 2) }} {{ $operation === 'increase' ? '+' : '-' }} {{ $modificationValue }}% 
-                                                                                    (₹{{ number_format(($currentAmount * $modificationValue / 100), 2) }})
-                                                                                @else
-                                                                                    New fixed amount (Previous: ₹{{ number_format($currentAmount, 2) }})
+
+                                                                        <!-- Grid Layout for Controls -->
+                                                                        <div class="grid grid-cols-2 gap-4">
+                                                                            <!-- Modification Type -->
+                                                                            <div>
+                                                                                <flux:select 
+                                                                                    wire:model.live="incrementType"
+                                                                                    label="Modification Type"
+                                                                                >
+                                                                                    <flux:select.option value="fixed_amount">Fixed Amount</flux:select.option>
+                                                                                    <flux:select.option value="percentage">Percentage</flux:select.option>
+                                                                                    <flux:select.option value="new_amount">New Fixed Amount</flux:select.option>
+                                                                                </flux:select>
+                                                                            </div>
+
+                                                                            <!-- Operation Type -->
+                                                                            <div>
+                                                                                <flux:select 
+                                                                                    wire:model.live="operation"
+                                                                                    label="Operation"
+                                                                                >
+                                                                                    <flux:select.option value="increase">Increase</flux:select.option>
+                                                                                    <flux:select.option value="decrease">Decrease</flux:select.option>
+                                                                                </flux:select>
+                                                                            </div>
+
+                                                                            <!-- Value Input -->
+                                                                            <div class="col-span-2">
+                                                                                <flux:input
+                                                                                    type="number"
+                                                                                    wire:model.live="modificationValue"
+                                                                                    :label="$incrementType === 'percentage' ? 'Enter Percentage (%)' : ($incrementType === 'new_amount' ? 'Enter New Amount (₹)' : 'Enter Amount (₹)')"
+                                                                                    :placeholder="$incrementType === 'percentage' ? 'Enter percentage (0-100)' : ($incrementType === 'new_amount' ? 'Enter new fixed amount' : 'Enter amount to add/subtract')"
+                                                                                    :max="$incrementType === 'percentage' ? 100 : null"
+                                                                                    min="0"
+                                                                                />
+                                                                            </div>
+
+                                                                            <!-- Remarks Field -->
+                                                                            <div class="col-span-2 mt-4">
+                                                                                <flux:input
+                                                                                    wire:model="remarks"
+                                                                                    label="Remarks"
+                                                                                    description="Please provide a reason for this salary modification."
+                                                                                    placeholder="e.g., Annual increment, Performance bonus, etc."
+                                                                                />
+                                                                            </div>
+
+                                                                        </div>
+
+                                                                        <!-- Final Amount Preview -->
+                                                                        <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                                                            <div class="flex justify-between items-center">
+                                                                                <flux:heading>Final Amount</flux:heading>
+                                                                                <div class="text-2xl font-bold text-green-600">
+                                                                                    ₹{{ number_format((float) $calculatedFinalAmount, 2) }}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div class="mt-2 text-gray-600 text-sm">
+                                                                                @if($modificationValue)
+                                                                                    @if($incrementType === 'fixed_amount')
+                                                                                        ₹{{ number_format((float) $currentAmount, 2) }} {{ $operation === 'increase' ? '+' : '-' }} ₹{{ number_format((float) $modificationValue, 2) }}
+                                                                                    @elseif($incrementType === 'percentage')
+                                                                                        ₹{{ number_format((float) $currentAmount, 2) }} {{ $operation === 'increase' ? '+' : '-' }} {{ $modificationValue }}% 
+                                                                                        (₹{{ number_format((float) ($currentAmount * $modificationValue / 100), 2) }})
+                                                                                    @else
+                                                                                        New fixed amount (Previous: ₹{{ number_format((float) $currentAmount, 2) }})
+                                                                                    @endif
                                                                                 @endif
-                                                                            @endif
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <!-- Action Buttons -->
+                                                                        <div class="flex gap-2">
+                                                                            <flux:spacer/>
+                                                                            <flux:button 
+                                                                                wire:click="cancelModification"
+                                                                            >Cancel</flux:button>
+                                                                            <flux:button
+                                                                                variant="primary"
+                                                                                wire:click="saveModification({{ $salaryItem['id'] }})"
+                                                                                :disabled="!$modificationValue || $modificationValue <= 0"
+                                                                            >
+                                                                                Apply Changes
+                                                                            </flux:button>
                                                                         </div>
                                                                     </div>
-
-                                                                    <!-- Action Buttons -->
-                                                                    <div class="flex gap-2">
-                                                                        <flux:spacer/>
-                                                                        <flux:button 
-                                                                            wire:click="cancelModification"
-                                                                        >Cancel</flux:button>
-                                                                        <flux:button
-                                                                            variant="primary"
-                                                                            wire:click="saveModification({{ $salaryItem['id'] }})"
-                                                                            :disabled="!$modificationValue || $modificationValue <= 0"
-                                                                        >
-                                                                            Apply Changes
-                                                                        </flux:button>
-                                                                    </div>
-                                                                </div>
-                                                            </flux:modal>
-                                                        </div>
-                                                    </flux:table.cell>
-                                                </flux:table.row>
-                                            @endforeach
-                                        </flux:table.rows>
-                                    </flux:table>
+                                                                </flux:modal>
+                                                            </div>
+                                                        </flux:table.cell>
+                                                    </flux:table.row>
+                                                @endforeach
+                                            </flux:table.rows>
+                                        </flux:table>
+                                    </div>
                                 </div>
                             </div>
                         @endif
@@ -546,29 +576,6 @@
                                                             <flux:modal.close>
                                                                 <flux:button variant="ghost">Close</flux:button>
                                                             </flux:modal.close>
-                                                        </div>
-                                                    </div>
-                                                </flux:modal>
-                                                <!-- Rollback Button and Modal -->
-                                                <flux:modal.trigger name="rollback-log-{{ $log->id }}">
-                                                    <flux:button size="xs" variant="danger" icon="arrow-uturn-left">Rollback</flux:button>
-                                                </flux:modal.trigger>
-                                                <flux:modal name="rollback-log-{{ $log->id }}" class="min-w-[22rem]">
-                                                    <div class="space-y-4">
-                                                        <flux:heading size="lg">Rollback Change?</flux:heading>
-                                                        <flux:text class="mt-2">
-                                                            @if($log->batch_id)
-                                                                <p>You're about to rollback <b>all changes in this batch</b>. This action cannot be undone.</p>
-                                                            @else
-                                                                <p>You're about to rollback this change. This action cannot be undone.</p>
-                                                            @endif
-                                                            <p class="mt-2 text-red-500">Note: This will permanently delete the new salary component(s) created by this change.</p>
-                                                        </flux:text>
-                                                        <div class="flex gap-2 justify-end">
-                                                            <flux:modal.close>
-                                                                <flux:button variant="ghost">Cancel</flux:button>
-                                                            </flux:modal.close>
-                                                            <flux:button variant="danger" icon="arrow-uturn-left" wire:click="rollbackChange({{ $log->id }})" />
                                                         </div>
                                                     </div>
                                                 </flux:modal>

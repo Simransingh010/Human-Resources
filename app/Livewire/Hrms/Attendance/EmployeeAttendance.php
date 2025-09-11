@@ -30,10 +30,19 @@ class EmployeeAttendance extends Component
     public $recentActivities = [];
     public $chartData = [];
     public $chartDataJson = [];
+    public $lastSixMonthsAttendance = [];
+    
+    protected $listeners = ['set-selected-date' => 'setSelectedDate'];
 
     public function mount()
     {
         $this->selectedDate = Carbon::today()->format('Y-m-d');
+        $this->loadData();
+    }
+
+    public function setSelectedDate($data)
+    {
+        $this->selectedDate = $data['date'];
         $this->loadData();
     }
 
@@ -44,20 +53,27 @@ class EmployeeAttendance extends Component
 
     private function loadData()
     {
-        $this->loadAttendanceStats();
-        $this->loadWeeklyStats();
-        $this->loadWorkingHours();
-        $this->loadLeaveBalance();
-        $this->loadUpcomingHolidays();
-        $this->loadRecentActivities();
-        $this->prepareChartData();
+        try {
+            $this->loadAttendanceStats();
+            $this->loadWeeklyStats();
+            $this->loadWorkingHours();
+            $this->loadLeaveBalance();
+            $this->loadUpcomingHolidays();
+            $this->loadRecentActivities();
+            $this->prepareChartData();
+            $this->loadLastSixMonthsAttendance(); // <-- Add this
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            \Log::error('Error loading attendance data: ' . $e->getMessage());
+            \Log::error($e->getTraceAsString());
+        }
     }
 
     private function loadAttendanceStats()
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
@@ -65,7 +81,7 @@ class EmployeeAttendance extends Component
         $date = Carbon::parse($this->selectedDate);
         $startOfMonth = $date->copy()->startOfMonth();
         $endOfMonth = $date->copy()->endOfMonth();
-        
+
         // Get employee's active work shift
         $empWorkShift = EmpWorkShift::where('employee_id', $employee->id)
             ->where(function($query) use ($startOfMonth) {
@@ -75,7 +91,7 @@ class EmployeeAttendance extends Component
             ->where('start_date', '<=', $endOfMonth)
             ->with(['work_shift.work_shifts_algos'])
             ->first();
-            
+
         if (!$empWorkShift) {
             $this->workingDays = 0;
             return;
@@ -110,7 +126,7 @@ class EmployeeAttendance extends Component
 
         // Get holidays based on holiday calendar and pattern settings
         $holidays = [];
-        $useHolidays = $weekOffPattern['type'] === 'holiday_calendar' || 
+        $useHolidays = $weekOffPattern['type'] === 'holiday_calendar' ||
                       ($weekOffPattern['type'] === 'combined' && $weekOffPattern['holiday_calendar']['use_public_holidays']);
 
         if ($useHolidays && $workShiftAlgo->holiday_calendar_id) {
@@ -120,12 +136,12 @@ class EmployeeAttendance extends Component
                 ->whereNull('deleted_at')
                 ->get();
         }
-        
+
         $holidayDates = [];
         foreach ($holidays as $holiday) {
             $holidayStart = Carbon::parse($holiday->start_date);
             $holidayEnd = $holiday->end_date ? Carbon::parse($holiday->end_date) : $holidayStart;
-            
+
             while ($holidayStart->lte($holidayEnd)) {
                 $holidayDates[] = $holidayStart->format('Y-m-d');
                 $holidayStart->addDay();
@@ -140,7 +156,7 @@ class EmployeeAttendance extends Component
         // Calculate working days
         $workingDays = 0;
         $currentDay = $startOfMonth->copy();
-        
+
         while ($currentDay->lte($endOfMonth)) {
             $isWeekOff = false;
             $currentDate = $currentDay->format('Y-m-d');
@@ -170,46 +186,46 @@ class EmployeeAttendance extends Component
                     $isWeekOff = in_array($dayOfWeek, $weekOffPattern['fixed_weekly']['off_days']);
                     break;
             }
-            
+
             // If not a week off and not a holiday, count as working day
             if (!$isWeekOff && !in_array($currentDate, $holidayDates)) {
                 $workingDays++;
             }
-            
+
             $currentDay->addDay();
         }
-        
+
         $this->workingDays = $workingDays;
-        
+
         // Get present days for the employee in this month
         $attendanceRecords = EmpAttendance::where('employee_id', $employee->id)
             ->whereBetween('work_date', [$startOfMonth->format('Y-m-d'), $endOfMonth->format('Y-m-d')])
             ->get();
-            
+
         $this->presentDays = $attendanceRecords->where('attendance_status_main', 'P')->count();
-        
+
         // Calculate average hours worked
         $totalHours = 0;
         $recordsWithHours = 0;
-        
+
         foreach ($attendanceRecords as $record) {
             if ($record->check_in && $record->check_out) {
                 $checkIn = Carbon::parse($record->check_in);
                 $checkOut = Carbon::parse($record->check_out);
                 $hours = $checkOut->diffInMinutes($checkIn) / 60;
-                
+
                 if ($hours > 0) {
                     $totalHours += $hours;
                     $recordsWithHours++;
                 }
             }
         }
-        
+
         $this->averageHours = $recordsWithHours > 0 ? round($totalHours / $recordsWithHours, 1) : 0;
-        
+
         // Calculate attendance score based on attendance percentage
         $attendancePercentage = $workingDays > 0 ? ($this->presentDays / $workingDays) * 100 : 0;
-        
+
         if ($attendancePercentage >= 95) {
             $this->attendanceScore = 'A+';
         } elseif ($attendancePercentage >= 90) {
@@ -231,35 +247,35 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
 
         $startOfWeek = Carbon::now()->startOfWeek();
         $endOfWeek = Carbon::now()->endOfWeek();
-        
+
         // Calculate total working days in the week (excluding weekends and holidays)
         $workingDays = 0;
         $currentDay = $startOfWeek->copy();
-        
+
         // Get holidays for the week
         $holidays = Holiday::where('firm_id', $employee->firm_id)
             ->where('is_inactive', 0)
             ->whereNull('deleted_at')
             ->get();
-            
+
         $holidayDates = [];
         foreach ($holidays as $holiday) {
             $holidayStart = Carbon::parse($holiday->start_date);
             $holidayEnd = $holiday->end_date ? Carbon::parse($holiday->end_date) : $holidayStart;
-            
+
             while ($holidayStart->lte($holidayEnd)) {
                 $holidayDates[] = $holidayStart->format('Y-m-d');
                 $holidayStart->addDay();
             }
         }
-        
+
         while ($currentDay->lte($endOfWeek) && $currentDay->lte(Carbon::now())) {
             // Skip weekends and holidays
             if (!$currentDay->isWeekend() && !in_array($currentDay->format('Y-m-d'), $holidayDates)) {
@@ -267,14 +283,14 @@ class EmployeeAttendance extends Component
             }
             $currentDay->addDay();
         }
-        
+
         $this->thisWeekTotal = $workingDays;
-        
+
         // Get present days for the employee in this week
         $attendanceRecords = EmpAttendance::where('employee_id', $employee->id)
             ->whereBetween('work_date', [$startOfWeek->format('Y-m-d'), $endOfWeek->format('Y-m-d')])
             ->get();
-            
+
         $this->thisWeekPresent = $attendanceRecords->where('attendance_status_main', 'P')->count();
     }
 
@@ -282,7 +298,7 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
@@ -290,21 +306,21 @@ class EmployeeAttendance extends Component
         $date = Carbon::parse($this->selectedDate);
         $startOfMonth = $date->copy()->startOfMonth();
         $endOfMonth = $date->copy()->endOfMonth();
-        
+
         $attendanceRecords = EmpAttendance::where('employee_id', $employee->id)
             ->whereBetween('work_date', [$startOfMonth->format('Y-m-d'), $endOfMonth->format('Y-m-d')])
             ->get();
-        
+
         $standardHours = 0;
         $overtimeHours = 0;
         $standardHoursPerDay = 8; // Default standard hours per day
-        
+
         foreach ($attendanceRecords as $record) {
             if ($record->check_in && $record->check_out) {
                 $checkIn = Carbon::parse($record->check_in);
                 $checkOut = Carbon::parse($record->check_out);
                 $hours = $checkOut->diffInMinutes($checkIn) / 60;
-                
+
                 if ($hours > $standardHoursPerDay) {
                     $standardHours += $standardHoursPerDay;
                     $overtimeHours += $hours - $standardHoursPerDay;
@@ -313,7 +329,7 @@ class EmployeeAttendance extends Component
                 }
             }
         }
-        
+
         $this->standardHours = round($standardHours, 1);
         $this->overtimeHours = round($overtimeHours, 1);
     }
@@ -322,14 +338,14 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
-        
+
         // This is a placeholder implementation - you would need to adjust based on your actual leave management system
         // Typically, you would query the employee's leave balance from your leave management tables
-        
+
         // For now, setting some default values
         $this->casualLeave = 10;
         $this->sickLeave = 7;
@@ -340,33 +356,33 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
-        
+
         $today = Carbon::today();
         $endOfYear = Carbon::today()->endOfYear();
-        
+
         $holidays = Holiday::where('firm_id', $employee->firm_id)
             ->where('is_inactive', 0)
             ->whereNull('deleted_at')
             ->get();
-        
+
         $upcomingHolidays = [];
-        
+
         foreach ($holidays as $holiday) {
             $holidayStart = Carbon::parse($holiday->start_date);
-            
+
             // If it's an annual holiday and the date has passed this year, set it to next year
             if ($holiday->repeat_annually && $holidayStart->lt($today)) {
                 $holidayStart->year($today->year + 1);
             }
-            
+
             // Only include future holidays
             if ($holidayStart->gte($today) && $holidayStart->lte($endOfYear)) {
                 $daysAway = $today->diffInDays($holidayStart);
-                
+
                 $upcomingHolidays[] = [
                     'title' => $holiday->holiday_title,
                     'date' => $holidayStart->format('M d, Y'),
@@ -374,12 +390,12 @@ class EmployeeAttendance extends Component
                 ];
             }
         }
-        
+
         // Sort by date (closest first)
         usort($upcomingHolidays, function ($a, $b) {
             return Carbon::parse($a['date'])->lt(Carbon::parse($b['date'])) ? -1 : 1;
         });
-        
+
         // Limit to 5 upcoming holidays
         $this->upcomingHolidays = array_slice($upcomingHolidays, 0, 5);
     }
@@ -388,11 +404,11 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
-        
+
         // Get attendance records with their punches
         $attendanceRecords = EmpAttendance::with(['punches' => function($query) {
             $query->orderBy('punch_datetime', 'asc');
@@ -401,14 +417,14 @@ class EmployeeAttendance extends Component
         ->orderBy('work_date', 'desc')
         ->limit(10)
         ->get();
-        
+
         $recentActivities = [];
-        
+
         foreach ($attendanceRecords as $record) {
             $workDate = Carbon::parse($record->work_date);
             $today = Carbon::today();
             $yesterday = Carbon::yesterday();
-            
+
             if ($workDate->isSameDay($today)) {
                 $dateLabel = 'Today';
             } elseif ($workDate->isSameDay($yesterday)) {
@@ -416,21 +432,21 @@ class EmployeeAttendance extends Component
             } else {
                 $dateLabel = $workDate->format('l');
             }
-            
+
             // Get first punch in and last punch out
             $firstPunchIn = $record->punches->where('in_out', 'in')->first();
             $lastPunchOut = $record->punches->where('in_out', 'out')->last();
-            
+
             $checkIn = $firstPunchIn ? Carbon::parse($firstPunchIn->punch_datetime)->format('h:i A') : 'N/A';
             $checkOut = $lastPunchOut ? Carbon::parse($lastPunchOut->punch_datetime)->format('h:i A') : 'N/A';
-            
+
             $hours = 'N/A';
             if ($firstPunchIn && $lastPunchOut) {
                 $checkInTime = Carbon::parse($firstPunchIn->punch_datetime);
                 $checkOutTime = Carbon::parse($lastPunchOut->punch_datetime);
                 $hours = round($checkOutTime->diffInMinutes($checkInTime) / 60, 1);
             }
-            
+
             $status = $record->attendance_status_main;
             if ($status === 'P') {
                 if ($record->is_late) {
@@ -449,21 +465,21 @@ class EmployeeAttendance extends Component
             // Get all punches for the day
             $allPunches = $record->punches->map(function($punch) {
                 $geoLocation = 'Location not available';
-                
+
                 if ($punch->punch_geo_location) {
                     $location = is_array($punch->punch_geo_location) ? $punch->punch_geo_location : json_decode($punch->punch_geo_location, true);
                     if ($location && isset($location['latitude']) && isset($location['longitude'])) {
                         $geoLocation = "Lat: {$location['latitude']}, Long: {$location['longitude']}";
                     }
                 }
-                
+
                 return [
                     'time' => Carbon::parse($punch->punch_datetime)->format('h:i A'),
                     'type' => ucfirst($punch->in_out),
                     'location' => $geoLocation
                 ];
             })->toArray();
-            
+
             $recentActivities[] = [
                 'date_label' => $dateLabel,
                 'date' => $workDate->format('M d, Y'),
@@ -474,7 +490,7 @@ class EmployeeAttendance extends Component
                 'all_punches' => $allPunches
             ];
         }
-        
+
         $this->recentActivities = $recentActivities;
     }
 
@@ -482,21 +498,21 @@ class EmployeeAttendance extends Component
     {
         $userId = Auth::id();
         $employee = Employee::where('user_id', $userId)->first();
-        
+
         if (!$employee) {
             return;
         }
-        
+
         $date = Carbon::parse($this->selectedDate);
         $startOfMonth = $date->copy()->startOfMonth();
         $endOfMonth = $date->copy()->endOfMonth();
-        
+
         // Get all attendance records for the month
         $attendanceRecords = EmpAttendance::where('employee_id', $employee->id)
             ->whereBetween('work_date', [$startOfMonth->format('Y-m-d'), $endOfMonth->format('Y-m-d')])
             ->get()
             ->keyBy('work_date');
-        
+
         // Get employee's work shift to determine working days
         $empWorkShift = EmpWorkShift::where('employee_id', $employee->id)
             ->where(function($query) use ($startOfMonth) {
@@ -509,11 +525,11 @@ class EmployeeAttendance extends Component
 
         $chartData = collect();
         $currentDate = $startOfMonth->copy();
-        
+
         while ($currentDate->lte($endOfMonth)) {
             $dateKey = $currentDate->format('Y-m-d');
             $record = $attendanceRecords->get($dateKey);
-            
+
             $isWorkingDay = true;
             if ($empWorkShift) {
                 $workShiftAlgo = $empWorkShift->work_shift->work_shifts_algos()
@@ -525,14 +541,15 @@ class EmployeeAttendance extends Component
                     $isWorkingDay = $this->isWorkingDay($currentDate, $weekOffPattern, $empWorkShift);
                 }
             }
-            
+
             $data = [
                 'date' => $currentDate->format('M d'),
+                'full_date' => $currentDate->format('Y-m-d'), // Add full date for easier processing
                 'present' => false,
                 'late' => false,
                 'absent' => false
             ];
-            
+
             if ($isWorkingDay) {
                 if ($record) {
                     if ($record->attendance_status_main === 'P') {
@@ -551,19 +568,86 @@ class EmployeeAttendance extends Component
                     }
                 }
             }
-            
+
             $chartData->push($data);
             $currentDate->addDay();
         }
-        
+
         $this->chartData = $chartData;
-        // Add this for the Blade fix:
+        
+        // Update chartDataJson to include proper date formatting for the FullCalendar
         $this->chartDataJson = $this->chartData->map(function ($day) {
+            $status = 'Unknown';
+            if ($day['present']) {
+                $status = 'Present';
+            } elseif ($day['late']) {
+                $status = 'Late';
+            } elseif ($day['absent']) {
+                $status = 'Absent';
+            }
+            
             return [
                 'date' => $day['date'],
-                'status' => $day['present'] ? 'Present' : ($day['late'] ? 'Late' : ($day['absent'] ? 'Absent' : 'Unknown')),
+                'full_date' => $day['full_date'], // Include the full date for easier processing
+                'status' => $status
             ];
         })->values()->toArray();
+        
+        // Log the chart data for debugging
+        \Log::info('Chart data prepared: ' . count($this->chartDataJson) . ' entries');
+        
+        $this->dispatch('chartDataUpdated');
+    }
+
+    /**
+     * Loads the last 6 months' attendance summary for the current employee.
+     * Each month contains a day-wise array of attendance statuses.
+     */
+    private function loadLastSixMonthsAttendance()
+    {
+        $userId = Auth::id();
+        $employee = Employee::where('user_id', $userId)->first();
+        if (!$employee) {
+            $this->lastSixMonthsAttendance = [];
+            return;
+        }
+        $months = [];
+        $today = Carbon::today();
+        for ($i = 5; $i >= 0; $i--) {
+            $monthDate = $today->copy()->subMonths($i);
+            $year = $monthDate->year;
+            $month = $monthDate->month;
+            $daysInMonth = $monthDate->daysInMonth;
+            $attendances = \App\Models\Hrms\EmpAttendance::where('employee_id', $employee->id)
+                ->whereYear('work_date', $year)
+                ->whereMonth('work_date', $month)
+                ->get()
+                ->keyBy(function($a) { return Carbon::parse($a->work_date)->format('Y-m-d'); });
+            $dayWise = [];
+            $presentCount = 0;
+            for ($day = 1; $day <= $daysInMonth; $day++) {
+                $date = Carbon::create($year, $month, $day)->format('Y-m-d');
+                $attendance = $attendances->get($date);
+                $status = $attendance ? $attendance->attendance_status_main : '';
+                if (in_array($status, ['P', 'WFR', 'OD'])) {
+                    $presentCount++;
+                }
+                $dayWise[] = [
+                    'day' => $day,
+                    'status' => $status,
+                    'date' => $date,
+                ];
+            }
+            $months[] = [
+                'label' => $monthDate->format('M Y'),
+                'year' => $year,
+                'month' => $month,
+                'daysInMonth' => $daysInMonth,
+                'attendance' => $dayWise,
+                'present_count' => $presentCount,
+            ];
+        }
+        $this->lastSixMonthsAttendance = $months;
     }
 
     private function isWorkingDay($date, $weekOffPattern, $empWorkShift)
@@ -573,11 +657,11 @@ class EmployeeAttendance extends Component
         }
 
         $type = $weekOffPattern['type'] ?? '';
-        
+
         switch ($type) {
             case 'fixed_weekly':
                 return !in_array($date->dayOfWeek, $weekOffPattern['fixed_weekly']['off_days'] ?? []);
-                
+
             case 'rotating':
                 $cycle = $weekOffPattern['rotating']['cycle'] ?? [];
                 if (!empty($cycle)) {
@@ -587,7 +671,7 @@ class EmployeeAttendance extends Component
                     return $cycle[$cyclePosition] !== 1;
                 }
                 break;
-                
+
             case 'holiday_calendar':
                 // Check against holiday calendar
                 if (isset($weekOffPattern['holiday_calendar']['id'])) {
@@ -601,14 +685,17 @@ class EmployeeAttendance extends Component
                     return !$isHoliday;
                 }
                 break;
-                
+
+
+
+
             case 'combined':
                 // Check both fixed weekly and holiday calendar
                 $isWeekOff = in_array($date->dayOfWeek, $weekOffPattern['fixed_weekly']['off_days'] ?? []);
                 if ($isWeekOff) {
                     return false;
                 }
-                
+
                 if (isset($weekOffPattern['holiday_calendar']['id'])) {
                     $isHoliday = Holiday::where('holiday_calendar_id', $weekOffPattern['holiday_calendar']['id'])
                         ->where('start_date', '<=', $date)
@@ -621,12 +708,12 @@ class EmployeeAttendance extends Component
                 }
                 break;
         }
-        
+
         // Check exceptions
         if (isset($weekOffPattern['exceptions']) && in_array($date->format('Y-m-d'), $weekOffPattern['exceptions'])) {
             return false;
         }
-        
+
         return true;
     }
 

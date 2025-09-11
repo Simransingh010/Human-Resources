@@ -61,10 +61,13 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             'payroll_tracks' => function ($q) {
                 $q->whereBetween('salary_period_from', [$this->start, $this->end])
                   ->whereHas('salary_component', function($q) {
-                      $q->where('component_type', 'tax');
+                      $q->where('component_type', 'tds');
                   });
             }
+          
         ])->where('firm_id', $firmId);
+
+        
 
         // Apply salary execution group filter if selected
         if (!empty($this->filters['salary_execution_group_id'])) {
@@ -99,7 +102,71 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
             });
         }
 
-        return $query->get();
+        $employees = $query->get();
+
+        // Exclude employees on hold for any payroll slot overlapping the period
+        $filtered = $employees->filter(function ($employee) use ($firmId) {
+            // Check if employee was hired before or during the report period
+            $jobProfile = $employee->emp_job_profile;
+            if ($jobProfile && $jobProfile->doh) {
+                // If employee was hired after the end of the report period, exclude them
+                if ($jobProfile->doh->isAfter($this->end)) {
+                    return false;
+                }
+            }
+            
+            $onHold = \App\Models\Hrms\SalaryHold::where('firm_id', $firmId)
+                ->where('employee_id', $employee->id)
+                ->whereHas('payrollSlot', function($q) {
+                    $q->whereDate('from_date', '<=', $this->end)
+                      ->whereDate('to_date', '>=', $this->start);
+                })
+                ->exists();
+            return !$onHold;
+        });
+
+        // Sort employees by salary execution groups for Firm ID 27
+        if ($firmId == 27) {
+            $filtered = $this->sortEmployeesBySalaryGroups($filtered);
+        }
+
+        return $filtered->values();
+    }
+
+    // Helper method to sort employees by salary execution groups for Firm ID 27
+    private function sortEmployeesBySalaryGroups($employees)
+    {
+        // Define the desired sequence for Firm ID 27
+        $desiredSequence = [
+            'Director',
+            'Faculty Regular', 
+            'Faculty Contractual',
+            'Staff Permanent',
+            'Staff Contractual'
+        ];
+
+        // Create a mapping of group titles to their priority
+        $priorityMap = array_flip($desiredSequence);
+
+        return $employees->sortBy(function($employee) use ($priorityMap) {
+            // Get the first salary execution group for this employee
+            $salaryGroup = $employee->salary_execution_groups->first();
+            
+            if (!$salaryGroup) {
+                // If no salary group, put at the end
+                return 999;
+            }
+
+            $groupTitle = $salaryGroup->title;
+            
+            // Check if the group title is in our desired sequence
+            if (isset($priorityMap[$groupTitle])) {
+                return $priorityMap[$groupTitle];
+            }
+
+            // If not in our sequence, put at the end
+            return 999;
+        });
     }
 
     public function collection()
@@ -159,7 +226,7 @@ class TdsReportExport extends DefaultValueBinder implements FromCollection, With
         // Calculate monthly TDS specifically using component_type='tds'
         $monthlyTds = PayrollComponentsEmployeesTrack::where('employee_id', $employee->id)
             ->where('firm_id', $this->filters['firm_id'])
-            ->where('component_type', 'tax')  // Using exact component type as defined in SalaryComponent
+            ->where('component_type', 'tds')  // Using exact component type as defined in SalaryComponent
             ->whereBetween('salary_period_from', [$this->start, $this->end])
             ->sum('amount_payable');
         

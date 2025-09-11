@@ -53,6 +53,8 @@ class EmpLeaveTransactions extends Component
         'con' => 'Consumption',
         'cfw' => 'Carry Forward',
         'lps' => 'Lapse',
+        'credit' => 'Credit',
+        'debit' => 'Debit',
     ];
 
     public $formData = [

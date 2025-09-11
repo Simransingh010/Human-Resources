@@ -388,6 +388,7 @@ class OnboardDashboard extends Component
             ->whereNotIn('id', $accountedForEmployeeIds)
             ->with(['emp_personal_detail.media'])
             ->get();
+                                                                                 
     }
 
     public function render()

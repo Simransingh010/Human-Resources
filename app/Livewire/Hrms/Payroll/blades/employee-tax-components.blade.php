@@ -97,12 +97,15 @@
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
                             @foreach($this->employees as $employee)
-                                <tr>
+                                <tr wire:key="emp-{{ $employee->id }}">
                                     @foreach($fieldConfig as $field => $cfg)
                                         @if(in_array($field, $visibleFields))
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                                 @if($field === 'employee_name')
                                                     {{ trim($employee->fname . ' ' . ($employee->mname ? $employee->mname . ' ' : '') . $employee->lname) }}
+                                                    @if(optional($employee->emp_job_profile)->employee_code)
+                                                        ({{ optional($employee->emp_job_profile)->employee_code }})
+                                                    @endif
                                                 @else
                                                     {{ $employee->$field }}
                                                 @endif
@@ -113,6 +116,7 @@
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                                             <flux:input
                                                 type="number"
+                                                wire:key="cell-{{ $employee->id }}-{{ $taxComponent?->id }}"
                                                 wire:model="componentAmounts.{{ $employee->id }}.{{ $taxComponent?->id }}"
                                                 class="mt-1 block w-32 rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
                                                 placeholder="Enter amount"

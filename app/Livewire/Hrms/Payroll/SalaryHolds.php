@@ -68,6 +68,11 @@ class SalaryHolds extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+
+        // If an employee is preselected, load their payroll slots
+        if ($this->selectedEmployee) {
+            $this->updatedSelectedEmployee($this->selectedEmployee);
+        }
     }
 
     protected function initListsForFields(): void
@@ -81,14 +86,49 @@ class SalaryHolds extends Component
             })
             ->toArray();
 
-        // Get payroll slots for dropdown
-        $this->listsForFields['payrollSlots'] = PayrollSlot::where('firm_id', Session::get('firm_id'))
-            ->orderBy('from_date', 'asc')
-            ->get()
-            ->mapWithKeys(function ($slot) {
-                return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
-            })
-            ->toArray();
+        // By default, show all payroll slots (if no employee selected)
+        if ($this->selectedEmployee) {
+            $this->updatedSelectedEmployee($this->selectedEmployee);
+        } else {
+            $this->listsForFields['payrollSlots'] = PayrollSlot::where('firm_id', Session::get('firm_id'))
+                ->orderBy('from_date', 'asc')
+                ->get()
+                ->mapWithKeys(function ($slot) {
+                    return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
+                })
+                ->toArray();
+        }
+    }
+
+    // Add this method to update payroll slots when employee changes
+    public function updatedSelectedEmployee($employeeId)
+    {
+        if ($employeeId) {
+            // Get payroll slots for the selected employee (like SalaryArrears)
+            $employee = Employee::find($employeeId);
+            if ($employee && method_exists($employee, 'payroll_slots')) {
+                $this->listsForFields['payrollSlots'] = $employee->payroll_slots()
+                    ->orderBy('from_date', 'desc')
+                    ->get()
+                    ->mapWithKeys(function ($slot) {
+                        return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
+                    })
+                    ->toArray();
+            } else {
+                $this->listsForFields['payrollSlots'] = [];
+            }
+        } else {
+            // If no employee selected, show all slots
+            $this->listsForFields['payrollSlots'] = PayrollSlot::where('firm_id', Session::get('firm_id'))
+                ->orderBy('from_date', 'asc')
+                ->get()
+                ->mapWithKeys(function ($slot) {
+                    return [$slot->id => $slot->from_date->format('jS F Y') . ' to ' . $slot->to_date->format('jS F Y')];
+                })
+                ->toArray();
+        }
+        // Optionally clear selected payroll slots if not in new list
+        $this->selectedPayrollSlots = array_intersect($this->selectedPayrollSlots, array_keys($this->listsForFields['payrollSlots']));
     }
 
     protected function loadSalaryHolds()

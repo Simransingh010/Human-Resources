@@ -1,4 +1,11 @@
 <div class="p-4">
+    <div class="mb-4">
+        <flux:input
+            class="w-64"
+            placeholder="Search Employee Name or Code..."
+            wire:model.live.debounce.200ms="searchName"
+        />
+    </div>
     <form wire:submit.prevent="save">
         <table class="min-w-full border text-sm">
             <thead class="bg-gray-100">
@@ -11,20 +18,30 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach ($salcomponentEmployees as $salcomponentEmployee)
-                    <tr>
+                @foreach ($this->filteredSalcomponentEmployees as $salcomponentEmployee)
+                    <tr wire:key="emp-{{ $salcomponentEmployee->id }}">
                         <td class="border p-2">{{ $salcomponentEmployee->fname }} {{ $salcomponentEmployee->mname }}
-                            {{ $salcomponentEmployee->lname }}</td>
+                            {{ $salcomponentEmployee->lname }}
+                            @if(optional($salcomponentEmployee->emp_job_profile)->employee_code)
+                                ({{ optional($salcomponentEmployee->emp_job_profile)->employee_code }})
+                            @endif
+                        </td>
                         @foreach ($salcomponents as $salcomponent)
+                            @php
+                                $isAssigned = $assignedMatrix[$salcomponentEmployee->id][$salcomponent->id] ?? false;
+                            @endphp
                             <td class="border p-2">
                                 <div class="flex items-center space-x-2">
-                                    <input type="text" class="w-full border rounded px-2 py-1" placeholder="0.00"
+                                    <input type="text" class="w-full border rounded px-2 py-1 {{ $isAssigned ? '' : 'bg-gray-100 cursor-not-allowed' }}" placeholder="0.00"
+                                        wire:key="cell-{{ $salcomponentEmployee->id }}-{{ $salcomponent->id }}"
                                         value="{{ $entries[$salcomponentEmployee->id][$salcomponent->id] ?? '' }}"
-                                        wire:keyup.debounce.500ms="saveSingleEntry('{{ $salcomponentEmployee->id }}', '{{ $salcomponent->id }}', $event.target.value)">
+                                        @if($isAssigned)
+                                            wire:keyup.debounce.500ms="saveSingleEntry('{{ $salcomponentEmployee->id }}', '{{ $salcomponent->id }}', $event.target.value)"
+                                        @else disabled title="Head not assigned to this employee" @endif>
                                     <flux:modal.trigger
                                         name="mdl-remarks-{{ $salcomponentEmployee->id }}-{{ $salcomponent->id }}">
                                         <flux:button variant="primary" size="sm" icon="pencil-square"
-                                            tooltip="Add/Edit Remarks" />
+                                            tooltip="Add/Edit Remarks" @if(!$isAssigned) disabled @endif />
                                     </flux:modal.trigger>
                                 </div>
                             </td>
@@ -45,7 +62,11 @@
                                     <flux:heading size="lg">Add/Edit Remarks</flux:heading>
                                     <flux:subheading>
                                         Employee: {{ $salcomponentEmployee->fname }} {{ $salcomponentEmployee->mname }}
-                                        {{ $salcomponentEmployee->lname }}<br>
+                                        {{ $salcomponentEmployee->lname }}
+                                        @if(optional($salcomponentEmployee->emp_job_profile)->employee_code)
+                                            ({{ optional($salcomponentEmployee->emp_job_profile)->employee_code }})
+                                        @endif
+                                        <br>
                                         Component: {{ $salcomponent->title }} [{{ $salcomponent->nature }}]
                                     </flux:subheading>
                                 </div>

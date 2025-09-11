@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Hrms\EmpLeaveBalance;  // ← make sure this path matches your model
+use App\Models\Hrms\EmpAttendance;
 use App\Models\Hrms\EmpLeaveRequest;
 use App\Models\Hrms\EmpLeaveRequestApproval;
 use App\Models\Hrms\LeaveRequestEvent;
@@ -25,6 +26,324 @@ use Illuminate\Support\Facades\App;
 
 class LeaveController extends Controller
 {
+    /**
+     * GET /api/hrms/pol-attendances
+     * Return ALL POL attendances for the authenticated user's firm (no approver filtering).
+     */
+    public function getPolAttendancesForApprover(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+
+            // Fetch ALL POL attendances for this firm (raw query to avoid any model-level scopes/soft-delete side effects)
+            $attendances = DB::table('emp_attendances as ea')
+                ->leftJoin('employees as e', 'e.id', '=', 'ea.employee_id')
+                ->where('ea.firm_id', $employee->firm_id)
+                ->where('ea.attendance_status_main', 'POL')
+                ->orderBy('ea.work_date', 'desc')
+                ->select([
+                    'ea.id',
+                    'ea.employee_id',
+                    'ea.work_date',
+                    'ea.attendance_status_main',
+                    'ea.attend_remarks',
+                    DB::raw("TRIM(CONCAT(COALESCE(e.fname,''),' ',COALESCE(NULLIF(e.mname,''),'') ,CASE WHEN e.mname IS NULL OR e.mname='' THEN '' ELSE ' ' END, COALESCE(e.lname,''))) as employee_name")
+                ])
+                ->get();
+
+            
+
+            // Shape minimal payload without permission filtering
+            $data = $attendances->map(function ($attendance) {
+                return [
+                    'id' => $attendance->id,
+                    'employee_id' => $attendance->employee_id,
+                    'employee_name' => $attendance->employee_name ?: 'N/A',
+                    'work_date' => Carbon::parse($attendance->work_date)->toDateString(),
+                    'attendance_status_main' => $attendance->attendance_status_main,
+                    'attend_remarks' => $attendance->attend_remarks,
+                ];
+            })->values();
+
+            return Response::json([
+                'message_type' => 'success',
+                'firm_id' => $employee->firm_id,
+                'message_display' => 'none',
+                'message' => $data->count() . ' POL attendances found',
+                'data' => $data,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to fetch POL attendances: ' . $e->getMessage());
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * Find an approved/approved_further leave that covers the given date for the employee.
+     */
+    private function findCoveringLeaveRequestForDate(int $employeeId, int $firmId, $date)
+    {
+        $workDate = Carbon::parse($date)->toDateString();
+        return EmpLeaveRequest::with('leave_type')
+            ->where('employee_id', $employeeId)
+            ->where('firm_id', $firmId)
+            ->whereDate('apply_from', '<=', $workDate)
+            ->whereDate('apply_to', '>=', $workDate)
+            ->whereIn('status', ['approved', 'approved_further'])
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
+     * Check if the authenticated user can approve POL for a specific attendance.
+     */
+    private function canUserApprovePolForAttendance($user, EmpAttendance $attendance, ?EmpLeaveRequest $coveringLeave): bool
+    {
+        $result = $this->canUserApprovePolForAttendanceDetailed($user, $attendance, $coveringLeave);
+        return $result['can_approve'] === true;
+    }
+
+    /**
+     * Detailed permission check with reason codes for POL approval.
+     */
+    private function canUserApprovePolForAttendanceDetailed($user, EmpAttendance $attendance, ?EmpLeaveRequest $coveringLeave): array
+    {
+        if (!$user) {
+            return ['can_approve' => false, 'reason' => 'unauthenticated'];
+        }
+        if (!$user->id) {
+            return ['can_approve' => false, 'reason' => 'invalid_user'];
+        }
+        if (!$coveringLeave) {
+            return ['can_approve' => false, 'reason' => 'no_covering_leave'];
+        }
+
+        $rules = LeaveApprovalRule::with(['employees'])
+            ->where('firm_id', $attendance->firm_id)
+            ->where('approver_id', $user->id)
+            ->where(function ($query) use ($coveringLeave) {
+                $query->where('leave_type_id', $coveringLeave->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->get();
+
+        if ($rules->isEmpty()) {
+            return ['can_approve' => false, 'reason' => 'no_matching_rule'];
+        }
+
+        // Filter out view_only and out-of-scope rules
+        $eligible = $rules->first(function ($rule) use ($attendance) {
+            if (($rule->approval_mode ?? null) === 'view_only') {
+                return false;
+            }
+            // Must include this employee in rule scope
+            return $rule->employees->contains('id', $attendance->employee_id)
+                || ($rule->employee_scope === 'all' || $rule->department_scope === 'all');
+        });
+
+        if (!$eligible) {
+            return ['can_approve' => false, 'reason' => 'not_in_rule_scope_or_view_only'];
+        }
+
+        return ['can_approve' => true, 'reason' => null];
+    }
+
+    /**
+     * POST /api/hrms/leave/pol-attendance-action
+     * Approve or reject a single POL attendance with optional remarks.
+     */
+    public function handlePolAttendanceAction(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'attendance_id' => 'required|integer|exists:emp_attendances,id',
+                'action' => 'required|in:accept,reject',
+                'remarks' => 'nullable|string|min:3',
+            ]);
+
+            if ($validator->fails()) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Invalid parameters',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+            $attendanceId = (int) $request->input('attendance_id');
+            $action = $request->input('action');
+            $remarks = $request->input('remarks');
+
+            $attendance = EmpAttendance::with('employee')
+                ->where('id', $attendanceId)
+                ->where('firm_id', $employee->firm_id)
+                ->first();
+
+            if (!$attendance) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Attendance not found'
+                ], 404);
+            }
+
+            if ($attendance->attendance_status_main !== 'POL') {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Attendance is not in POL state',
+                    'code' => 'invalid_state',
+                ], 409);
+            }
+
+            $coveringLeave = $this->findCoveringLeaveRequestForDate($attendance->employee_id, $attendance->firm_id, $attendance->work_date);
+            $perm = $this->canUserApprovePolForAttendanceDetailed($user, $attendance, $coveringLeave);
+            if (!$perm['can_approve']) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'You are not authorized to perform this action',
+                    'code' => $perm['reason'],
+                ], 403);
+            }
+
+            DB::beginTransaction();
+            try {
+                if ($action === 'accept') {
+                    // Flip to Present and append remarks
+                    $attendance->attendance_status_main = 'P';
+                    $attendance->attend_remarks = trim(($attendance->attend_remarks ? $attendance->attend_remarks . ' | ' : '') . 'POL approved' . ($remarks ? ('. ' . $remarks) : ''));
+                    $attendance->save();
+
+                    // Credit back leave balance if applicable
+                    $this->creditBackLeaveForDateApi($attendance, $coveringLeave, $user->id);
+
+                    // Informational event on covering leave (status unchanged)
+                    if ($coveringLeave) {
+                        LeaveRequestEvent::create([
+                            'emp_leave_request_id' => $coveringLeave->id,
+                            'user_id' => $user->id,
+                            'event_type' => 'status_changed',
+                            'from_status' => $coveringLeave->status,
+                            'to_status' => $coveringLeave->status,
+                            'remarks' => 'POL approved for ' . Carbon::parse($attendance->work_date)->format('Y-m-d') . '. ' . ($remarks ?? ''),
+                            'firm_id' => $attendance->firm_id,
+                            'created_at' => now(),
+                        ]);
+                    }
+                } else {
+                    // reject: keep POL, append remark
+                    $attendance->attend_remarks = trim(($attendance->attend_remarks ? $attendance->attend_remarks . ' | ' : '') . 'POL rejected' . ($remarks ? ('. ' . $remarks) : ''));
+                    $attendance->save();
+
+                    if ($coveringLeave) {
+                        LeaveRequestEvent::create([
+                            'emp_leave_request_id' => $coveringLeave->id,
+                            'user_id' => $user->id,
+                            'event_type' => 'status_changed',
+                            'from_status' => $coveringLeave->status,
+                            'to_status' => $coveringLeave->status,
+                            'remarks' => 'POL rejected for ' . Carbon::parse($attendance->work_date)->format('Y-m-d') . '. ' . ($remarks ?? ''),
+                            'firm_id' => $attendance->firm_id,
+                            'created_at' => now(),
+                        ]);
+                    }
+                }
+
+                DB::commit();
+
+                return Response::json([
+                    'message_type' => 'success',
+                    'message_display' => 'popup',
+                    'message' => $action === 'accept' ? 'Attendance set to Present and leave balance credited.' : 'Attendance remains POL.',
+                    'data' => [
+                        'attendance_id' => $attendance->id,
+                        'action' => $action,
+                        'work_date' => Carbon::parse($attendance->work_date)->toDateString(),
+                    ],
+                ], 200);
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Server error: ' . $e->getMessage(),
+                ], 500);
+            }
+        } catch (\Throwable $e) {
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Credit back leave balance for a POL-approved attendance, if a covering leave exists.
+     */
+    private function creditBackLeaveForDateApi(EmpAttendance $attendance, ?EmpLeaveRequest $coveringLeave, int $actorUserId): void
+    {
+        if (! $coveringLeave) {
+            return;
+        }
+
+        $creditAmount = 1.0;
+        if (floatval($coveringLeave->apply_days) === 0.5) {
+            $creditAmount = 0.5;
+        }
+
+        $leaveBalance = EmpLeaveBalance::where('firm_id', $coveringLeave->firm_id)
+            ->where('employee_id', $coveringLeave->employee_id)
+            ->where('leave_type_id', $coveringLeave->leave_type_id)
+            ->where('period_start', '<=', Carbon::parse($attendance->work_date))
+            ->where('period_end', '>=', Carbon::parse($attendance->work_date))
+            ->first();
+
+        if ($leaveBalance) {
+            $leaveBalance->consumed_days = max(0, ($leaveBalance->consumed_days - $creditAmount));
+            $leaveBalance->save(); // Model observer will recalculate balance
+
+            EmpLeaveTransaction::create([
+                'leave_balance_id' => $leaveBalance->id,
+                'emp_leave_request_id' => $coveringLeave->id,
+                'transaction_type' => 'credit',
+                'transaction_date' => now(),
+                'amount' => $creditAmount,
+                'reference_id' => $attendance->id,
+                'created_by' => $actorUserId,
+                'firm_id' => $coveringLeave->firm_id,
+                'remarks' => 'POL approved: credited back',
+            ]);
+        }
+    }
+
     /**
      * GET /api/hrms/employees/{employee}/leave-balances
      */
@@ -126,8 +445,8 @@ class LeaveController extends Controller
             'reason'        => 'nullable|string|max:1000',
         ]);
 
-        $from = Carbon::parse($validated['apply_from']);
-        $to   = Carbon::parse($validated['apply_to']);
+        $from = Carbon::parse($validated['apply_from'])->startOfDay();
+        $to   = Carbon::parse($validated['apply_to'])->startOfDay();
         $days = $from->diffInDays($to) + 1;
 
         DB::beginTransaction();
@@ -220,9 +539,8 @@ class LeaveController extends Controller
             'reason'        => 'nullable|string|max:1000',
         ]);
 
-        $from = Carbon::parse($validated['apply_from']);
-        $to   = Carbon::parse($validated['apply_to']);
-        $days = $from->diffInDays($to) + 1;
+        $from = Carbon::parse($validated['apply_from'])->startOfDay();
+        $to   = Carbon::parse($validated['apply_to'])->startOfDay();
 
         DB::beginTransaction();
         try {
@@ -233,7 +551,7 @@ class LeaveController extends Controller
                 'leave_type_id' => $validated['leave_type_id'],
                 'apply_from'    => $from,
                 'apply_to'      => $to,
-                'apply_days'    => $days,
+                'apply_days'    => $from->diffInDays($to) + 1,
                 'reason'        => $validated['reason'] ?? null,
                 'status'        => 'applied',
             ]);
@@ -392,8 +710,11 @@ class LeaveController extends Controller
                 ], 422);
             }
             
-            $from = Carbon::parse($validated['apply_from']);
-            $to   = Carbon::parse($validated['apply_to']);
+            $from = Carbon::parse($validated['apply_from'])->startOfDay();
+            $to   = Carbon::parse($validated['apply_to'])->startOfDay();
+            
+            // Validate no overlapping leave requests (only block if status is applied/approved, allow if rejected)
+            $this->validateNoOverlappingLeaves($employee->id, $firmId, $from, $to, $validated['leave_age']);
             
             // Calculate days based on leave type
             if ($validated['leave_age'] === 'half') {
@@ -937,7 +1258,7 @@ class LeaveController extends Controller
             // Get the leave request
             $leaveRequest = EmpLeaveRequest::where('id', $leaveRequestId)
                 ->where('firm_id', $employee->firm_id)
-                ->with('employee')
+                ->with(['employee', 'leave_type'])
                 ->first();
 
             if (!$leaveRequest) {
@@ -1212,10 +1533,9 @@ class LeaveController extends Controller
                 ->first();
 
             if ($leaveBalance) {
-                // Update the balance
+                // Update consumed_days - the balance will be automatically recalculated
                 $leaveBalance->consumed_days += $leaveRequest->apply_days;
-                $leaveBalance->balance = $leaveBalance->allocated_days + $leaveBalance->carry_forwarded_days - $leaveBalance->consumed_days - $leaveBalance->lapsed_days;
-                $leaveBalance->save();
+                $leaveBalance->save(); // Model observer will recalculate balance
 
                 // Create a leave transaction record
                 EmpLeaveTransaction::create([
@@ -1230,6 +1550,38 @@ class LeaveController extends Controller
                     'remarks' => 'Leave approved'
                 ]);
             }
+            $this->updateAttendanceForLeave($leaveRequest);
+        }
+    }
+
+    /**
+     * Update attendance records for an approved leave request.
+     *
+     * @param EmpLeaveRequest $leaveRequest
+     * @return void
+     */
+    private function updateAttendanceForLeave(EmpLeaveRequest $leaveRequest): void
+    {
+        $startDate = Carbon::parse($leaveRequest->apply_from);
+        $endDate = Carbon::parse($leaveRequest->apply_to);
+
+        $isHalfDay = floatval($leaveRequest->apply_days) === 0.5;
+        $attendanceStatus = $isHalfDay ? 'HD' : 'L';
+        $finalDayWeightage = $isHalfDay ? 0.5 : 0; // 0 for full day leave, 0.5 for half day
+
+        for ($date = $startDate; $date->lte($endDate); $date->addDay()) {
+            EmpAttendance::updateOrCreate(
+                [
+                    'firm_id' => $leaveRequest->firm_id,
+                    'employee_id' => $leaveRequest->employee_id,
+                    'work_date' => $date->toDateString(),
+                ],
+                [
+                    'attendance_status_main' => $attendanceStatus,
+                    'final_day_weightage' => $finalDayWeightage,
+                    'attend_remarks' => 'Approved Leave: ' . ($leaveRequest->leave_type->leave_title ?? 'N/A'),
+                ]
+            );
         }
     }
 
@@ -1558,5 +1910,43 @@ class LeaveController extends Controller
             'firm_id' => $leave->firm_id,
             'created_at' => now()
         ]);
+    }
+
+    /**
+     * Validate that there are no overlapping leave requests
+     * Only blocks if status is 'applied', 'approved', or 'approved_further'
+     * Allows if status is 'rejected' or 'cancelled'
+     */
+    private function validateNoOverlappingLeaves($employeeId, $firmId, $from, $to, $leaveAge)
+    {
+        $overlappingLeaves = EmpLeaveRequest::where('employee_id', $employeeId)
+            ->where('firm_id', $firmId)
+            ->whereIn('status', ['applied', 'approved', 'approved_further'])
+            ->where(function ($q) use ($from, $to) {
+                $q->whereBetween('apply_from', [$from, $to])
+                    ->orWhereBetween('apply_to', [$from, $to])
+                    ->orWhere(function ($subQ) use ($from, $to) {
+                        $subQ->where('apply_from', '<=', $from)
+                            ->where('apply_to', '>=', $to);
+                    });
+            })
+            ->with('leave_type')
+            ->get();
+
+        if ($overlappingLeaves->isNotEmpty()) {
+            $conflicts = $overlappingLeaves->map(function ($leave) {
+                $status = $leave->status;
+                $leaveType = $leave->leave_type->leave_title ?? 'Unknown';
+                $fromDate = Carbon::parse($leave->apply_from)->format('jS F Y');
+                $toDate = Carbon::parse($leave->apply_to)->format('jS F Y');
+                $days = $leave->apply_days;
+                $isHalfDay = floatval($days) === 0.5;
+                $dayInfo = $isHalfDay ? 'Half day' : $days . ' day(s)';
+                
+                return "• {$leaveType} ({$fromDate} to {$toDate}) - {$dayInfo} - Status: " . ucfirst(str_replace('_', ' ', $status));
+            })->implode("\n");
+
+            throw new \Exception("You have conflicting leave requests:\n\n{$conflicts}\n\nPlease cancel or modify existing requests before applying for new leave.");
+        }
     }
 }

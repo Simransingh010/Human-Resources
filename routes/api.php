@@ -34,6 +34,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/attendance/statuses', [AttendanceController::class, 'getAttendanceStatuses']);
     Route::post('/attendance/mark-status', [AttendanceController::class, 'markAttendanceStatus']);
 
+    Route::get('/attendance/last-week-offs', [AttendanceController::class, 'lastWeekOffs']);
+
     Route::get('hrms/leave/leave-balances', [LeaveController::class, 'leavesBalances']);
     Route::post('hrms/leave/submitleaverequest', [LeaveController::class, 'submitLeaveRequest']);
     Route::post('hrms/leave/submitleaverequestv2', [LeaveController::class, 'submitLeaveRequestv2']);
@@ -41,6 +43,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('hrms/leave/team-leaves', [LeaveController::class, 'getTeamLeaves']);
     Route::post('hrms/leave/leave-action', [LeaveController::class, 'handleLeaveAction']);
     Route::post('hrms/leave/bulk-leave-action', [LeaveController::class, 'handleBulkLeaveAction']);
+    Route::get('hrms/leave/pol-attendances', [LeaveController::class, 'getPolAttendancesForApprover']);
+    Route::post('hrms/leave/pol-attendance-action', [LeaveController::class, 'handlePolAttendanceAction']);
 
     Route::get('/hrms/employees/job-profile', [OnboardController::class, 'getEmployeeJobProfile']);
     Route::post('/hrms/employees/post-job-profile', [OnboardController::class, 'saveEmployeeJobProfile']);
@@ -80,6 +84,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/hrms/employees/salary-structure', [PayrollController::class, 'getEmployeeSalaryStructure']);
     Route::get('/hrms/employees/payroll-slots', [PayrollController::class, 'getEmployeePayrollSlots']);
     Route::get('/hrms/employees/payroll-components', [PayrollController::class, 'getEmployeePayrollComponents']);
+    Route::post('/payroll/salary-slip/download', [PayrollController::class, 'downloadSalarySlipPdf']);
 
 });
  

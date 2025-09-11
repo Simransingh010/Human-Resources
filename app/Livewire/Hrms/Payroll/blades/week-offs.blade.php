@@ -122,13 +122,25 @@
                                             {{ $row['department'] }}
                                         </flux:table.cell>
                                         <flux:table.cell align="center" variant="strong">
-                                            {{ $row['availed_date'] }}
+                                            @if($row['availed_date'])
+                                                {{ \Carbon\Carbon::parse($row['availed_date'])->format('jS M Y') }}
+                                            @endif
                                         </flux:table.cell>
                                         <flux:table.cell align="center" variant="strong">
-                                            {{ $row['consumed_date'] }}
+                                            @if($row['consumed_date'])
+                                                {{ \Carbon\Carbon::parse($row['consumed_date'])->format('jS M Y') }}
+                                            @endif
                                         </flux:table.cell>
                                         <flux:table.cell align="center" variant="strong">
                                             {{ $row['status'] }}
+                                        </flux:table.cell>
+                                        <flux:table.cell align="center">
+                                            <flux:button
+                                                variant="primary"
+                                                size="sm"
+                                                icon="pencil"
+                                                wire:click="editWeekOff({{ $row['id'] ?? '' }})"
+                                            />
                                         </flux:table.cell>
 {{--                                        <flux:table.cell align="center" variant="strong">--}}
 {{--                                            {{ $row['remarks'] }}--}}
@@ -145,4 +157,33 @@
             @endif
         </div>
     </div>
+
+{{-- Edit Week Off Modal --}}
+<flux:modal name="edit-weekoff-modal" :show="$editModalOpen" @close="$set('editModalOpen', false)">
+    <form wire:submit.prevent="updateWeekOff">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">Edit Week Off</flux:heading>
+                <flux:subheading>Update status and consumed week off date.</flux:subheading>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <flux:select label="Status" wire:model.live="editForm.status">
+                        <option value="">Select Status</option>
+                        @foreach($statusOptions as $val => $lab)
+                            <option value="{{ $val }}">{{ $lab }}</option>
+                        @endforeach
+                    </flux:select>
+                </div>
+                <div>
+                    <flux:input type="date" label="Consumed Week Off Date" wire:model.live="editForm.consumed_date" allow-null="true" />
+                    <div class="text-xs text-gray-500 mt-1">Leave blank to clear consumed date.</div>
+                </div>
+            </div>
+            <div class="flex justify-end pt-4">
+                <flux:button type="submit" variant="primary">Save</flux:button>
+            </div>
+        </div>
+    </form>
+</flux:modal>
 </div>

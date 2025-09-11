@@ -515,9 +515,18 @@
                                 $employee = $firstItem->salaryComponentEmployee->employee;
                             @endphp
                             <flux:table.row :key="$employeeId">
-                                <flux:table.cell  class="table-cell-wrap">
-                                    {{ $employee->fname }} {{ $employee->lname }}
+                                <flux:table.cell class="table-cell-wrap sticky left-0  z-10">
+                                    <div class="space-y-1">
+                                        <div class="font-medium">
+                                            {{ $employee->fname }} {{ $employee->lname }}
+                                        </div>
+                                        <div class="text-sm text-gray-500">
+                                            <div><strong>Email:</strong> {{ $employee['email'] }}</div>
+                                            <div><strong>Phone:</strong> {{ $employee['phone'] }}</div>
+                                        </div>
+                                    </div>
                                 </flux:table.cell>
+
                                 <flux:table.cell class="table-cell-wrap">
                                     <div class="flex flex-wrap gap-1">
                                         @foreach($items as $item)

@@ -21,14 +21,22 @@ class PanelSync extends Component
 
     public function mount($userId, $firmId = null)
     {
-
         $this->user = User::findOrFail($userId);
         $this->firmId = $firmId;  // Set the firmId
         
         // Get panels for specific firm if firmId is provided
-        $this->selectedPanels = $this->user->panels()
-            ->pluck('panels.id')
-            ->toArray();
+        if ($this->firmId) {
+            // Get user's panels for this specific firm
+            $this->selectedPanels = $this->user->panels()
+                ->wherePivot('firm_id', $this->firmId)
+                ->pluck('panels.id')
+                ->toArray();
+        } else {
+            // Get all user panels if no firm specified
+            $this->selectedPanels = $this->user->panels()
+                ->pluck('panels.id')
+                ->toArray();
+        }
         
         $this->initListsForFields();
     }
@@ -59,10 +67,9 @@ class PanelSync extends Component
 
     protected function initListsForFields(): void
     {
-        // Get all available panels without any filters
-        $panels = Panel::pluck('id', 'name');
-        
-        $this->listsForFields['panellist'] = $panels->mapWithKeys(function ($id, $name) {
+        // Fetch all panels from the database, no filters
+        $panels = Panel::all()->pluck('name', 'id');
+        $this->listsForFields['panellist'] = $panels->mapWithKeys(function ($name, $id) {
             $panel = Panel::find($id);
             $typeLabel = Panel::PANEL_TYPE_SELECT[$panel->panel_type] ?? '';
             return [

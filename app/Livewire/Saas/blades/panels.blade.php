@@ -99,11 +99,6 @@
                         <div class="flex space-x-2">
                             <flux:button wire:click="showComponentSync({{ $rec->id }})" color="zinc" size="xs">Setup
                             </flux:button>
-{{--                            <flux:button wire:click="showAppSync({{ $rec->id }})" color="zinc" size="xs">App--}}
-{{--                            </flux:button>--}}
-
-{{--                            <flux:button wire:click="showModuleSync({{ $rec->id }})" color="zinc" size="xs">Module--}}
-{{--                            </flux:button>--}}
                             <flux:button wire:click="showPanelStructure({{ $rec->id }})" color="blue" size="xs">View</flux:button>
 
                             <flux:button

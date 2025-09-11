@@ -2,6 +2,9 @@
 
 namespace App\Livewire\Hrms\Onboard;
 
+use App\Models\Hrms\EmployeesSalaryExecutionGroup;
+use App\Models\Hrms\PayrollComponentsEmployeesTrack;
+use App\Models\Hrms\PayrollSlot;
 use App\Models\Saas\Role;
 use App\Models\User;
 use Livewire\Component;
@@ -10,6 +13,7 @@ use Flux;
 use Illuminate\Validation\Rule;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
+use Illuminate\Support\Facades\Cache;
 
 class Employees extends Component
 {
@@ -71,7 +75,7 @@ class Employees extends Component
         $this->visibleFields = ['fname', 'lname', 'email', 'phone'];
         $this->visibleFilterFields = ['fname', 'lname', 'email', 'phone'];
         $this->filters = array_fill_keys(array_merge(array_keys($this->filterFields), ['employees']), '');
-     
+        // Load viewMode from session if set
         $this->viewMode = session('employees_view_mode', $this->viewMode);
     }
 
@@ -97,27 +101,30 @@ class Employees extends Component
     #[Computed]
     public function employeeslist()
     {
-        return Employee::query()
-            ->with([
-                'emp_personal_detail',
-                'emp_job_profile.department',
-                'emp_job_profile.designation',
-            ])
-            ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
-            ->when($this->filters['employees'], function($query, $value) {
-                $query->where(function($q) use ($value) {
-                    $q->where('fname', 'like', "%{$value}%")
-                      ->orWhere('mname', 'like', "%{$value}%")
-                      ->orWhere('lname', 'like', "%{$value}%");
-                });
-            })
-            ->when($this->filters['fname'], fn($query, $value) => $query->where('fname', 'like', "%{$value}%"))
-            ->when($this->filters['lname'], fn($query, $value) => $query->where('lname', 'like', "%{$value}%"))
-            ->when($this->filters['email'], fn($query, $value) => $query->where('email', 'like', "%{$value}%"))
-            ->when($this->filters['phone'], fn($query, $value) => $query->where('phone', 'like', "%{$value}%"))
-            ->when($this->filters['gender'], fn($query, $value) => $query->where('gender', $value))
-            ->where('firm_id', session('firm_id'))
-            ->paginate(12);
+        $cacheKey = 'employeeslist_' . md5(json_encode($this->filters) . $this->sortBy . $this->sortDirection . session('firm_id') . request('page', 1));
+        return Cache::remember($cacheKey, 60, function () {
+            return Employee::query()
+                ->with([
+                    'emp_personal_detail',
+                    'emp_job_profile.department',
+                    'emp_job_profile.designation',
+                ])
+                ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
+                ->when($this->filters['employees'], function($query, $value) {
+                    $query->where(function($q) use ($value) {
+                        $q->where('fname', 'like', "%{$value}%")
+                          ->orWhere('mname', 'like', "%{$value}%")
+                          ->orWhere('lname', 'like', "%{$value}%");
+                    });
+                })
+                ->when($this->filters['fname'], fn($query, $value) => $query->where('fname', 'like', "%{$value}%"))
+                ->when($this->filters['lname'], fn($query, $value) => $query->where('lname', 'like', "%{$value}%"))
+                ->when($this->filters['email'], fn($query, $value) => $query->where('email', 'like', "%{$value}%"))
+                ->when($this->filters['phone'], fn($query, $value) => $query->where('phone', 'like', "%{$value}%"))
+                ->when($this->filters['gender'], fn($query, $value) => $query->where('gender', $value))
+                ->where('firm_id', session('firm_id'))
+                ->paginate(12);
+        });
     }
 
     /**
@@ -254,6 +261,48 @@ class Employees extends Component
             heading: 'Changes saved.',
             text: $toast,
         );
+        // After saving/updating employee
+        Cache::flush(); // Flush all cache (or use a tag if you want to be more specific)
+    }
+    public function closeModal($modalName)
+    {
+        $this->modal($modalName)->close();
+    }
+
+    public function setViewMode($mode)
+    {
+        $this->viewMode = $mode;
+        session(['employees_view_mode' => $mode]);
+    }
+
+    /**
+     * Delete payroll entries for the employee for payroll slots with specific statuses
+     *
+     * @param int $employeeId
+     * @return void
+     */
+    private function deleteEmployeePayrollEntries($employeeId)
+    {
+        $statuses = ['PN', 'ND', 'NX', 'ST', 'CM'];
+
+        $executionGroupIds = EmployeesSalaryExecutionGroup::where('employee_id', $employeeId)
+            ->pluck('salary_execution_group_id');
+
+        if ($executionGroupIds->isEmpty()) {
+            return;
+        }
+
+        $payrollSlotIds = PayrollSlot::whereIn('salary_execution_group_id', $executionGroupIds)
+            ->whereIn('payroll_slot_status', $statuses)
+            ->pluck('id');
+
+        if ($payrollSlotIds->isEmpty()) {
+            return;
+        }
+
+        PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
+            ->whereIn('payroll_slot_id', $payrollSlotIds)
+            ->delete();
     }
 
 //    public function saveEmployee()
@@ -418,9 +467,11 @@ class Employees extends Component
         $employee->is_inactive = !$employee->is_inactive;
         $employee->save();
 
+        // Delete payroll entries for this employee as per required statuses
+        $this->deleteEmployeePayrollEntries($employeeId);
 
         $this->employeeStatuses[$employeeId] = !$employee->is_inactive;
-
+    
 
         Flux::toast(
             heading: 'Status Updated',
@@ -447,6 +498,7 @@ class Employees extends Component
             heading: 'Employee Deleted',
             text: "Employee {$employeeName} has been deleted successfully."
         );
+        Cache::flush(); // Invalidate cache after delete
     }
 
     public function showemployeeModal($employeeId = null)
@@ -594,14 +646,5 @@ class Employees extends Component
         return view()->file(app_path('Livewire/Hrms/Onboard/blades/employees.blade.php'));
     }
 
-    public function closeModal($modalName)
-    {
-        $this->modal($modalName)->close();
-    }
 
-    public function setViewMode($mode)
-    {
-        $this->viewMode = $mode;
-        session(['employees_view_mode' => $mode]);
-    }
 }

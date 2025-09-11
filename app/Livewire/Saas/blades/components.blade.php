@@ -2,7 +2,12 @@
 <div><div>
     <!-- Heading Start -->
     <div class="flex justify-between">
-        @livewire('panel.component-heading')
+    <div class="p-0 m-0">
+            <div class="mt-3">
+                <flux:heading size="xl" class="mb-1">Components</flux:heading>
+                <flux:text class="mt-2">Manage system components and their configurations</flux:text>
+            </div>
+        </div>
         <flux:modal.trigger name="mdl-component" class="flex justify-end">
             <flux:button variant="primary" icon="plus" class="bg-blue-500 mt-auto text-white px-4 py-2 rounded-md">
                 New

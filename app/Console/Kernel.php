@@ -12,6 +12,10 @@ class Kernel extends ConsoleKernel
      */
     protected $commands = [
         \App\Console\Commands\GeocodePunchDetails::class,
+        // Notification processor
+        \App\Console\Commands\ProcessNotificationQueue::class,
+        // Birthday email sender
+        \App\Console\Commands\SendBirthdayEmails::class,
     ];
 
     /**
@@ -23,6 +27,17 @@ class Kernel extends ConsoleKernel
         $schedule->command('punches:geocode')
             ->everyFiveMinutes()
             ->withoutOverlapping();
+
+        // Process notification queue every 5 minutes without overlap
+        $schedule->command('notifications:process --limit=100')
+            ->everyFiveMinutes()
+            ->withoutOverlapping();
+
+        // Send birthday emails daily at 9 AM
+        $schedule->command('birthdays:send-emails')
+            ->dailyAt('11:15')
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**

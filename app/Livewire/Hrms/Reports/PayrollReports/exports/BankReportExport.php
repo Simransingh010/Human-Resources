@@ -56,17 +56,84 @@ class BankReportExport extends StringValueBinder implements FromCollection, With
             ->where('firm_id', $firmId)
             ->when(!empty($this->filters['employee_id']), fn($q) =>
                 $q->whereIn('id', $this->filters['employee_id'])
-            )->get();
+            )
+            ->get();
+
+        // Exclude employees on hold for their payroll slot for the period
+        $filtered = $employees->filter(function ($employee) use ($firmId) {
+            // Check if employee was hired before or during the report period
+            $jobProfile = $employee->emp_job_profile;
+            if ($jobProfile && $jobProfile->doh) {
+                // If employee was hired after the end of the report period, exclude them
+                if ($jobProfile->doh->isAfter($this->end)) {
+                    return false;
+                }
+            }
+            
+            $payrollTrack = $employee->payroll_tracks->first();
+            if (!$payrollTrack || !$payrollTrack->payroll_slot_id) {
+                return true; // No payroll slot, include by default
+            }
+            $payrollSlotId = $payrollTrack->payroll_slot_id;
+            $onHold = \App\Models\Hrms\SalaryHold::where('firm_id', $firmId)
+                ->where('payroll_slot_id', $payrollSlotId)
+                ->where('employee_id', $employee->id)
+                ->exists();
+            return !$onHold;
+        });
 
         // Filter out employees with zero or no amounts
-        return $this->employees = $employees->filter(function ($employee) {
+        $filtered = $filtered->filter(function ($employee) {
             $amount_earning = $employee->payroll_tracks->where('nature', 'earning')->sum('amount_payable');
             $amount_deduction = $employee->payroll_tracks->where('nature', 'deduction')->sum('amount_payable');
             $amount = $amount_earning - $amount_deduction;
-            
             return $amount > 0;
         });
+
+        // Sort employees by salary execution groups for Firm ID 27
+        if ($firmId == 27) {
+            $filtered = $this->sortEmployeesBySalaryGroups($filtered);
+        }
+
+        return $this->employees = $filtered;
     }
+
+    // Helper method to sort employees by salary execution groups for Firm ID 27
+    private function sortEmployeesBySalaryGroups($employees)
+    {
+        // Define the desired sequence for Firm ID 27
+        $desiredSequence = [
+            'Director',
+            'Faculty Regular', 
+            'Faculty Contractual',
+            'Staff Permanent',
+            'Staff Contractual'
+        ];
+
+        // Create a mapping of group titles to their priority
+        $priorityMap = array_flip($desiredSequence);
+
+        return $employees->sortBy(function($employee) use ($priorityMap) {
+            // Get the first salary execution group for this employee
+            $salaryGroup = $employee->salary_execution_groups->first();
+            
+            if (!$salaryGroup) {
+                // If no salary group, put at the end
+                return 999;
+            }
+
+            $groupTitle = $salaryGroup->title;
+            
+            // Check if the group title is in our desired sequence
+            if (isset($priorityMap[$groupTitle])) {
+                return $priorityMap[$groupTitle];
+            }
+
+            // If not in our sequence, put at the end
+            return 999;
+        });
+    }
+
 
     public function headings(): array
     {

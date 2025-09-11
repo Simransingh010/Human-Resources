@@ -228,7 +228,7 @@
     {{-- Shared Modal for Role Action Sync --}}
     <flux:modal name="role-action-sync"   class=" max-w-7xl min-h-[70vh] max-h-[85vh] overflow-y-auto">
         @if(isset($selectedRoleId) && $selectedRoleId)
-            <livewire:settings.role-based-access.role-action-sync :roleId="$selectedRoleId" :wire:key="'role-action-sync-' . $selectedRoleId" />
+            <livewire:settings.role-based-access.role-action-sync :roleId="$selectedRoleId" :firmId="$firmId ?? null" :wire:key="'role-action-sync-' . $selectedRoleId" />
         @endif
     </flux:modal>
 </div>

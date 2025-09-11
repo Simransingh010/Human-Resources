@@ -22,6 +22,7 @@ class SalaryIncrement extends Component
     public $selectedEmployee = null;
     public $selectedEmployeeId = null;
     public $sqlQueries = [];
+    public $selectedStructureKey = null; // format: from|to (to can be 'open')
     
     // Sorting
     public $sortBy = 'sequence';
@@ -421,6 +422,18 @@ class SalaryIncrement extends Component
 
                 DB::commit();
 
+                // After successfully saving the modified component, create a version-split
+                // for all other assigned components so that from $startDate a new snapshot
+                // exists for each component. This ensures pre-change months (e.g., June)
+                // continue to use old values and post-change months (e.g., July) use new ones.
+                if ($startDate) {
+                    $this->versionSplitOtherComponents(
+                        employeeId: $oldComponent->employee_id,
+                        startDate: $startDate,
+                        skipIds: [$oldComponent->id, $newComponent->id]
+                    );
+                }
+
                 $this->clearComponentCache();
                 $this->resetModificationForm();
                 $this->modal("increment-{$componentId}")->close();
@@ -555,6 +568,8 @@ class SalaryIncrement extends Component
         return view()->file(app_path('Livewire/Hrms/Payroll/blades/salary-increment.blade.php'), [
             'employees' => $employees,
             'salaryComponents' => $this->salaryComponents(),
+            'structurePeriods' => $this->employeeStructurePeriods(),
+            'structureComponents' => $this->selectedStructureComponents(),
             'bulkEmployees' => $this->getBulkEmployeesProperty(),
             'sqlQueries' => $this->sqlQueries,
         ]);
@@ -665,6 +680,17 @@ class SalaryIncrement extends Component
                 ]);
 
                 DB::commit();
+
+                // After changing the formula for a component, also split all other
+                // components at the effective start date to create a clean boundary
+                // for pre- and post-formula-change calculations.
+                if ($startDate) {
+                    $this->versionSplitOtherComponents(
+                        employeeId: $oldComponent->employee_id,
+                        startDate: $startDate,
+                        skipIds: [$oldComponent->id, $newComponent->id]
+                    );
+                }
 
                 $this->modal('calculation-rule-modal')->close();
                 $this->resetRule();
@@ -790,6 +816,370 @@ class SalaryIncrement extends Component
         $this->selectedBulkEmployeeIds = [];
         $this->selectAllBulkEmployees = false;
         $this->selectedBulkComponentId = null; 
+    }
+
+    /**
+     * Replay version-splitting for legacy changes recorded before this feature,
+     * using the employee's SalaryChangeEmployee logs to derive split dates.
+     */
+    public function resyncFromChangeLogs(): void
+    {
+        try {
+            if (!$this->selectedEmployeeId) {
+                Flux::toast('Select an employee first.', 'error');
+                return;
+            }
+
+            $logs = \App\Models\Hrms\SalaryChangeEmployee::query()
+                ->where('firm_id', Session::get('firm_id'))
+                ->where('employee_id', $this->selectedEmployeeId)
+                ->orderBy('created_at', 'asc')
+                ->get();
+
+            if ($logs->isEmpty()) {
+                Flux::toast('No change logs found for this employee.', 'info');
+                return;
+            }
+
+            $dates = collect();
+            foreach ($logs as $log) {
+                $details = $log->changes_details_json;
+                $dateStr = null;
+                if (is_array($details)) {
+                    $dateStr = $details['new_effective_from'] ?? null;
+                    if (!$dateStr && isset($details['old_effective_to']) && $details['old_effective_to']) {
+                        try {
+                            $dateStr = \Carbon\Carbon::parse($details['old_effective_to'])->addDay()->format('Y-m-d');
+                        } catch (\Throwable $e) {
+                            // ignore parse error
+                        }
+                    }
+                }
+                if ($dateStr) {
+                    try {
+                        $dates->push(\Carbon\Carbon::parse($dateStr)->startOfDay());
+                    } catch (\Throwable $e) {
+                        // skip unparsable
+                    }
+                }
+            }
+
+            $dates = $dates->filter()->unique(fn($d) => $d->format('Y-m-d'))
+                ->sortBy(fn($d) => $d->timestamp)
+                ->values();
+
+            if ($dates->isEmpty()) {
+                Flux::toast('No effective dates derived from change logs.', 'info');
+                return;
+            }
+
+            \DB::beginTransaction();
+            try {
+                foreach ($dates as $date) {
+                    // Do not split for future inactive structures
+                    if ($date->gt(now()->startOfDay())) {
+                        continue;
+                    }
+                    $this->versionSplitOtherComponents($this->selectedEmployeeId, $date, []);
+                }
+                \DB::commit();
+            } catch (\Throwable $e) {
+                \DB::rollBack();
+                throw $e;
+            }
+
+            $this->initializeSalaryComponentsList();
+            Flux::toast('Legacy changes synced into structure periods.', 'success');
+        } catch (\Throwable $e) {
+            Flux::toast('Resync failed: ' . $e->getMessage(), 'error');
+        }
+    }
+
+    #[\Livewire\Attributes\Computed]
+    public function employeeStructurePeriods()
+    {
+        if (!$this->selectedEmployeeId) {
+            $this->selectedStructureKey = null;
+            return collect();
+        }
+        $rows = SalaryComponentsEmployee::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('employee_id', $this->selectedEmployeeId)
+            ->select(['id','salary_component_id','effective_from','effective_to'])
+            ->orderBy('effective_from')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            $this->selectedStructureKey = null;
+            return collect();
+        }
+
+        // Build boundaries: all effective_from and (effective_to + 1 day) for rows with effective_to
+        $boundaries = collect();
+        foreach ($rows as $r) {
+            if ($r->effective_from) {
+                $boundaries->push($r->effective_from->copy()->startOfDay());
+            }
+            if ($r->effective_to) {
+                $boundaries->push($r->effective_to->copy()->addDay()->startOfDay());
+            }
+        }
+        $boundaries = $boundaries->unique(fn($d) => $d->format('Y-m-d'))->sort()->values();
+        if ($boundaries->isEmpty()) {
+            $this->selectedStructureKey = null;
+            return collect();
+        }
+
+        $periods = collect();
+        for ($i = 0; $i < $boundaries->count(); $i++) {
+            $from = $boundaries[$i]->copy();
+            $to = null;
+            if ($i < $boundaries->count() - 1) {
+                $to = $boundaries[$i + 1]->copy()->subDay();
+            }
+            // Determine active status
+            $today = now()->startOfDay();
+            $isActive = $from->lte($today) && (is_null($to) || $to->gte($today));
+
+            // Components count in this period
+            $componentsCount = SalaryComponentsEmployee::query()
+                ->where('firm_id', Session::get('firm_id'))
+                ->where('employee_id', $this->selectedEmployeeId)
+                ->whereDate('effective_from', '<=', ($to?->format('Y-m-d')) ?? $today->format('Y-m-d'))
+                ->where(function($q) use ($from) {
+                    $q->whereNull('effective_to')->orWhereDate('effective_to', '>=', $from->format('Y-m-d'));
+                })
+                ->count();
+
+            $key = $from->format('Y-m-d') . '|' . ($to?->format('Y-m-d') ?? 'open');
+            $periods->push([
+                'key' => $key,
+                'from' => $from,
+                'to' => $to,
+                'is_active' => $isActive,
+                'components_count' => $componentsCount,
+            ]);
+        }
+        // Hide future periods that are not active (scheduled future structures)
+        $periods = $periods->filter(function ($p) {
+            $today = now()->startOfDay();
+            return !(!$p['is_active'] && $p['from']->gt($today));
+        })->values();
+
+        // Default selection to the active (latest) period
+        if (!$this->selectedStructureKey) {
+            $active = $periods->firstWhere('is_active', true);
+            $this->selectedStructureKey = $active['key'] ?? ($periods->last()['key'] ?? null);
+        }
+
+        return $periods;
+    }
+
+    public function selectStructure($key)
+    {
+        $this->selectedStructureKey = $key;
+    }
+
+    #[\Livewire\Attributes\Computed]
+    public function selectedStructureComponents()
+    {
+        if (!$this->selectedEmployeeId || !$this->selectedStructureKey) {
+            return collect();
+        }
+        [$fromStr, $toStr] = explode('|', $this->selectedStructureKey);
+        $from = \Carbon\Carbon::parse($fromStr)->startOfDay();
+        $to = $toStr === 'open' ? null : \Carbon\Carbon::parse($toStr)->endOfDay();
+        $effectiveEnd = $to?->format('Y-m-d') ?? now()->format('Y-m-d');
+
+        $rows = SalaryComponentsEmployee::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('employee_id', $this->selectedEmployeeId)
+            ->whereIn('amount_type', ['static_known', 'calculated_known'])
+            ->whereDate('effective_from', '<=', $effectiveEnd)
+            ->where(function($q) use ($from) {
+                $q->whereNull('effective_to')->orWhereDate('effective_to', '>=', $from->format('Y-m-d'));
+            })
+            ->with(['salary_component', 'salary_component_group'])
+            ->orderBy('sequence')
+            ->get()
+            ->map(function ($component) {
+                return [
+                    'id' => $component->id,
+                    'title' => $component->salary_component->title ?? 'Unknown Component',
+                    'group' => $component->salary_component_group?->title,
+                    'amount' => $component->amount,
+                    'nature' => $component->nature,
+                    'component_type' => $component->component_type,
+                    'amount_type' => $component->amount_type,
+                    'sequence' => $component->sequence,
+                    'effective_from' => $component->effective_from?->format('d M Y'),
+                    'effective_to' => $component->effective_to?->format('d M Y'),
+                ];
+            });
+
+        return $rows;
+    }
+
+    /**
+     * Version-split all other components of an employee at the given start date.
+     *
+     * For every assigned component that overlaps $startDate and has
+     * effective_from < $startDate (or null), we end the current row at
+     * ($startDate - 1 day) and create a replica effective from $startDate,
+     * preserving the original effective_to window. Components listed in $skipIds
+     * are ignored (e.g., the component we just modified and its replica).
+     */
+    private function versionSplitOtherComponents(int $employeeId, \Carbon\Carbon $startDate, array $skipIds = []): void
+    {
+        // Build a snapshot of component values effective on $startDate
+        $snapshotRows = SalaryComponentsEmployee::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('employee_id', $employeeId)
+            ->whereDate('effective_from', '<=', $startDate->format('Y-m-d'))
+            ->where(function($q) use ($startDate) {
+                $q->whereNull('effective_to')
+                  ->orWhereDate('effective_to', '>=', $startDate->format('Y-m-d'));
+            })
+            ->orderBy('effective_from', 'desc')
+            ->get()
+            ->groupBy('salary_component_id')
+            ->map(function($group) { return $group->first(); });
+
+        $componentValues = [];
+        foreach ($snapshotRows as $row) {
+            $componentValues[$row->salary_component_id] = (float) $row->amount;
+        }
+
+        $components = SalaryComponentsEmployee::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('employee_id', $employeeId)
+            ->whereNotIn('id', $skipIds)
+            ->where(function($q) use ($startDate) {
+                $q->whereNull('effective_to')
+                  ->orWhereDate('effective_to', '>=', $startDate->format('Y-m-d'));
+            })
+            ->get();
+
+        foreach ($components as $comp) {
+            // If this component already starts on/after the split date, skip
+            if ($comp->effective_from && $comp->effective_from->gte($startDate)) {
+                continue;
+            }
+
+            // Close current row at day before start date
+            $originalEffectiveTo = $comp->effective_to;
+            $comp->effective_to = $startDate->copy()->subDay()->format('Y-m-d');
+            $comp->save();
+
+            // Create new row starting from start date, preserve end date window
+            $newRow = $comp->replicate();
+            $newRow->effective_from = $startDate->format('Y-m-d');
+            $newRow->effective_to = $originalEffectiveTo?->format('Y-m-d');
+
+            // If calculated_known, try to recompute using calculation_json and snapshot values
+            if ($newRow->amount_type === 'calculated_known' && !empty($newRow->calculation_json)) {
+                try {
+                    $newAmount = $this->evaluateCalculationJson($newRow->calculation_json, $componentValues);
+                    if (is_finite($newAmount)) {
+                        $newRow->amount = (float) $newAmount;
+                        // Update the snapshot value for downstream dependencies (best-effort)
+                        $componentValues[$newRow->salary_component_id] = (float) $newAmount;
+                    }
+                } catch (\Throwable $e) {
+                    // Fail soft: keep replicated amount
+                }
+            }
+            $newRow->save();
+
+            // Log the split for audit trail
+            SalaryChangeEmployee::create([
+                'firm_id' => Session::get('firm_id'),
+                'employee_id' => $employeeId,
+                'old_salary_components_employee_id' => $comp->id,
+                'new_salary_components_employee_id' => $newRow->id,
+                'old_effective_to' => $comp->effective_to,
+                'remarks' => 'Cascade version-split due to another component change',
+                'changes_details_json' => [
+                    'change_type' => 'cascade_version_split',
+                    'component_id' => $comp->salary_component_id,
+                    'old_effective_from' => $comp->effective_from,
+                    'old_effective_to' => $comp->effective_to,
+                    'new_effective_from' => $newRow->effective_from,
+                    'new_effective_to' => $newRow->effective_to,
+                ]
+            ]);
+        }
+    }
+
+    private function evaluateCalculationJson($calculationJson, array $componentValues)
+    {
+        $json = is_array($calculationJson) ? $calculationJson : json_decode($calculationJson, true);
+        if (!is_array($json)) {
+            throw new \InvalidArgumentException('Invalid calculation_json');
+        }
+        return $this->evaluateCalcNode($json, $componentValues);
+    }
+
+    private function evaluateCalcNode($node, array $componentValues)
+    {
+        if (!is_array($node)) {
+            return $node;
+        }
+        if (!isset($node['type'])) {
+            throw new \InvalidArgumentException('Node type missing');
+        }
+        switch ($node['type']) {
+            case 'constant':
+                return (float) ($node['value'] ?? 0);
+            case 'component':
+                $key = $node['key'] ?? null;
+                if ($key === null) return 0;
+                return (float) ($componentValues[$key] ?? 0);
+            case 'operation':
+                $operator = $node['operator'] ?? '+';
+                $operands = array_map(fn($op) => (float) $this->evaluateCalcNode($op, $componentValues), $node['operands'] ?? []);
+                return $this->executeCalcOperation($operator, $operands);
+            case 'function':
+                $name = $node['name'] ?? '';
+                $args = array_map(fn($op) => (float) $this->evaluateCalcNode($op, $componentValues), $node['args'] ?? []);
+                return $this->executeCalcFunction($name, $args);
+            case 'conditional':
+                $condition = $this->evaluateCalcNode($node['if'] ?? ['type' => 'constant', 'value' => 0], $componentValues);
+                return $condition
+                    ? $this->evaluateCalcNode($node['then'] ?? ['type' => 'constant', 'value' => 0], $componentValues)
+                    : $this->evaluateCalcNode($node['else'] ?? ['type' => 'constant', 'value' => 0], $componentValues);
+            default:
+                return 0;
+        }
+    }
+
+    private function executeCalcOperation(string $operator, array $operands)
+    {
+        if (empty($operands)) return 0;
+        return match ($operator) {
+            '+' => array_sum($operands),
+            '-' => $operands[0] - array_sum(array_slice($operands, 1)),
+            '*' => array_reduce($operands, fn($c, $i) => $c * $i, 1),
+            '/' => (function($ops){ $r = $ops[0]; for ($i=1;$i<count($ops);$i++){ $d=$ops[$i]; if ((float)$d === 0.0) { throw new \DivisionByZeroError(); } $r /= $d; } return $r; })($operands),
+            '>=' => $operands[0] >= ($operands[1] ?? 0) ? 1 : 0,
+            '<=' => $operands[0] <= ($operands[1] ?? 0) ? 1 : 0,
+            '>'  => $operands[0] >  ($operands[1] ?? 0) ? 1 : 0,
+            '<'  => $operands[0] <  ($operands[1] ?? 0) ? 1 : 0,
+            '==' => $operands[0] == ($operands[1] ?? 0) ? 1 : 0,
+            default => 0,
+        };
+    }
+
+    private function executeCalcFunction(string $name, array $args)
+    {
+        return match ($name) {
+            'min' => min(...$args),
+            'max' => max(...$args),
+            'round' => round($args[0] ?? 0, (int)($args[1] ?? 0)),
+            'ceil' => ceil($args[0] ?? 0),
+            'floor' => floor($args[0] ?? 0),
+            default => 0,
+        };
     }
 
     public function getAvailableComponentsForAssignmentProperty()
@@ -1224,40 +1614,5 @@ class SalaryIncrement extends Component
         }
         $query->orderByDesc('created_at');
         return $query->paginate($this->logPerPage, ['*'], 'logPage', $this->logPage);
-    }
-
-    public function rollbackChange($logId)
-    {
-        try {
-            \DB::transaction(function () use ($logId) {
-                $log = \App\Models\Hrms\SalaryChangeEmployee::findOrFail($logId);
-                if ($log->batch_id) {
-                    // Rollback all logs in this batch
-                    $batchLogs = \App\Models\Hrms\SalaryChangeEmployee::where('batch_id', $log->batch_id)->get();
-                    foreach ($batchLogs as $item) {
-                        if ($item->new_salary_components_employee_id) {
-                            $component = \App\Models\Hrms\SalaryComponentsEmployee::find($item->new_salary_components_employee_id);
-                            if ($component) {
-                                $component->forceDelete();
-                            }
-                        }
-                        $item->delete();
-                    }
-                } else {
-                    // Rollback just this change
-                    if ($log->new_salary_components_employee_id) {
-                        $component = \App\Models\Hrms\SalaryComponentsEmployee::find($log->new_salary_components_employee_id);
-                        if ($component) {
-                            $component->forceDelete();
-                        }
-                    }
-                    $log->delete();
-                }
-            });
-            \Flux\Flux::toast('Rollback successful.', 'success');
-            $this->changeLogs = $this->changeLogs(); // Refresh logs
-        } catch (\Exception $e) {
-            \Flux\Flux::toast('Rollback failed: ' . $e->getMessage(), 'error');
-        }
     }
 }

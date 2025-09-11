@@ -245,13 +245,17 @@
                                                 </flux:badge>
                                                 @break
                                             @case('apply_from')
-                                                {{ $item->apply_from ? $item->apply_from->format('jS F Y') : 'N/A' }}
+                                                {{ $item->apply_from ? \Carbon\Carbon::parse($item->apply_from)->format('jS F Y') : 'N/A' }}
                                                 @break
                                             @case('apply_to')
-                                                {{ $item->apply_to ? $item->apply_to->format('jS F Y') : 'N/A' }}
+                                                {{ $item->apply_to ? \Carbon\Carbon::parse($item->apply_to)->format('jS F Y') : 'N/A' }}
                                                 @break
                                             @default
-                                                {{ $item->$field }}
+                                                @if(in_array($field, ['apply_from', 'apply_to']) && $item->$field)
+                                                    {{ \Carbon\Carbon::parse($item->$field)->format('jS F Y') }}
+                                                @else
+                                                    {{ $item->$field }}
+                                                @endif
                                                 
                                         @endswitch
                                     </flux:table.cell>

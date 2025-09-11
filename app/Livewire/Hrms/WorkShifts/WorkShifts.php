@@ -8,6 +8,9 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Carbon\Carbon;
 use Flux;
+use Illuminate\Support\Facades\DB;
+use App\Models\Hrms\EmpWorkShift;
+use App\Models\Settings\Department;
 
 class WorkShifts extends Component
 {
@@ -29,6 +32,16 @@ class WorkShifts extends Component
     public $perPage = 10;
     public $workShiftsAlgo = [];
     public $listsForFields = [];
+    // Allocation state
+    public $allocation = [
+        'wef' => null,
+        'wet' => null,
+        'algo_id' => null,
+        'employee_ids' => [],
+    ];
+    public array $allocationAlgos = [];
+    public array $eligibleEmployees = [];
+    public array $eligibleDepartments = [];
     // Field configuration for form and table
     public array $fieldConfig = [
         'shift_title' => ['label' => 'Title', 'type' => 'text'],
@@ -214,6 +227,233 @@ class WorkShifts extends Component
         $this->selectedShiftId = $id;
 //        $this->loadWorkShiftsAlgos();
         $this->modal('work-shifts-algos-modal')->show();
+    }
+
+    public function showAllocation($id)
+    {
+        $this->selectedShiftId = $id;
+        $this->resetAllocation();
+        $this->loadAllocationAlgos();
+        $this->loadEligibleEmployees();
+        $this->modal('allocation-modal')->show();
+    }
+
+    private function resetAllocation(): void
+    {
+        $this->allocation = [
+            'wef' => null,
+            'wet' => null,
+            'algo_id' => null,
+            'employee_ids' => [],
+        ];
+        $this->allocationAlgos = [];
+        $this->eligibleEmployees = [];
+        $this->eligibleDepartments = [];
+    }
+
+    private function loadAllocationAlgos(): void
+    {
+        if (!$this->selectedShiftId) { return; }
+        $query = \App\Models\Hrms\WorkShiftsAlgo::query()
+            ->where('firm_id', session('firm_id'))
+            ->where('work_shift_id', $this->selectedShiftId)
+            ->where('is_inactive', false);
+
+        // If dates are provided, show only algos overlapping [wef, wet]
+        if (!empty($this->allocation['wef']) && !empty($this->allocation['wet'])) {
+            $wef = Carbon::parse($this->allocation['wef'])->startOfDay();
+            $wet = Carbon::parse($this->allocation['wet'])->endOfDay();
+            $query->where(function($q) use ($wef, $wet) {
+                $q->whereBetween('start_date', [$wef, $wet])
+                  ->orWhereBetween('end_date', [$wef, $wet])
+                  ->orWhere(function($qq) use ($wef, $wet) {
+                      $qq->where('start_date', '<=', $wef)
+                         ->where('end_date', '>=', $wet);
+                  });
+            });
+        }
+
+        $this->allocationAlgos = $query
+            ->orderBy('start_date')
+            ->get()
+            ->map(fn($a) => $a->toArray())
+            ->all();
+    }
+
+    public function updatedAllocationWef()
+    {
+        $this->loadAllocationAlgos();
+        $this->loadEligibleEmployees();
+    }
+
+    public function updatedAllocationWet()
+    {
+        $this->loadAllocationAlgos();
+        $this->loadEligibleEmployees();
+    }
+
+    public function updatedAllocationAlgoId()
+    {
+        $this->loadEligibleEmployees();
+    }
+
+    private function loadEligibleEmployees(): void
+    {
+        $this->eligibleEmployees = [];
+        $this->eligibleDepartments = [];
+        if (!$this->selectedShiftId || empty($this->allocation['wef']) || empty($this->allocation['wet'])) {
+            return;
+        }
+
+        // Employees not already assigned to this work shift/algo for any overlapping dates in range
+        $wef = Carbon::parse($this->allocation['wef'])->startOfDay();
+        $wet = Carbon::parse($this->allocation['wet'])->endOfDay();
+
+        // Get employees of this firm that do NOT have overlapping EmpWorkShift for this shift
+        $assignedEmployeeIds = EmpWorkShift::where('firm_id', session('firm_id'))
+            ->where('work_shift_id', $this->selectedShiftId)
+            ->where(function($q) use ($wef, $wet) {
+                $q->where(function($sq) use ($wef) {
+                    $sq->whereNull('end_date')->orWhere('end_date', '>=', $wef);
+                })->where(function($sq) use ($wet) {
+                    $sq->whereNull('start_date')->orWhere('start_date', '<=', $wet);
+                });
+            })
+            ->pluck('employee_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $employees = \App\Models\Hrms\Employee::where('firm_id', session('firm_id'))
+            ->whereNotIn('id', $assignedEmployeeIds)
+            ->select('id', DB::raw("TRIM(CONCAT_WS(' ', COALESCE(fname, ''), COALESCE(mname, ''), COALESCE(lname, ''))) as name"))
+            ->orderBy('name')
+            ->get()
+            ->toArray();
+
+        $this->eligibleEmployees = $employees;
+
+        // Department-wise grouping similar to LeaveAllocations
+        $departments = Department::with(['employees' => function ($query) use ($assignedEmployeeIds) {
+                $query->where('employees.firm_id', session('firm_id'))
+                    ->whereNull('employees.deleted_at')
+                    ->whereNotIn('employees.id', $assignedEmployeeIds)
+                    ->select('employees.id', 'employees.fname', 'employees.mname', 'employees.lname');
+            }])
+            ->where('firm_id', session('firm_id'))
+            ->where('is_inactive', false)
+            ->get();
+
+        $this->eligibleDepartments = $departments->map(function ($department) {
+            return [
+                'id' => (int) $department->id,
+                'title' => $department->title,
+                'employees' => $department->employees->map(function ($emp) {
+                    $name = trim(preg_replace('/\s+/', ' ', implode(' ', array_filter([$emp->fname, $emp->mname, $emp->lname]))));
+                    return [
+                        'id' => (int) $emp->id,
+                        'name' => $name ?: ('Emp #' . $emp->id),
+                    ];
+                })->toArray(),
+            ];
+        })->filter(function ($dept) {
+            return !empty($dept['employees']);
+        })->values()->all();
+    }
+
+    public function assignSelectedEmployees()
+    {
+        // Validate inputs
+        $this->validate([
+            'allocation.wef' => 'required|date',
+            'allocation.wet' => 'required|date|after_or_equal:allocation.wef',
+            'allocation.algo_id' => 'required|exists:work_shifts_algos,id',
+            'allocation.employee_ids' => 'required|array|min:1',
+        ]);
+
+        $wef = Carbon::parse($this->allocation['wef'])->startOfDay();
+        $wet = Carbon::parse($this->allocation['wet'])->endOfDay();
+
+        $algo = \App\Models\Hrms\WorkShiftsAlgo::findOrFail($this->allocation['algo_id']);
+        if ($algo->work_shift_id !== $this->selectedShiftId) {
+            Flux::toast(variant: 'error', heading: 'Invalid', text: 'Algorithm does not belong to selected work shift.');
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($wef, $wet, $algo) {
+                foreach ($this->allocation['employee_ids'] as $employeeId) {
+                    $this->assignEmployeeToShiftWithSplitting((int)$employeeId, $this->selectedShiftId, $algo->id, $wef, $wet);
+                }
+            });
+
+            Flux::toast(variant: 'success', heading: 'Assigned', text: 'Employees allocated successfully.');
+            $this->modal('allocation-modal')->close();
+            $this->resetAllocation();
+        } catch (\Throwable $e) {
+            Flux::toast(variant: 'error', heading: 'Allocation Failed', text: $e->getMessage());
+        }
+    }
+
+    private function assignEmployeeToShiftWithSplitting(int $employeeId, int $workShiftId, int $algoId, Carbon $wef, Carbon $wet): void
+    {
+        // Find overlapping EmpWorkShift records for this employee (any shift)
+        $overlaps = EmpWorkShift::where('firm_id', session('firm_id'))
+            ->where('employee_id', $employeeId)
+            ->where(function($q) use ($wef, $wet) {
+                $q->where(function($sq) use ($wef) { $sq->whereNull('end_date')->orWhere('end_date', '>=', $wef); })
+                  ->where(function($sq) use ($wet) { $sq->whereNull('start_date')->orWhere('start_date', '<=', $wet); });
+            })
+            ->orderBy('start_date')
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($overlaps as $ows) {
+            $currStart = $ows->start_date ? Carbon::parse($ows->start_date) : null;
+            $currEnd = $ows->end_date ? Carbon::parse($ows->end_date) : null;
+
+            $overlapStart = $currStart ? max($currStart, $wef) : $wef;
+            $overlapEnd = $currEnd ? min($currEnd, $wet) : $wet;
+
+            if ($overlapStart->lte($overlapEnd)) {
+                // We have overlap with existing assignment -> split/trim
+                // Case A: Trim tail before overlap
+                if ($currStart && $currStart->lt($wef)) {
+                    // Keep existing record from currStart to day before wef
+                    $ows->end_date = $wef->copy()->subDay();
+                    $ows->save();
+                } else {
+                    // Remove overlap from the beginning by shifting start after wet
+                    if ($currEnd && $currEnd->gt($wet)) {
+                        // Create a new segment after wet
+                        EmpWorkShift::create([
+                            'firm_id' => $ows->firm_id,
+                            'work_shift_id' => $ows->work_shift_id,
+                            'work_shifts_algo_id' => $ows->work_shifts_algo_id,
+                            'employee_id' => $ows->employee_id,
+                            'start_date' => $wet->copy()->addDay(),
+                            'end_date' => $currEnd,
+                        ]);
+                        // Adjust current to end before allocation
+                        $ows->end_date = $wef->copy()->subDay();
+                        $ows->save();
+                    } else {
+                        // Full overlap, delete the existing assignment
+                        $ows->delete();
+                    }
+                }
+            }
+        }
+
+        // Finally, create the target assignment segment for requested period
+        EmpWorkShift::create([
+            'firm_id' => session('firm_id'),
+            'work_shift_id' => $workShiftId,
+            'work_shifts_algo_id' => $algoId,
+            'employee_id' => $employeeId,
+            'start_date' => $wef,
+            'end_date' => $wet,
+        ]);
     }
 
     public function toggleColumn(string $field)

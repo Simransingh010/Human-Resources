@@ -57,7 +57,7 @@ class EmployeeJobProfile extends Model
 		'doe' => 'datetime',
 		'joblocation_id' => 'int'
 	];
-
+//doe = date of exit, doh = date of hire 
 	protected $fillable = [
 		'firm_id',
 		'employee_id',

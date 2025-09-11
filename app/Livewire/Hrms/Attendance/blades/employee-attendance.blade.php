@@ -79,13 +79,10 @@ use Carbon\Carbon;
             <div class="p-6">
                 <flux:text size="lg" class="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-6">Monthly Calendar</flux:text>
                 
-                <!-- Calendar CSS -->
-                @push('styles')
-                <link href='https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/5.11.3/main.min.css' rel='stylesheet' />
-                @endpush
-
-                <!-- Calendar Container -->
-                <div id="calendar" class="w-full"></div>
+                <!-- Flux Calendar Component -->
+                <div class="w-full flex justify-center">
+                    <flux:calendar wire:model.live="selectedDate" class="w-full" />
+                </div>
 
                 <!-- Calendar Legend -->
                 <div class="mt-6 flex justify-center space-x-8">
@@ -161,7 +158,7 @@ use Carbon\Carbon;
                             <flux:text class="text-base font-medium text-gray-700 dark:text-gray-300 mb-3">All Punches</flux:text>
                             <div class="space-y-3">
                                 @foreach($activity['all_punches'] as $punch)
-                                {{dd($punch)}}
+{{--                                {{dd($punch)}}--}}
                                 <div class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-0">
                                     <div class="flex items-center space-x-3">
                                         @if($punch['type'] === 'In')
@@ -251,8 +248,155 @@ use Carbon\Carbon;
         </div>
     </flux:card>
 
+    <!-- Last 6 Months Attendance Table Section -->
+    <flux:card class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 mt-8">
+        <div class="p-6">
+            <div class="mb-4">
+                <flux:heading class="text-xl font-bold text-gray-900 dark:text-white">Last 6 Months Attendance</flux:heading>
+                <flux:text class="text-sm text-gray-500 dark:text-gray-400">Your attendance for each day of the last 6 months</flux:text>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full bg-white dark:bg-gray-800 rounded-lg overflow-hidden">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs">Month</th>
+                            @if(!empty($lastSixMonthsAttendance))
+                                @php $maxDays = collect($lastSixMonthsAttendance)->max('daysInMonth'); @endphp
+                                @for ($day = 1; $day <= $maxDays; $day++)
+                                    <th class="p-1 text-center text-xs">{{ $day }}</th>
+                                @endfor
+                                <th class="px-4 py-3 text-center">Present</th>
+                            @endif
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                        @foreach ($lastSixMonthsAttendance as $month)
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                <td class="p-1 font-medium text-xs">{{ $month['label'] }}</td>
+                                @for ($day = 1; $day <= $maxDays; $day++)
+                                    @php $dayData = $month['attendance'][$day-1] ?? null; @endphp
+                                    @if($day > $month['daysInMonth'])
+                                        <td class="px-2 py-3 text-center text-gray-400">-</td>
+                                    @else
+                                    <td class="px-2 py-3 text-center">
+                                        @if($dayData && isset($dayData['status']) && $dayData['status'])
+                                            @switch($dayData['status'])
+                                                @case('P')
+                                                <flux:tooltip content="Present">
+                                                    <svg class="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('A')
+                                                <flux:tooltip content="Absent">
+                                                    <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('HD')
+                                                <flux:tooltip content="Half Day">
+                                                    <svg class="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 536 512">
+                                                        <path d="M508.55 171.51L362.18 150.2 296.77 17.81C290.89 5.98 279.42 0 267.95 0c-11.4 0-22.79 5.9-28.69 17.81l-65.43 132.38-146.38 21.29c-26.25 3.8-36.77 36.09-17.74 54.59l105.89 103-25.06 145.48C86.98 495.33 103.57 512 122.15 512c4.93 0 10-1.17 14.87-3.75l130.95-68.68 130.94 68.7c4.86 2.55 9.92 3.71 14.83 3.71 18.6 0 35.22-16.61 31.66-37.4l-25.03-145.49 105.91-102.98c19.04-18.5 8.52-50.8-17.73-54.6zm-121.74 123.2l-18.12 17.62 4.28 24.88 19.52 113.45-102.13-53.59-22.38-11.74.03-317.19 51.03 103.29 11.18 22.63 25.01 3.64 114.23 16.63-82.65 80.38z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('PW')
+                                                <flux:tooltip content="Partial Working">
+                                                    <svg class="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10V2z"/>
+                                                        <path d="M12 7v5l2.5 2.5.75-1.25-1.75-1.75V7H12z" fill="white"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('L')
+                                                <flux:tooltip content="Leave">
+                                                    <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 640 512">
+                                                        <path d="M624 448H16c-8.84 0-16 7.16-16 16v32c0 8.84 7.16 16 16 16h608c8.84 0 16-7.16 16-16v-32c0-8.84-7.16-16-16-16zM80.55 341.27c6.28 6.84 15.1 10.72 24.33 10.71l130.54-.18a65.62 65.62 0 0 0 29.64-7.12l290.96-147.65c26.74-13.57 50.71-32.94 67.02-58.31 18.31-28.48 20.3-49.09 13.07-63.65-7.21-14.57-24.74-25.27-58.25-27.45-29.85-1.94-59.54 5.92-86.28 19.48l-98.51 49.99-218.7-82.06a17.799 17.799 0 0 0-18-1.11L90.62 67.29c-10.67 5.41-13.25 19.65-5.17 28.53l156.22 98.1-103.21 52.38-72.35-36.47a17.804 17.804 0 0 0-16.07.02L9.91 230.22c-10.44 5.3-13.19 19.12-5.57 28.08l76.21 82.97z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('WFR')
+                                                <flux:tooltip content="Work from Remote">
+                                                    <svg class="w-4 h-4 text-indigo-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('CW')
+                                                <flux:tooltip content="Compensatory Work">
+                                                    <svg class="w-4 h-4 text-pink-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('OD')
+                                                <flux:tooltip content="On Duty">
+                                                    <svg class="w-4 h-4 text-teal-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('H')
+                                                <flux:tooltip content="Holiday">
+                                                    <svg class="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M20 8.69V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12 20 8.69zM12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6 6 2.69 6 6-2.69 6-6 6zm0-10c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('W')
+                                                <flux:tooltip content="Week Off">
+                                                    <svg class="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('S')
+                                                <flux:tooltip content="Suspended">
+                                                    <svg class="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @case('POW')
+                                                <flux:tooltip content="Persent on Work Off">
+                                                    <svg class="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m0-10.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.75c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.75h-.152c-3.196 0-6.1-1.25-8.25-3.286Zm0 13.036h.008v.008H12v-.008Z"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                                @break
+                                                @default
+                                                <flux:tooltip content="Not Marked">
+                                                    <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                                                        <path d="M12 6v2m0 8v2M6 12h2m8 0h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                    </svg>
+                                                </flux:tooltip>
+                                            @endswitch
+                                        @else
+                                            <flux:tooltip content="Not Marked">
+                                                <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                                                    <path d="M12 6v2m0 8v2M6 12h2m8 0h2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                </svg>
+                                            </flux:tooltip>
+                                        @endif
+                                    </td>
+                                    @endif
+                                @endfor
+                                <td class="px-4 py-3 text-center font-medium">{{ $month['present_count'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </flux:card>
+
 <!-- Calendar Scripts -->
-@push('scripts')
+
 <script src='https://cdnjs.cloudflare.com/ajax/libs/fullcalendar/5.11.3/main.min.js'></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -329,7 +473,6 @@ document.addEventListener('DOMContentLoaded', function() {
     background-color: var(--color-gray-800/30);
 }
 </style>
-@endpush
 
 </div>
 

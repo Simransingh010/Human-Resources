@@ -61,7 +61,8 @@ class WorkShiftsAlgo extends Model
         'rules_config',
         'late_panelty',
         'comp_off',
-        'is_inactive'
+        'is_inactive',
+        'is_overnight'
     ];
 
 	public function firm()
