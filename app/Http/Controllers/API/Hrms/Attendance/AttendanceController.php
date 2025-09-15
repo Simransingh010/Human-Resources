@@ -60,7 +60,7 @@ class AttendanceController extends Controller
                 return response()->json([
                     'message_type' => 'error',
                     'message_display' => 'flash',
-                    'message' => 'Validation failed',
+                    'message' => 'Validation failed' . $validator->errors(),
                     'errors' => $validator->errors(),
                 ], 422);
             }
@@ -240,7 +240,6 @@ class AttendanceController extends Controller
                         'attendance_status_main' => $isOnLeaveDay ? 'POL' : 'P',
                     ]
                 );
-
                 // If there was a week off or a holiday, create the FlexiWeekOff entry (credit as Week Off)
                 if ($weekOffAttendance || $holidayAttendance) {
                     FlexiWeekOff::create([
@@ -586,6 +585,9 @@ class AttendanceController extends Controller
         // Ensure the result is non-negative
         return max(0, $hours);
     }
+
+
+
 
 // Helper function to calculate worked hours between punches
     private function calculateWorkedHours($inTime, $outTime)

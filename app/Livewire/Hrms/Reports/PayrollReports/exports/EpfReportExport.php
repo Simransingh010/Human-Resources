@@ -16,6 +16,7 @@ use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithEvents;
 use Maatwebsite\Excel\Events\AfterSheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use Illuminate\Support\Facades\DB;
 
 class EpfReportExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithEvents
 {
@@ -24,6 +25,11 @@ class EpfReportExport implements FromCollection, WithHeadings, WithMapping, With
     protected $end;
     protected $firmName;
     protected $rows;
+    // EPF configuration (common defaults)
+    protected float $epfWageCap = 15000.0; // statutory cap
+    protected float $epfEmployeeRate = 0.12; // Employee EPF 12%
+    protected float $epsEmployerRate = 0.0833; // Employer EPS 8.33%
+    protected float $epfEmployerDiffRate = 0.0367; // Employer EPF part 3.67%
 
     public function __construct($filters)
     {
@@ -56,56 +62,105 @@ class EpfReportExport implements FromCollection, WithHeadings, WithMapping, With
             });
         }
 
+        // Detect Basic component ids for this firm
+        $basicComponentIds = $this->detectBasicComponentIds($firmId);
+
         // Build EPF related columns from tracks
-        return $employees->map(function ($e) {
+        return $employees->map(function ($e) use ($basicComponentIds) {
             $job = $e->emp_job_profile;
             $tracks = collect($e->payroll_tracks);
 
             // Identify wages and contributions (these component titles/types may vary per tenant)
             // Fallback strategy: use component_type or title keywords
-            $basic = $tracks->firstWhere('component_type', 'regular');
+            $basicAmount = 0;
+            if (!empty($basicComponentIds)) {
+                $basicAmount = $tracks->whereIn('salary_component_id', $basicComponentIds)->sum('amount_payable');
+            } else {
+                // fallback to first regular
+                $basic = $tracks->firstWhere('component_type', 'regular');
+                $basicAmount = (float) ($basic->amount_full ?? 0);
+            }
 
-            $epfWages = $tracks->filter(function ($t) {
-                return stripos(optional($t->salary_component)->title ?? '', 'EPF WAGES') !== false;
-            })->sum('amount_payable');
+            // Derive EPF/EPS/EDLI wages from Basic subject to statutory cap
+            $epfBase = min((float) $basicAmount, $this->epfWageCap);
+            $epfWages = $epfBase; // generally same base for EPF
+            $epsWages = $epfBase; // EPS base is capped at 15,000
+            $edliWages = $epfBase; // EDLI wages typically share the same cap
 
-            $epsWages = $tracks->filter(function ($t) {
-                return stripos(optional($t->salary_component)->title ?? '', 'EPS WAGES') !== false;
-            })->sum('amount_payable');
-
-            $edliWages = $tracks->filter(function ($t) {
-                return stripos(optional($t->salary_component)->title ?? '', 'EDLI WAGES') !== false;
-            })->sum('amount_payable');
-
-            $epfContri = $tracks->filter(function ($t) {
-                return ($t->component_type ?? '') === 'employee_contribution' || stripos(optional($t->salary_component)->title ?? '', 'EPF CONTRI') !== false;
-            })->sum('amount_payable');
-
-            $epsContri = $tracks->filter(function ($t) {
-                return stripos(optional($t->salary_component)->title ?? '', 'EPS CONTRI') !== false;
-            })->sum('amount_payable');
-
-            $diffContri = $tracks->filter(function ($t) {
-                return stripos(optional($t->salary_component)->title ?? '', 'EPF EPS DIFF') !== false;
-            })->sum('amount_payable');
+            // Contributions computed from base
+            $epfContri = round($epfBase * $this->epfEmployeeRate); // Employee 12%
+            $epsContri = round($epfBase * $this->epsEmployerRate); // Employer 8.33%
+            $diffContri = round($epfBase * $this->epfEmployerDiffRate); // Employer EPF 3.67%
 
             return [
                 'uan' => $job->uanno ?? '',
                 'name' => trim(($e->fname ?? '') . ' ' . ($e->lname ?? '')),
-                'gross_wages' => (float) ($basic->amount_full ?? 0),
+                'gross_wages' => (float) $basicAmount,
                 'epf_wages' => (float) $epfWages,
                 'eps_wages' => (float) $epsWages,
                 'edli_wages' => (float) $edliWages,
                 'epf_contri' => (float) $epfContri,
                 'eps_contri' => (float) $epsContri,
                 'diff_contri' => (float) $diffContri,
-                'ncp_days' => 0,
+                'ncp_days' => 0.00,
                 'refund_adv' => 0,
             ];
         })->values();
     }
 
+    protected function detectBasicComponentIds(int $firmId): array
+    {
+        // 1) Try title pattern matching on SalaryComponent titles
+        $patterns = [
+            '/\\bbasic\\s*salary\\b/i',
+            '/\\bbasic\\s*pay\\b/i',
+            '/^basic$/i',
+            '/^bp$/i',
+            '/\\bbase\\s*salary\\b/i',
+            '/\\bfundamental\\s*pay\\b/i',
+            '/^basicpay$/i',
+            '/^basicsalary$/i',
+            '/^base$/i',
+        ];
+
+        $components = SalaryComponent::query()
+            ->where('firm_id', $firmId)
+            ->whereNull('deleted_at')
+            ->get(['id','title','nature','component_type']);
+
+        $matchedIds = [];
+        foreach ($components as $c) {
+            $title = strtolower(trim((string)$c->title));
+            foreach ($patterns as $re) {
+                if (preg_match($re, $title)) {
+                    $matchedIds[] = $c->id;
+                    break;
+                }
+            }
+        }
+
+        if (!empty($matchedIds)) {
+            return array_values(array_unique($matchedIds));
+        }
+
+        // 2) Fallback: Pick earning component with highest average amount in selected period
+        $fallback = PayrollComponentsEmployeesTrack::query()
+            ->select('salary_component_id', DB::raw('AVG(amount_payable) as avg_amount'))
+            ->where('firm_id', $firmId)
+            ->whereBetween('salary_period_from', [$this->start, $this->end])
+            ->groupBy('salary_component_id')
+            ->orderByDesc('avg_amount')
+            ->first();
+
+        return $fallback ? [$fallback->salary_component_id] : [];
+    }
+
     public function collection()
+    {
+        return $this->rows;
+    }
+
+    public function getRows(): Collection
     {
         return $this->rows;
     }

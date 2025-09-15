@@ -63,7 +63,7 @@ class SalaryComponent extends Model
 	];
 
 	public const NATURE_SELECT = [
-		'earning' => 'Earning',
+		'earning' => 'Earning',	
 		'deduction' => 'Deduction',
 		'no_impact' => 'No Impact'
 	];

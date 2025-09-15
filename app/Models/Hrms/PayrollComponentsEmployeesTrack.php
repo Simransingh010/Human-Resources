@@ -167,3 +167,8 @@ class PayrollComponentsEmployeesTrack extends Model
 		return $this->hasMany(EmployeePaidSalaryComponent::class);
 	}
 }
+// You’ll have no trail if Income Tax Dept or auditors ask “Why was this income included?”
+
+// Employees may later dispute amounts they declared.
+
+// You’ll struggle to reconcile with Form 26AS / AIS when employee files their return.

@@ -42,6 +42,7 @@
 
     <div class="flex justify-end space-x-2">
         <flux:button wire:click="export" variant="primary">Export to Excel</flux:button>
+        <flux:button wire:click="exportText" variant="outline">Export ECR Text</flux:button>
     </div>
 </div>
 

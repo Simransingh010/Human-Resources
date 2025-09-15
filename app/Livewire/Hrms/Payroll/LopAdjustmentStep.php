@@ -4,11 +4,14 @@ namespace App\Livewire\Hrms\Payroll;
 
 use App\Models\Hrms\EmployeesSalaryDay;
 use App\Models\Hrms\Employee;
+use App\Models\Hrms\PayrollSlot;
+use App\Models\Hrms\EmployeesSalaryExecutionGroup;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
 use Flux;
+use Carbon\Carbon;
 
 class LopAdjustmentStep extends Component
 {
@@ -52,6 +55,7 @@ class LopAdjustmentStep extends Component
     public function mount($slotId)
     {
         $this->slotId = $slotId;
+        $this->ensureSalaryDayRowsForSlot();
         $this->initListsForFields();
 
         // Set default visible fields
@@ -81,7 +85,10 @@ class LopAdjustmentStep extends Component
                 return [$employee->id => $employee->fname . ' ' . $employee->lname];
             })
             ->toArray();
+
+
     }
+
 
     public function applyFilters()
     {
@@ -128,7 +135,7 @@ class LopAdjustmentStep extends Component
             ->when($this->filters['employee_id'], fn($query, $value) =>
                 $query->where('employee_id', $value))
             ->with(['employee']);
-        $paginated = $query->paginate(10);
+        $paginated = $query->paginate($this->perPage);
         $paginated->getCollection()->transform(function ($record) {
             return [
                 'id' => $record->id,
@@ -164,6 +171,64 @@ class LopAdjustmentStep extends Component
                 'lop_dates' => $details['lop'],
             ];
             $this->showEditModal = true;
+        }
+    }
+
+    private function ensureSalaryDayRowsForSlot(): void
+    {
+        try {
+            if (!$this->slotId) {
+                return;
+            }
+
+            $slot = PayrollSlot::where('firm_id', Session::get('firm_id'))
+                ->where('id', $this->slotId)
+                ->first();
+            if (!$slot) {
+                return;
+            }
+
+            $fromDate = Carbon::parse($slot->from_date);
+            $toDate = Carbon::parse($slot->to_date);
+            $cycleDays = $fromDate->diffInDays($toDate) + 1;
+
+            // Get employees in this slot's execution group who are active
+            $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
+                ->where('salary_execution_group_id', $slot->salary_execution_group_id)
+                ->whereHas('employee', function ($q) use ($slot) {
+                    $q->where('is_inactive', false)
+                        ->whereHas('emp_job_profile', function ($q2) use ($slot) {
+                            $q2->where(function ($query) use ($slot) {
+                                $query->whereNull('doh')
+                                    ->orWhereDate('doh', '<=', $slot->to_date);
+                            });
+                        });
+                })
+                ->pluck('employee_id')
+                ->toArray();
+
+            if (empty($employeeIds)) {
+                return;
+            }
+
+            // Create missing EmployeesSalaryDay rows for these employees
+            foreach ($employeeIds as $employeeId) {
+                EmployeesSalaryDay::firstOrCreate(
+                    [
+                        'firm_id' => Session::get('firm_id'),
+                        'payroll_slot_id' => $this->slotId,
+                        'employee_id' => $employeeId,
+                    ],
+                    [
+                        'cycle_days' => $cycleDays,
+                        'void_days_count' => 0,
+                        'lop_days_count' => 0,
+                        'lop_details' => null,
+                    ]
+                );
+            }
+        } catch (\Throwable $e) {
+            // Fail silently; UI will just show empty state if something goes wrong
         }
     }
 

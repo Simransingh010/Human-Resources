@@ -310,12 +310,17 @@ class PayrollCycles extends Component
                 ->pluck('employee_id')
                 ->toArray();
 
+
+
             // Exclude employees on salary hold for this slot
             $employeesOnHold = SalaryHold::where('firm_id', Session::get('firm_id'))
                 ->where('payroll_slot_id', $slot_id)
                 ->pluck('employee_id')
                 ->toArray();
+
             $activeEmployeeIds = array_diff($employeeIds, $employeesOnHold);
+
+
                 // Process salary advances for all active employees in this slot
                 $this->processSalaryAdvances($slot_id, $activeEmployeeIds, $payrollSlot);
                 // After creating advance tracks for this slot, settle/advance the advances ledger
@@ -423,10 +428,8 @@ class PayrollCycles extends Component
             // Filter out employees on hold
             $activeEmployeeIds = $employeeIds->diff($employeesOnHold);
 
-            // Calculate cycle days from slot dates (inclusive)
-            $fromDate = Carbon::parse($payrollSlot->from_date);
-            $toDate = Carbon::parse($payrollSlot->to_date);
-            $cycleDays = $fromDate->diffInDays($toDate) + 1;
+            // Calculate cycle days with firm-specific override (firm_id = 2 => always 30)
+            $cycleDays = $this->getCycleDays($payrollSlot);
 
             // 1. Fetch ALL data needed in bulk BEFORE the loop to eliminate N+1 queries
             $allAssignedComponents = SalaryComponentsEmployee::where('firm_id', Session::get('firm_id'))
@@ -1760,6 +1763,7 @@ class PayrollCycles extends Component
 
     public function lopAdjustmentStep($slotId)
     {
+
         $this->selectedSlotId = $slotId;
         $this->modal('lop-adjustment-steps')->show();
     }
@@ -2270,6 +2274,20 @@ class PayrollCycles extends Component
         if ($current->gt($fyEnd)) return 0;
         // Months left including current month
         return $current->diffInMonths($fyEnd) + 1;
+    }
+
+    /**
+     * Determine cycle days for a slot, with firm-specific override.
+     * For firm_id = 2, always return 30 days regardless of slot boundaries.
+     */
+    protected function getCycleDays($payrollSlot): int
+    {
+        if ((int) Session::get('firm_id') === 2) {
+            return 30;
+        }
+        $fromDate = Carbon::parse($payrollSlot->from_date);
+        $toDate = Carbon::parse($payrollSlot->to_date);
+        return $fromDate->diffInDays($toDate) + 1;
     }
 
     /**

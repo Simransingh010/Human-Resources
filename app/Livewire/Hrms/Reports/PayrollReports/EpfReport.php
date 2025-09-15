@@ -8,6 +8,7 @@ use App\Models\Hrms\EmployeeJobProfile;
 use App\Models\Hrms\SalaryExecutionGroup;
 use Livewire\Component;
 use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EpfReport extends Component
 {
@@ -19,7 +20,6 @@ class EpfReport extends Component
         'employment_type_id' => null,
         'salary_execution_group_id' => null,
     ];
-
     public array $listsForFields = [];
 
     public function mount()
@@ -80,10 +80,48 @@ class EpfReport extends Component
         );
     }
 
+    public function exportText(): StreamedResponse
+    {
+        $this->validate([
+            'filters.date_range.start' => 'required|date',
+            'filters.date_range.end' => 'required|date|after_or_equal:filters.date_range.start',
+        ]);
+
+        $export = new EpfReportExport($this->filters);
+        $rows = $export->getRows();
+
+        $filename = 'epf-ecr-' . now()->format('Ymd_His') . '.txt';
+
+        return response()->streamDownload(function () use ($rows) {
+            // Header as per sample screenshot is not required; only data rows
+            foreach ($rows as $r) {
+                $line = [
+                    (string) ($r['uan'] ?? ''),
+                    (string) ($r['name'] ?? ''),
+                    number_format((float) ($r['gross_wages'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['epf_wages'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['eps_wages'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['edli_wages'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['epf_contri'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['eps_contri'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['diff_contri'] ?? 0), 0, '.', ''),
+                    number_format((float) ($r['ncp_days'] ?? 0), 2, '.', ''),
+                    number_format((float) ($r['refund_adv'] ?? 0), 0, '.', ''),
+                ];
+                echo implode('#', $line) . "\r\n";
+            }
+        }, $filename, [
+            'Content-Type' => 'text/plain',
+        ]);
+    }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Reports/PayrollReports/blades/epf-report.blade.php'));
     }
 }
+
+
+
 
 
