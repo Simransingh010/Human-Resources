@@ -7,15 +7,19 @@ use Illuminate\Http\Request;
 
 class PanelController extends Controller
 {
-    /**
+    /**epf
      * Return the list of panels assigned to the authenticated user.
      */
     public function index(Request $request)
     {
         $user = $request->user();
 
-        // Assuming the user model has a 'panels' relationship.
-        $panels = $user->panels()->where('is_inactive', false)->where('panel_type','1')->get();
+        // Get panels assigned to user where firm_id is not null
+        $panels = $user->panels()
+            ->where('is_inactive', false)
+            ->where('panel_type', '1')
+            ->wherePivot('firm_id', '!=', null)
+            ->get();
 
         return response()->json([
             'message_type' => 'success',

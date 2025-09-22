@@ -946,7 +946,7 @@ class WorkShiftsAlgos extends Component
     {
         try {
             // Before syncing, rollback any previous sync batch for this specific algo (idempotent re-sync)
-            $this->rollbackSyncForAlgo($algoId);
+            $this-> rollbackSyncForAlgo($algoId);
 
             DB::beginTransaction();
 

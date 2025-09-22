@@ -10,6 +10,13 @@
         </fileTransfer>
         <option name="numberOfConnections" value="1005" />
       </webServer>
+      <webServer id="77049e48-4365-474b-819a-15c612b779d1" name="server183" url="http://server183.iqdigit.com">
+        <fileTransfer host="server183.iqdigit.com" port="21">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
     </option>
   </component>
 </project>

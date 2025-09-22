@@ -3,6 +3,8 @@
 namespace App\Livewire\Hrms\Reports\PayrollReports;
 
 use App\Livewire\Hrms\Reports\PayrollReports\exports\EpfReportExport;
+use App\Models\Saas\Firm;
+use Illuminate\Support\Str;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmployeeJobProfile;
 use App\Models\Hrms\SalaryExecutionGroup;
@@ -74,8 +76,10 @@ class EpfReport extends Component
             'filters.date_range.end' => 'required|date|after_or_equal:filters.date_range.start',
         ]);
 
+        $export = $this->resolveExporter();
+
         return Excel::download(
-            new EpfReportExport($this->filters),
+            $export,
             'epf-report-' . now()->format('Ymd_His') . '.xlsx'
         );
     }
@@ -87,7 +91,7 @@ class EpfReport extends Component
             'filters.date_range.end' => 'required|date|after_or_equal:filters.date_range.start',
         ]);
 
-        $export = new EpfReportExport($this->filters);
+        $export = $this->resolveExporter();
         $rows = $export->getRows();
 
         $filename = 'epf-ecr-' . now()->format('Ymd_His') . '.txt';
@@ -118,6 +122,24 @@ class EpfReport extends Component
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Reports/PayrollReports/blades/epf-report.blade.php'));
+    }
+
+    protected function resolveExporter(): EpfReportExport
+    {
+        $firmId = $this->filters['firm_id'] ?? session('firm_id');
+        $firm = $firmId ? Firm::find($firmId) : null;
+        $short = $firm?->short_name ?: '';
+
+        // Build StudlyCase short name, e.g., "HPCA" -> "Hpca"
+        $studly = Str::studly(strtolower($short));
+        $baseNamespace = __NAMESPACE__ . '\\exports\\';
+        $candidate = $baseNamespace . $studly . 'EpfReportExport';
+
+        if (class_exists($candidate)) {
+            return new $candidate($this->filters);
+        }
+
+        return new EpfReportExport($this->filters);
     }
 }
 

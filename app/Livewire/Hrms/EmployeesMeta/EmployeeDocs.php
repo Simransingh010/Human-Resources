@@ -128,13 +128,17 @@ class EmployeeDocs extends Component
             heading: 'Changes saved.',
             text: 'Document details have been updated successfully.',
         );
+
+        // Emit step completion event
+        $this->dispatch('stepCompleted', step: 7);
+        $this->render();
     }
 
     public function resetForm()
     {
         $this->docData = [
             'id' => null,
-            'employee_id' => '',
+//            'employee_id' => '',
             'document_type_id' => '',
             'document_number' => '',
             'issued_date' => '',
@@ -173,11 +177,23 @@ class EmployeeDocs extends Component
         // Delete the document record
         $doc->delete();
 
+        // Check if there are any remaining documents
+        $remainingDocs = EmployeeDoc::where('employee_id', $this->employee->id)->count();
+        if ($remainingDocs === 0) {
+            // If no documents remain, emit step uncompletion event
+            $this->dispatch('stepUncompleted', step: 7);
+        }
+
         // Show toast notification
         Flux::toast(
             heading: 'Document Deleted',
             text: "Document {$docNumber} has been deleted successfully."
         );
+    }
+
+    public function render()
+    {
+        return view('livewire.hrms.employees-meta.employee-docs');
     }
 
 }

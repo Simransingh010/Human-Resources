@@ -176,10 +176,11 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
         }
 
         if (!empty($punchStrings)) {
-            $cell = implode("\n", $punchStrings);
+            $cell = '';
             if ($status) {
-                $cell .= "\n" . $status;
+                $cell = $status . "\n";
             }
+            $cell .= implode("\n", $punchStrings);
             return $cell;
         }
 
@@ -239,9 +240,14 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
                 return ['P', $firstInC, $lastOutC];
             }
 
-            // Half Day: In after 9:20 AM but out by 5:00 PM
-            if ($firstInC->gt($bufferEnd) && $lastOutC->gte($officialOut)) {
-                return ['HD', $firstInC, $lastOutC];
+            // Half Day: In after 9:20 AMin th but out after 5:00 PM (only if first-in is on/before 5:00 PM)
+            if ($firstInC->gt($bufferEnd) && $firstInC->lte($officialOut) && $lastOutC->gte($officialOut)) {
+                return ['H', $firstInC, $lastOutC];
+            }
+
+            // Absent: In after 5:00 PM (very late entry) - any entry after 5:00 PM should be marked as Absent
+            if ($firstInC->gt($officialOut)) {
+                return ['A', $firstInC, $lastOutC];
             }
 
             // Absent: In by 9:00 AM but out before 1:00 PM (half day cutoff)
@@ -254,7 +260,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
                 if ($lastOutC->lt($halfDayCutoff)) {
                     return ['A', $firstInC, $lastOutC];
                 }
-                return ['HD', $firstInC, $lastOutC];
+                return ['H', $firstInC, $lastOutC];
             }
 
             // Half Day: In after 9:00 AM and out before 5:00 PM (after half day cutoff)
@@ -262,7 +268,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
                 if ($lastOutC->lt($halfDayCutoff)) {
                     return ['A', $firstInC, $lastOutC];
                 }
-                return ['HD', $firstInC, $lastOutC];
+                return ['H', $firstInC, $lastOutC];
             }
         }
 

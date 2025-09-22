@@ -112,6 +112,10 @@ class EmployeeAddresses extends Component
             heading: 'Changes saved.',
             text: 'Address details have been updated successfully.',
         );
+
+        // Emit step completion event
+        $this->dispatch('stepCompleted', step: 2);
+        $this->render();
     }
 
 
@@ -119,7 +123,7 @@ class EmployeeAddresses extends Component
     {
         $this->addressData = [
             'id' => null,
-            'employee_id' => '',
+//            'employee_id' => '',
             'country' => '',
             'state' => '',
             'city' => '',
@@ -163,8 +167,22 @@ class EmployeeAddresses extends Component
                 heading: 'Address Deleted',
                 text: 'The address has been deleted successfully.',
             );
+
+            // Check if there are any remaining addresses
+            $remainingAddresses = EmployeeAddress::where('employee_id', $this->employee->id)->count();
+            if ($remainingAddresses === 0) {
+                // If no addresses remain, emit step uncompletion event
+                $this->dispatch('stepUncompleted', step: 2);
+            }
         }
         $this->modal('delete-address-' . $addressId)->close();
+    }
+
+    public function render()
+    {
+        return view('livewire.hrms.employees-meta.employee-addresses', [
+            'addresses' => $this->addresseslist()->sortBy($this->sortBy, SORT_REGULAR, $this->sortDirection === 'desc'),
+        ]);
     }
 
 }

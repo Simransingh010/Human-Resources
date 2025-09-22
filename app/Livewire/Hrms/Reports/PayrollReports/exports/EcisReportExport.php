@@ -155,15 +155,13 @@ class EcisReportExport extends DefaultValueBinder implements FromCollection, Wit
         $job = $employee->emp_job_profile;
         $personal = $employee->emp_personal_detail;
         $payrollTracks = collect($employee->payroll_tracks);
-        $trackByComponent = $payrollTracks
-            ->groupBy('salary_component_id')
-            ->map(fn($items) => $items->sum('amount_payable'));
-
         // Gross Salary = sum of all earnings
         $grossSalary = $payrollTracks->where('nature', 'earning')->sum('amount_payable');
-        $ecisEmployee = $trackByComponent[self::ECIS_EMPLOYEE_ID] ?? 0;
-        $ecisEmployer = $trackByComponent[self::ECIS_EMPLOYER_ID] ?? 0;
-        $totalPayable = $ecisEmployee + $ecisEmployer;
+
+        // Calculate ECIS contributions directly from gross
+        $ecisEmployee = round($grossSalary * 0.0075, 2); // 0.75%
+        $ecisEmployer = round($grossSalary * 0.0325, 2); // 3.25%
+        $totalPayable = round($ecisEmployee + $ecisEmployer, 2);
 
         return [
             $serial++,

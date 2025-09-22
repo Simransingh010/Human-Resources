@@ -15,7 +15,7 @@ class EmployeeJobProfiles extends Component
 {
     use \Livewire\WithPagination;
     public Employee $employee;
-
+//sanpr isngh ixn fj3 eddi 33if9 spdv9w fjufi09 vvooo3
     public $profileData = [
         'id' => null,
         'employee_id' => '',
@@ -130,6 +130,23 @@ class EmployeeJobProfiles extends Component
         // Convert empty string dates to null
         if (empty($validatedData['profileData']['doe'])) {
             $validatedData['profileData']['doe'] = null;
+        }
+
+        // Convert empty string integers to null for nullable fields
+        if (empty($validatedData['profileData']['reporting_manager'])) {
+            $validatedData['profileData']['reporting_manager'] = null;
+        }
+        if (empty($validatedData['profileData']['employment_type_id'])) {
+            $validatedData['profileData']['employment_type_id'] = null;
+        }
+        if (empty($validatedData['profileData']['joblocation_id'])) {
+            $validatedData['profileData']['joblocation_id'] = null;
+        }
+        if (empty($validatedData['profileData']['department_id'])) {
+            $validatedData['profileData']['department_id'] = null;
+        }
+        if (empty($validatedData['profileData']['designation_id'])) {
+            $validatedData['profileData']['designation_id'] = null;
         }
 
         $validatedData['profileData']['employee_id'] = $this->employee->id;

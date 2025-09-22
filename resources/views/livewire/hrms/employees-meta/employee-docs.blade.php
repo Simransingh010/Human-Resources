@@ -127,7 +127,7 @@
                     </flux:table.cell>
                     <flux:table.cell>
                         @if($doc->doc_url)
-                            <a href="{{ Storage::url($doc->doc_url) }}" target="_blank" class="text-blue-500 hover:underline">
+                            <a href="{{ url($doc->doc_url) }}" target="_blank" class="text-blue-500 hover:underline">
                                 View Document
                             </a>
                         @else
