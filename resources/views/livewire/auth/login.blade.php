@@ -58,10 +58,20 @@ new #[Layout('components.layouts.auth')] class extends Component {
         session(['dateFormat' => 'd-M-Y']);
         session(['defaultwire' => 'panel.dashboard']);
           // Set LOP deduction type only for firm ID 2
-          if (session('firm_id') == 2) {
+          $currentFirmId = (int) session('firm_id');
+          if ($currentFirmId === 2) {
             session(['LOP_deduction_type'=> 'calculation_wise']);
+            // DEBUG: Verify LOP deduction type is set
+            \Log::info('LOP DEDUCTION TYPE SET', [
+                'firm_id' => $currentFirmId,
+                'lop_deduction_type' => session('LOP_deduction_type')
+            ]);
         } else {
             session(['LOP_deduction_type'=> '']); // Keep blank for other firms
+            \Log::info('LOP DEDUCTION TYPE NOT SET', [
+                'firm_id' => $currentFirmId,
+                'lop_deduction_type' => session('LOP_deduction_type')
+            ]);
         }
         session(['fy_start' => '2025-04-01']);
         session(['fy_end' => '2026-03-31']);

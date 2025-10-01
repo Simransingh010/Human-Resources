@@ -2,7 +2,8 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
 <head>
     @include('partials.head')
-    @livewireStyles
+{{--    @livewireStyles--}}
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 </head>
 <body class="min-h-screen bg-white dark:bg-zinc-800 flex">
 @livewire('panel.leftmenu')
@@ -19,7 +20,7 @@
 @persist('toast')
 <flux:toast position="top right"/>
 @endpersist
-@livewireScripts
+{{--@livewireScripts--}}
 @stack('scripts')
 </body>
 </html>

@@ -158,10 +158,10 @@ class EcisReportExport extends DefaultValueBinder implements FromCollection, Wit
         // Gross Salary = sum of all earnings
         $grossSalary = $payrollTracks->where('nature', 'earning')->sum('amount_payable');
 
-        // Calculate ECIS contributions directly from gross
-        $ecisEmployee = round($grossSalary * 0.0075, 2); // 0.75%
-        $ecisEmployer = round($grossSalary * 0.0325, 2); // 3.25%
-        $totalPayable = round($ecisEmployee + $ecisEmployer, 2);
+        // Calculate ECIS contributions directly from gross (rounded to whole numbers)
+        $ecisEmployee = (int) round($grossSalary * 0.0075, 0, PHP_ROUND_HALF_UP); // 0.75%
+        $ecisEmployer = (int) round($grossSalary * 0.0325, 0, PHP_ROUND_HALF_UP); // 3.25%
+        $totalPayable = $ecisEmployee + $ecisEmployer;
 
         return [
             $serial++,
@@ -207,21 +207,31 @@ class EcisReportExport extends DefaultValueBinder implements FromCollection, Wit
                 foreach (range('A', $highestColumn) as $col) {
                     $sheet->getColumnDimension($col)->setAutoSize(true);
                 }
-                foreach (['E', 'F', 'G', 'H'] as $col) {
+                // Column formats: E (Gross) with 2 decimals; F,G,H (ECIS) whole numbers
+                $sheet->getStyle("E{$dataRowStart}:E{$dataRowEnd}")
+                    ->getNumberFormat()
+                    ->setFormatCode('#,##0.00');
+                foreach (['F', 'G', 'H'] as $col) {
                     $sheet->getStyle("{$col}{$dataRowStart}:{$col}{$dataRowEnd}")
                         ->getNumberFormat()
-                        ->setFormatCode('#,##0.00');
+                        ->setFormatCode('#,##0');
                 }
                 $totalsRow = $dataRowEnd + 1;
                 $sheet->setCellValue("A{$totalsRow}", 'Grand Total');
-                foreach (['E', 'F', 'G', 'H'] as $col) {
+                // Totals formatting aligned with column formats
+                // E with 2 decimals, F,G,H whole numbers
+                $sheet->setCellValue("E{$totalsRow}", "=SUM(E{$dataRowStart}:E{$dataRowEnd})");
+                $sheet->getStyle("E{$totalsRow}")
+                    ->getNumberFormat()
+                    ->setFormatCode('#,##0.00');
+                foreach (['F', 'G', 'H'] as $col) {
                     $sheet->setCellValue(
                         "{$col}{$totalsRow}",
                         "=SUM({$col}{$dataRowStart}:{$col}{$dataRowEnd})"
                     );
                     $sheet->getStyle("{$col}{$totalsRow}")
                         ->getNumberFormat()
-                        ->setFormatCode('#,##0.00');
+                        ->setFormatCode('#,##0');
                 }
                 $sheet->getStyle("A{$totalsRow}:{$highestColumn}{$totalsRow}")->getFont()->setBold(true);
                 $sheet->getStyle("A{$totalsRow}:{$highestColumn}{$totalsRow}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);

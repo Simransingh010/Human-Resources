@@ -18,8 +18,15 @@ class PanelController extends Controller
         $panels = $user->panels()
             ->where('is_inactive', false)
             ->where('panel_type', '1')
-            ->wherePivot('firm_id', '!=', null)
+
+//>whereNotNull('deleted_at')
+//in case of pivot tables like this, panel and user pivot table - panel_user,
+// wherenotnull will give 500 error because deleted_at is not present on each master table
+// therefore we will check  ----> wherePivotNull('deleted_at)'to check fields on pivot tables
+            ->wherePivotNotNull('firm_id')
+            ->wherePivotNull('deleted_at')
             ->get();
+
 
         return response()->json([
             'message_type' => 'success',

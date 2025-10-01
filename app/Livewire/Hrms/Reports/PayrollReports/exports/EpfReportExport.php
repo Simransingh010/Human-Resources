@@ -73,6 +73,8 @@ class EpfReportExport implements FromCollection, WithHeadings, WithMapping, With
             // Identify wages and contributions (these component titles/types may vary per tenant)
             // Fallback strategy: use component_type or title keywords
             $basicAmount = 0;
+            // Gross wages should be the total of all earning components before deductions
+            $grossAmount = $tracks->where('nature', 'earning')->sum('amount_payable');
             if (!empty($basicComponentIds)) {
                 $basicAmount = $tracks->whereIn('salary_component_id', $basicComponentIds)->sum('amount_payable');
             } else {
@@ -95,7 +97,7 @@ class EpfReportExport implements FromCollection, WithHeadings, WithMapping, With
             return [
                 'uan' => $job->uanno ?? '',
                 'name' => trim(($e->fname ?? '') . ' ' . ($e->lname ?? '')),
-                'gross_wages' => (float) $basicAmount,
+                'gross_wages' => (float) $grossAmount,
                 'epf_wages' => (float) $epfWages,
                 'eps_wages' => (float) $epsWages,
                 'edli_wages' => (float) $edliWages,
