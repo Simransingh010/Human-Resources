@@ -99,7 +99,7 @@ class HpcaEpfReportExport extends EpfReportExport implements WithHeadings, WithM
 
                 // Period row styling
                 $sheet->mergeCells('A2:J2');
-                $sheet->setCellValuC:\Users\Anhad Tahseen\PhpstormProjects\HRMS_12\app\Livewire\Hrms\Reports\PayrollReports\exports\EpfReportExport.phpe('A2', 'SALARY DETAILS  FOR THE MONTH OF ' . now()->format('JULY Y')); // visually similar
+                $sheet->setCellValue('A2', 'SALARY DETAILS  FOR THE MONTH OF ' . now()->format('JULY Y')); // visually similar
                 $sheet->getStyle('A2')->getFont()->setBold(true)->setSize(12);
                 $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
