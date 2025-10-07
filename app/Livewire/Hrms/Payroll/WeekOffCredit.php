@@ -215,17 +215,25 @@ class WeekOffCredit extends Component
             return;
         }
 
-        // 2. Find EmpLeaveBalance for this employee, leave type, and slot period (do not create)
+        // 2. Find or create EmpLeaveBalance for this employee and leave type within the slot period
         $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::where([
             'firm_id' => $firmId,
             'employee_id' => $employeeId,
             'leave_type_id' => $leaveType->id,
-
         ])->first();
         if (!$leaveBalance) {
-            $this->showSyncModal = false;
-            \Flux\Flux::toast('Leave balance not found', 'error');
-            return;
+            $leaveBalance = new \App\Models\Hrms\EmpLeaveBalance();
+            $leaveBalance->firm_id = $firmId;
+            $leaveBalance->employee_id = $employeeId;
+            $leaveBalance->leave_type_id = $leaveType->id;
+            $leaveBalance->period_start = $from;
+            $leaveBalance->period_end = $to;
+            $leaveBalance->allocated_days = 0;
+            $leaveBalance->consumed_days = 0;
+            $leaveBalance->carry_forwarded_days = 0;
+            $leaveBalance->lapsed_days = 0;
+            $leaveBalance->balance = 0;
+            $leaveBalance->save();
         }
         $leaveBalance->allocated_days += $daysToCredit;
         // $leaveBalance->carry_forwarded_days += $daysToCredit;
@@ -290,16 +298,25 @@ class WeekOffCredit extends Component
             $employeeId = $employee->id;
             $available = $this->getEmployeeAvailableDays($employeeId);
             if ($available > 0) {
-                // Only update existing leave balance, do not create
+                // Find or create leave balance for this employee and leave type
                 $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::where([
                     'firm_id' => $firmId,
                     'employee_id' => $employeeId,
                     'leave_type_id' => $leaveType->id,
-                  
                 ])->first();
                 if (!$leaveBalance) {
-                    \Flux\Flux::toast('Leave balance not found for employee ID ' . $employeeId, 'error');
-                    continue;
+                    $leaveBalance = new \App\Models\Hrms\EmpLeaveBalance();
+                    $leaveBalance->firm_id = $firmId;
+                    $leaveBalance->employee_id = $employeeId;
+                    $leaveBalance->leave_type_id = $leaveType->id;
+                    $leaveBalance->period_start = $from;
+                    $leaveBalance->period_end = $to;
+                    $leaveBalance->allocated_days = 0;
+                    $leaveBalance->consumed_days = 0;
+                    $leaveBalance->carry_forwarded_days = 0;
+                    $leaveBalance->lapsed_days = 0;
+                    $leaveBalance->balance = 0;
+                    $leaveBalance->save();
                 }
                 $leaveBalance->allocated_days += $available;
                 $leaveBalance->carry_forwarded_days += $available;
