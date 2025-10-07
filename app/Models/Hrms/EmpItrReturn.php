@@ -50,6 +50,21 @@ class EmpItrReturn extends Model
         'filling_json',
         'status',
     ];
+
+    public const ITR_TYPE_SELECT = [
+		'ITR-1' => 'ITR-1',
+		'ITR-2' => 'ITR-2',
+		'ITR-3' => 'ITR-3',
+		'ITR-4' => 'ITR-4',
+		'ITR-5' => 'ITR-5',
+	];
+
+    public const STATUS_SELECT = [
+		'filled' => 'Filled',
+		'processed' => 'Processed',
+		'adjusted' => 'Adjusted',
+		'underscrutiny' => 'Underscrutiny',
+	];
 }
 
 

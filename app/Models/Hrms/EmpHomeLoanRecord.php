@@ -54,6 +54,13 @@ class EmpHomeLoanRecord extends Model
         'from_date',
         'to_date',
     ];
+
+    public const PROPERTY_STATUS_SELECT = [
+		'self_occupied' => 'Self Occupied',
+		'rented' => 'Rented',
+		'other' => 'Other',
+	];
+
 }
 
 

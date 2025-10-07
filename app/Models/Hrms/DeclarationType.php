@@ -47,6 +47,12 @@ class DeclarationType extends Model
         'proof_required',
         'validation_rules',
     ];
+
+    public const PROOF_REQUIRED_SELECT = [
+		'yes' => 'Yes',
+		'no' => 'No',
+	];
+
 }
 
 

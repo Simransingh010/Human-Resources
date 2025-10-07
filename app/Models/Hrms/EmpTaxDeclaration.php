@@ -64,6 +64,20 @@ class EmpTaxDeclaration extends Model
         'hra_record_id',
         'source',
     ];
+
+    public const STATUS_SELECT = [
+		'pending' => 'Pending',
+		'approved' => 'Approved',
+		'rejected' => 'Rejected',
+	];
+
+    public const SOURCE_SELECT = [
+		'investment_proof' => 'Investment Proof',
+		'employee_nps_contribution' => 'Employee NPS Contribution',
+		'system_generated' => 'System Generated',
+	];
+
+  
 }
 
 
