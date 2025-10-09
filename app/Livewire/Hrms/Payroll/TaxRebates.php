@@ -1,31 +1,42 @@
 <?php
 
-namespace App\Livewire\Hrms\Taxation;
+namespace App\Livewire\Hrms\Payroll;
 
-use App\Models\Hrms\DeclarationGroup;
+use App\Models\Hrms\TaxRebate;
 use Illuminate\Support\Facades\DB;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-class DeclarationGroups extends Component
+class TaxRebates extends Component
 {
     use WithPagination;
 
     public $perPage = 20;
-    public $sortBy = 'name';
-    public $sortDirection = 'asc';
+    public $sortBy = 'created_at';
+    public $sortDirection = 'desc';
     public $search = '';
 
     public $formData = [
-        'name' => '',
-        'code' => '',
+        'financial_year_id' => null,
+        'tax_regime_id' => null,
+        'taxable_income_lim' => null,
+        'max_rebate_amount' => null,
         'section_code' => null,
-        'max_cap' => null,
-        'regime_id' => '',
     ];
 
     private $searchCache = [];
     private $lastCacheKey = null;
+
+    protected function rules(): array
+    {
+        return [
+            'formData.financial_year_id' => 'required|integer',
+            'formData.tax_regime_id' => 'required|integer',
+            'formData.taxable_income_lim' => 'nullable|numeric|min:0',
+            'formData.max_rebate_amount' => 'nullable|numeric|min:0',
+            'formData.section_code' => 'nullable|integer',
+        ];
+    }
 
     public function updatingSearch()
     {
@@ -43,39 +54,28 @@ class DeclarationGroups extends Component
         $this->resetPage();
     }
 
-    protected function rules(): array
-    {
-        return [
-            'formData.name' => 'required|string|max:255',
-            'formData.code' => 'required|string|max:255|unique:declaration_group,code',
-            'formData.section_code' => 'nullable|integer',
-            'formData.max_cap' => 'nullable|numeric|min:0',
-            'formData.regime_id' => 'nullable|string|max:255',
-        ];
-    }
-
     public function store()
     {
         $validated = $this->validate();
         DB::transaction(function () use ($validated) {
-            DeclarationGroup::create($validated['formData']);
+            TaxRebate::create($validated['formData']);
         });
         $this->resetForm();
         if (method_exists($this, 'modal')) {
-            $this->modal('mdl-declaration-group')->close();
+            $this->modal('mdl-tax-rebate')->close();
         }
-        \Flux\Flux::toast('Declaration Group added successfully', 'success');
+        \Flux\Flux::toast('Tax rebate rule added successfully', 'success');
         $this->invalidateCache();
     }
 
     public function resetForm()
     {
         $this->formData = [
-            'name' => '',
-            'code' => '',
+            'financial_year_id' => null,
+            'tax_regime_id' => null,
+            'taxable_income_lim' => null,
+            'max_rebate_amount' => null,
             'section_code' => null,
-            'max_cap' => null,
-            'regime_id' => '',
         ];
     }
 
@@ -90,27 +90,32 @@ class DeclarationGroups extends Component
     {
         $page = $this->getPage();
         $cacheKey = implode('|', [
-            'declaration_groups',
+            'tax_rebates',
             strtolower(trim($this->search)),
             $this->sortBy,
             $this->sortDirection,
             $this->perPage,
             $page,
         ]);
+
         if ($this->lastCacheKey === $cacheKey && isset($this->searchCache[$cacheKey])) {
             return $this->searchCache[$cacheKey];
         }
-        $query = DeclarationGroup::query()
+
+        $query = TaxRebate::query()
             ->when(trim($this->search) !== '', function ($q) {
                 $term = '%' . strtolower(trim($this->search)) . '%';
-                $q->whereRaw('LOWER(name) like ?', [$term])
-                  ->orWhereRaw('LOWER(code) like ?', [$term]);
+                $q->whereRaw('CAST(financial_year_id as CHAR) like ?', [$term])
+                  ->orWhereRaw('CAST(tax_regime_id as CHAR) like ?', [$term])
+                  ->orWhereRaw('CAST(section_code as CHAR) like ?', [$term]);
             });
+
         $allowed = [
-            'name' => 'name',
-            'code' => 'code',
+            'financial_year_id' => 'financial_year_id',
+            'tax_regime_id' => 'tax_regime_id',
+            'taxable_income_lim' => 'taxable_income_lim',
+            'max_rebate_amount' => 'max_rebate_amount',
             'section_code' => 'section_code',
-            'max_cap' => 'max_cap',
             'created_at' => 'created_at',
         ];
         $orderBy = $allowed[$this->sortBy] ?? 'created_at';
@@ -123,10 +128,11 @@ class DeclarationGroups extends Component
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Taxation/declaration-groups.blade.php'), [
+        return view()->file(app_path('Livewire/Hrms/Payroll/blades/tax-rebates.blade.php'), [
             'rows' => $this->tableRows,
             'sortBy' => $this->sortBy,
             'sortDirection' => $this->sortDirection,
         ]);
     }
 }
+

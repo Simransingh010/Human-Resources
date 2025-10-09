@@ -941,10 +941,6 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-
-
-
-
  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
 <style>

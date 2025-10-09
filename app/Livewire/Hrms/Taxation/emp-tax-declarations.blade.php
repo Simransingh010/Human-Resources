@@ -9,6 +9,7 @@
     </div>
     <flux:separator class="mt-2 mb-2" />
 
+
     <flux:card>
         <div class="flex flex-wrap gap-3 items-end">
             <flux:input class="w-64" placeholder="Search employee name..." wire:model.live.debounce.200ms="search" />

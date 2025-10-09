@@ -15,16 +15,23 @@ class Topbar extends Component
 
     public function mount()
     {
-        $this->panels = auth()->user()->panels()->where('is_inactive', false)->where('panel_type', '2')->get();
-        if ($this->panels->isNotEmpty()) {
-            $this->currentPanel = session('panel_id', $this->panels->first()->id);
-            session(['panel_id' => $this->currentPanel]);
-        }
-
+        // Get firms first to establish current firm context
         $this->firms = auth()->user()->firms()->where('is_inactive', false)->get();
         if ($this->firms->isNotEmpty()) {
             $this->currentFirm = session('firm_id', $this->firms->first()->id);
             session(['firm_id' => $this->currentFirm]);
+        }
+        
+        // Get panels and remove duplicates using unique() on collection
+        $this->panels = auth()->user()->panels()
+            ->where('is_inactive', false)
+            ->where('panel_type', '2')
+            ->get()
+            ->unique('id');
+            
+        if ($this->panels->isNotEmpty()) {
+            $this->currentPanel = session('panel_id', $this->panels->first()->id);
+            session(['panel_id' => $this->currentPanel]);
         }
         
         // Ensure LOP deduction type is set based on current firm
@@ -65,6 +72,19 @@ class Topbar extends Component
     {
         $this->currentFirm = $firmId;
         session(['firm_id' => $this->currentFirm]);
+        
+        // Refresh panels and remove duplicates using unique() on collection
+        $this->panels = auth()->user()->panels()
+            ->where('is_inactive', false)
+            ->where('panel_type', '2')
+            ->get()
+            ->unique('id');
+            
+        // Reset current panel to first available panel for new firm
+        if ($this->panels->isNotEmpty()) {
+            $this->currentPanel = $this->panels->first()->id;
+            session(['panel_id' => $this->currentPanel]);
+        }
         
         // Set LOP deduction type based on new firm ID
         $this->setLopDeductionType();

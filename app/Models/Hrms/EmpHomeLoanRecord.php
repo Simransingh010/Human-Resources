@@ -42,7 +42,7 @@ class EmpHomeLoanRecord extends Model
         'from_date' => 'datetime',
         'to_date' => 'datetime',
     ];
-
+    
     protected $fillable = [
         'firm_id',
         'emp_id',

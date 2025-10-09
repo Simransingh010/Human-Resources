@@ -705,6 +705,7 @@ use Carbon\Carbon;
                 </div>
             </div>
         </flux:card>
-
+<script>   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" defer></script></script>
     </div>
 </div>
