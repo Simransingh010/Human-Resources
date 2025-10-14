@@ -3,10 +3,12 @@
 namespace App\Livewire\Hrms\Reports\AttendanceReports;
 
 use App\Livewire\Hrms\Reports\AttendanceReports\exports\LeaveSummaryExport;
+use App\Models\Saas\Firm;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmployeeJobProfile;
 use Livewire\Component;
 use Maatwebsite\Excel\Facades\Excel;
+use Illuminate\Support\Str;
 
 class LeaveSummaryReport extends Component
 {
@@ -62,15 +64,42 @@ class LeaveSummaryReport extends Component
 
     public function export()
     {
+        $export = $this->resolveExporter();
+
         return Excel::download(
-            new LeaveSummaryExport($this->filters),
+            $export,
             'leave-summary-' . now()->format('Ymd_His') . '.xlsx'
         );
     }
 
     public function render()
     {
-        return view()->file(app_path('Livewire/Hrms/Reports/AttendanceReports/blades/leave-summary-report.blade.php'));
+        $firmId = $this->filters['firm_id'] ?? session('firm_id');
+        $firm = $firmId ? \App\Models\Saas\Firm::find($firmId) : null;
+        $short = strtoupper((string)($firm?->short_name ?? ''));
+
+        $blade = $short === 'HPCA'
+            ? 'leave-summary-report-hpca.blade.php'
+            : 'leave-summary-report.blade.php';
+
+        return view()->file(app_path('Livewire/Hrms/Reports/AttendanceReports/blades/' . $blade));
+    }
+
+    protected function resolveExporter(): object
+    {
+        $firmId = $this->filters['firm_id'] ?? session('firm_id');
+        $firm = $firmId ? Firm::find($firmId) : null;
+        $short = $firm?->short_name ?: '';
+
+        $studly = Str::studly(strtolower($short));
+        $baseNamespace = __NAMESPACE__ . '\\exports\\';
+        $candidate = $baseNamespace . $studly . 'LeaveSummaryReport';
+
+        if (class_exists($candidate)) {
+            return new $candidate($this->filters);
+        }
+
+        return new LeaveSummaryExport($this->filters);
     }
 }
 

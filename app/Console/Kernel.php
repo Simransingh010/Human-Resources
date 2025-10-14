@@ -11,6 +11,7 @@ class Kernel extends ConsoleKernel
      * Register your custom Artisan commands here.
      */
     protected $commands = [
+        \App\Console\Commands\EsslMonthlySync::class,
         \App\Console\Commands\GeocodePunchDetails::class,
         // Notification processor
         \App\Console\Commands\ProcessNotificationQueue::class,
@@ -36,6 +37,12 @@ class Kernel extends ConsoleKernel
         // Send birthday emails daily at 9 AM
         $schedule->command('birthdays:send-emails')
             ->dailyAt('11:15')
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // ESSL monthly device logs sync: run every 10 minutes without overlap
+        $schedule->command('attendance:essl-monthly-sync --firm=29 --limit=10000')
+            ->everyTenMinutes()
             ->withoutOverlapping()
             ->runInBackground();
     }

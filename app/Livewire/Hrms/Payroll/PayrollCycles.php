@@ -99,9 +99,8 @@ class PayrollCycles extends Component
             ->where('salary_cycle_id', $this->selectedCycleId)
             ->where('salary_execution_group_id', $groupId);
         $this->payrollSlots = $query->orderBy('from_date', 'asc')->get();
-        //        dd($this->payrollSlots);
+//                dd($this->payrollSlots->toArray());
     }
-
     public function startPayroll($slot_id)
     {
         try {
@@ -884,14 +883,24 @@ class PayrollCycles extends Component
                 throw new \Exception("TDS component not found");
             }
 
-            // 2. Use latest slot in FY that has any track for this employee (align with TdsCheckScreen)
+            // 2. Use CURRENT slot's actual earnings for TDS calculation (not latest completed slot)
             $firmId = (int)Session::get('firm_id');
             $fyStart = session('fy_start');
             $fyEnd = session('fy_end');
 
-            $latestSlot = PayrollSlot::query()
+            // Get current month's actual earnings from the slot being processed
+            $currentMonthlyEarnings = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
+                ->where('employee_id', $employeeId)
+                ->where('payroll_slot_id', $payrollSlot->id)
+                ->where('nature', 'earning')
+                ->where('taxable', true)
+                ->sum('amount_payable');
+
+            // For YTD calculation, still use latest completed slot's date
+            $latestCompletedSlot = PayrollSlot::query()
                 ->where('payroll_slots.firm_id', $firmId)
                 ->whereBetween('payroll_slots.from_date', [$fyStart, $fyEnd])
+                ->where('payroll_slots.payroll_slot_status', 'CM')
                 ->join('payroll_components_employees_tracks as pcet', function ($join) use ($employeeId, $firmId) {
                     $join->on('pcet.payroll_slot_id', '=', 'payroll_slots.id')
                         ->where('pcet.employee_id', '=', $employeeId)
@@ -901,23 +910,12 @@ class PayrollCycles extends Component
                 ->orderBy('payroll_slots.from_date', 'desc')
                 ->first();
 
-
-            $currentMonthlyEarnings = 0;
-            if ($latestSlot) {
-                $currentMonthlyEarnings = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
-                    ->where('employee_id', $employeeId)
-                    ->where('payroll_slot_id', $latestSlot->id)
-                    ->where('nature', 'earning')
-                    ->where('taxable', true)
-                    ->sum('amount_payable');
-            }
-
-    
-
-            // 3. Calculate projected annual income (YTD actual + projected future)
-            // Use the last slot that has any entry for this employee (align with TdsCheckScreen)
-            $currentSlotToDateForYtd = $latestSlot?->to_date ?? $fyStart;
+            // 3. Calculate projected annual income using current month's earnings
+            $currentSlotToDateForYtd = $latestCompletedSlot?->to_date ?? $fyStart;
             $projectedAnnualIncome = $this->getProjectedAnnualIncome($employeeId, $currentMonthlyEarnings, $currentSlotToDateForYtd);
+
+            // DEBUG: Compare projection components with TdsCheckScreen for specific employee
+            // (Removed temporary debug dump)
 
 
             // 4. Get tax brackets for the regime
@@ -983,10 +981,25 @@ class PayrollCycles extends Component
                 ->orderBy('from_date')
                 ->get();
 
-            $remainingSlots = $allSlots->reject(function ($s) {
-                return $s->payroll_slot_status === 'CM' && Carbon::parse($s->to_date)->lte(Carbon::now());
-            });
+            // Determine remaining slots strictly AFTER the last completed slot in FY
+            $lastCompletedSlot = $allSlots
+                ->filter(function ($s) { return $s->payroll_slot_status === 'CM'; })
+                ->sortBy('from_date')
+                ->last();
+
+            $remainingSlots = $allSlots
+                ->filter(function ($s) use ($lastCompletedSlot) {
+                    if ($lastCompletedSlot) {
+                        return Carbon::parse($s->from_date)->gt(Carbon::parse($lastCompletedSlot->from_date));
+                    }
+                    return true; // if no completed slot, all slots are remaining
+                })
+                ->reject(function ($s) { return $s->payroll_slot_status === 'CM'; });
+
             $remainingSlotsCount = max(1, $remainingSlots->count());
+
+            // DEBUG: Dump remaining TDS and remaining slots for a specific employee
+            // (Removed temporary debug dump)
 
             // Do not allow negative TDS; set to zero if negative, then divide over remaining slots
             $monthlyTax = max(0, $total_tds_remaining_for_year) / $remainingSlotsCount;

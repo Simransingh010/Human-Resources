@@ -497,18 +497,31 @@ class PayrollController extends Controller
             // Get salary execution group IDs
             $salaryExecutionGroupIds = $employee->salary_execution_groups->pluck('id')->toArray();
             
-            // Optional date range filtering
-            $startDate = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : Carbon::now()->subMonths(3);
-            $endDate = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : Carbon::now()->addMonths(3);
+            // Date filtering
+            // If custom start/end provided, use overlap between them.
+            // Otherwise, show all published slots up to today ("till date").
+            $customStart = $request->input('start_date') ? Carbon::parse($request->input('start_date')) : null;
+            $customEnd = $request->input('end_date') ? Carbon::parse($request->input('end_date')) : null;
+            $today = Carbon::now();
 
             // Get payroll slots for the employee's salary execution groups
-            $payrollSlots = PayrollSlot::whereIn('salary_execution_group_id', $salaryExecutionGroupIds)
+            $payrollSlotsQuery = PayrollSlot::whereIn('salary_execution_group_id', $salaryExecutionGroupIds)
                 ->where('firm_id', $employee->firm_id)
-                ->where('payroll_slot_status', 'PB')
-                ->where(function($query) use ($startDate, $endDate) {
+                ->where('payroll_slot_status', 'PB');
+
+            if ($customStart || $customEnd) {
+                $startDate = $customStart ?? Carbon::minValue();
+                $endDate = $customEnd ?? Carbon::maxValue();
+                $payrollSlotsQuery->where(function($query) use ($startDate, $endDate) {
                     $query->whereBetween('from_date', [$startDate, $endDate])
                           ->orWhereBetween('to_date', [$startDate, $endDate]);
-                })
+                });
+            } else {
+                // Default: published till date (to_date <= today)
+                $payrollSlotsQuery->whereDate('to_date', '<=', $today);
+            }
+
+            $payrollSlots = $payrollSlotsQuery
                 ->with('payroll_slots_cmds') // Load the relationship with PayrollSlotsCmd
                 ->orderBy('from_date', 'desc')
                 ->get();
@@ -543,7 +556,7 @@ class PayrollController extends Controller
             }
 
             // Build the array of maps for each payroll slot
-            $data = $payrollSlots->map(function($slot) use ($employee, $startDate, $endDate) {
+            $data = $payrollSlots->map(function($slot) use ($employee, $customStart, $customEnd, $today) {
                 $group = $employee->salary_execution_groups->firstWhere('id', $slot->salary_execution_group_id);
                 return [
                     'salary_execution_group' => $group ? [
@@ -575,8 +588,8 @@ class PayrollController extends Controller
                         'latest_cmd_status_label' => optional($slot->payroll_slots_cmds->sortByDesc('created_at')->first()) ? PayrollSlotsCmd::PAYROLL_SLOT_STATUS[optional($slot->payroll_slots_cmds->sortByDesc('created_at')->first())->payroll_slot_status] ?? null : null
                     ],
                     'filter_period' => [
-                        'start_date' => $startDate->format('Y-m-d'),
-                        'end_date' => $endDate->format('Y-m-d')
+                        'start_date' => $customStart ? $customStart->format('Y-m-d') : null,
+                        'end_date' => ($customEnd ? $customEnd : $today)->format('Y-m-d')
                     ]
                 ];
             })->values()->toArray();
