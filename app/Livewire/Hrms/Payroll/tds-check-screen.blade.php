@@ -51,8 +51,52 @@
                                                 <td class="font-semibold text-blue-700 text-right">₹ {{ number_format($summary['annual_salary'], 0) }}</td>
                                             </tr>
                                             <tr>
+                                                <td class="text-zinc-600 pr-2">Standard Deduction:</td>
+                                                <td class="font-semibold text-red-600 text-right">- ₹ {{ number_format($summary['standard_deduction'], 0) }}</td>
+                                            </tr>
+                                            <tr class="border-t border-zinc-300 dark:border-zinc-600">
+                                                <td class="text-zinc-600 pr-2 font-semibold">Taxable Income:</td>
+                                                <td class="font-bold text-green-700 text-right">₹ {{ number_format($summary['taxable_income'], 0) }}</td>
+                                            </tr>
+                                            <tr>
                                                 <td class="text-zinc-600 pr-2">Annual TDS:</td>
-                                                <td class="font-semibold text-right">₹ {{ number_format($summary['annual_applicable'], 0) }}</td>
+                                                <td class="font-semibold text-right">
+                                                    <div class="flex items-center justify-end gap-1">
+                                                        <span>₹ {{ number_format($summary['annual_applicable'], 0) }}</span>
+                                                        @php($tb = $summary['tax_breakdown'] ?? null)
+                                                        @if($tb && (!empty($tb['slabs']) || isset($tb['cess'])))
+                                                            <flux:tooltip>
+                                                                <flux:button icon="information-circle" icon:variant="micro" class=""></flux:button>
+                                                                <flux:tooltip.content class="font-bold text-[18px] text-white">
+                                                                    <flux:heading >Annual TDS breakdown</flux:heading>
+                                                                    <div class="mt-2 space-y-1">
+                                                                        @foreach(($tb['slabs'] ?? []) as $slab)
+                                                                            <div class="flex items-center justify-between text-xs">
+                                                                                <span class="text-white">{{ is_null($slab['to'] ?? null) ? ("₹" . number_format($slab['from'] ?? 0) . "+ @ " . ($slab['rate'] ?? 0) . "%") : ("₹" . number_format($slab['from'] ?? 0) . " - ₹" . number_format($slab['to'] ?? 0) . " @ " . ($slab['rate'] ?? 0) . "%") }}</span>
+                                                                                </div>
+                                                                            <div class="flex items-center justify-between text-[15px] text-white">
+                                                                                <span>Income in slab</span>
+                                                                                <span>₹ {{ number_format($slab['income_in_slab'] ?? 0, 0) }}</span>
+
+                                                                            </div>
+                                                                            <div class="flex items-center justify-between text-[11px] text-white">
+                                                                                <span>Tax in slab</span>
+                                                                                <span class="font-semibold">₹ {{ number_format($slab['tax_for_slab'] ?? 0, 0) }}</span>
+
+
+                                                                            </div>
+                                                                        @endforeach
+                                                                        <flux:separator class="my-2" />
+                                                                        <div class="flex items-center justify-between text-xs">
+                                                                            <span class="text-white">Health & Education Cess (4%)</span>
+                                                                            <span class="font-semibold">₹ {{ number_format($tb['cess'] ?? 0, 0) }}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </flux:tooltip.content>
+                                                            </flux:tooltip>
+                                                        @endif
+                                                    </div>
+                                                </td>
                                             </tr>
                                             <tr>
                                                 <td class="text-zinc-600 pr-2">Deducted (YTD):</td>

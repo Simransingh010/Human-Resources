@@ -14,6 +14,7 @@ use App\Models\Hrms\EmployeesSalaryDay;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\EmployeeTaxRegime;
 use App\Models\Hrms\SalaryComponent;
+use App\Models\Hrms\EmployeeJobProfile;
 use App\Models\Hrms\EmpAttendance;
 use App\Models\Hrms\PayrollStepPayrollSlotCmd;
 use App\Models\Hrms\SalaryHold;
@@ -883,36 +884,20 @@ class PayrollCycles extends Component
                 throw new \Exception("TDS component not found");
             }
 
-            // 2. Use CURRENT slot's actual earnings for TDS calculation (not latest completed slot)
+            // 2. Use the same calculation method as EmployeeSalaryDetails and TdsCheckScreen
             $firmId = (int)Session::get('firm_id');
-            $fyStart = session('fy_start');
-            $fyEnd = session('fy_end');
+            $fyStart = Carbon::parse(session('fy_start'));
+            $fyEnd = Carbon::parse(session('fy_end'));
 
-            // Get current month's actual earnings from the slot being processed
-            $currentMonthlyEarnings = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
-                ->where('employee_id', $employeeId)
-                ->where('payroll_slot_id', $payrollSlot->id)
-                ->where('nature', 'earning')
-                ->where('taxable', true)
-                ->sum('amount_payable');
-
-            // For YTD calculation, still use latest completed slot's date
-            $latestCompletedSlot = PayrollSlot::query()
-                ->where('payroll_slots.firm_id', $firmId)
-                ->whereBetween('payroll_slots.from_date', [$fyStart, $fyEnd])
-                ->where('payroll_slots.payroll_slot_status', 'CM')
-                ->join('payroll_components_employees_tracks as pcet', function ($join) use ($employeeId, $firmId) {
-                    $join->on('pcet.payroll_slot_id', '=', 'payroll_slots.id')
-                        ->where('pcet.employee_id', '=', $employeeId)
-                        ->where('pcet.firm_id', '=', $firmId);
-                })
-                ->select('payroll_slots.*')
-                ->orderBy('payroll_slots.from_date', 'desc')
-                ->first();
-
-            // 3. Calculate projected annual income using current month's earnings
-            $currentSlotToDateForYtd = $latestCompletedSlot?->to_date ?? $fyStart;
-            $projectedAnnualIncome = $this->getProjectedAnnualIncome($employeeId, $currentMonthlyEarnings, $currentSlotToDateForYtd);
+            // Use the same calculation method as EmployeeSalaryDetails
+            $salaryData = $this->buildEmployeeSalaryMonths($firmId, $employeeId, $fyStart, $fyEnd);
+            
+            // Calculate annual salary from YTD paid + remaining planned
+            $annualSalary = $salaryData['ytd_paid'] + $salaryData['remaining_planned'];
+            
+            // Apply standard deduction
+            $standardDeduction = 75000;
+            $projectedAnnualIncome = max(0, $annualSalary - $standardDeduction);
 
             // DEBUG: Compare projection components with TdsCheckScreen for specific employee
             // (Removed temporary debug dump)
@@ -1129,6 +1114,127 @@ class PayrollCycles extends Component
             ->whereBetween('from_date', [$fyStart, $fyEnd])
             ->where('payroll_slot_status', 'CM')
             ->count();
+    }
+
+    protected function buildEmployeeSalaryMonths(int $firmId, int $employeeId, Carbon $fyStart, Carbon $fyEnd): array
+    {
+        // Employee joining date (Date of Hire)
+        $doh = EmployeeJobProfile::where('employee_id', $employeeId)
+            ->where('firm_id', $firmId)
+            ->value('doh');
+        $doh = $doh ? Carbon::parse($doh) : $fyStart;
+
+        // Execution group slots in FY
+        $executionGroupId = EmployeesSalaryExecutionGroup::where('firm_id', $firmId)
+            ->where('employee_id', $employeeId)
+            ->value('salary_execution_group_id');
+
+        $slots = PayrollSlot::where('firm_id', $firmId)
+            ->when($executionGroupId, fn($q) => $q->where('salary_execution_group_id', $executionGroupId))
+            ->whereBetween('from_date', [$fyStart, $fyEnd])
+            ->orderBy('from_date')
+            ->get();
+
+        // Determine a fallback projected monthly earning as average of completed months
+        $completed = $slots->where('payroll_slot_status', 'CM');
+        $completedSum = 0;
+        $completedCount = 0;
+        foreach ($completed as $slot) {
+            // Sum earnings for slot including taxable and employee contributions
+            $employeeContributionIds = SalaryComponent::where('firm_id', $firmId)
+                ->where('component_type', 'employee_contribution')
+                ->pluck('id');
+
+            $sum = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
+                ->where('employee_id', $employeeId)
+                ->where('payroll_slot_id', $slot->id)
+                ->where('nature', 'earning')
+                ->where(function ($q) use ($employeeContributionIds) {
+                    $q->where('taxable', true)
+                      ->orWhereIn('salary_component_id', $employeeContributionIds);
+                })
+                ->sum('amount_payable');
+            if ($sum > 0) {
+                $completedSum += $sum;
+                $completedCount += 1;
+            }
+        }
+        $avgMonthly = $completedCount > 0 ? round($completedSum / $completedCount) : 0;
+
+        $months = [];
+        foreach ($slots as $slot) {
+            // Respect joining date: ignore slots entirely before joining month
+            if (Carbon::parse($slot->to_date)->lt($doh)) {
+                continue;
+            }
+            $label = strtoupper(Carbon::parse($slot->from_date)->format('M')) . ' ' . Carbon::parse($slot->from_date)->format('Y');
+            $employeeContributionIds = SalaryComponent::where('firm_id', $firmId)
+                ->where('component_type', 'employee_contribution')
+                ->pluck('id');
+
+            $actual = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
+                ->where('employee_id', $employeeId)
+                ->where('payroll_slot_id', $slot->id)
+                ->where('nature', 'earning')
+                ->where(function ($q) use ($employeeContributionIds) {
+                    $q->where('taxable', true)
+                      ->orWhereIn('salary_component_id', $employeeContributionIds);
+                })
+                ->sum('amount_payable');
+            
+            $planned = 0;
+            if ($actual == 0 && ($slot->payroll_slot_status !== 'CM' || Carbon::parse($slot->to_date)->gt(now()))) {
+                // Build a projected breakup from employee's active earning components (taxable) for this month
+                $fromDate = Carbon::parse($slot->from_date)->startOfDay();
+                $toDate = Carbon::parse($slot->to_date)->endOfDay();
+
+                $components = SalaryComponentsEmployee::query()
+                    ->where('firm_id', $firmId)
+                    ->where('employee_id', $employeeId)
+                    ->where('nature', 'earning')
+                    ->where(function ($q) use ($employeeContributionIds) {
+                        $q->where('taxable', true)
+                          ->orWhereIn('salary_component_id', $employeeContributionIds);
+                    })
+                    // component is active in the month window (date range overlaps)
+                    ->whereDate('effective_from', '<=', $toDate)
+                    ->where(function ($q) use ($fromDate) {
+                        $q->whereNull('effective_to')
+                          ->orWhereDate('effective_to', '>=', $fromDate);
+                    })
+                    ->get();
+
+                foreach ($components as $comp) {
+                    $amount = (float) ($comp->amount ?? 0);
+                    if ($amount <= 0) {
+                        continue;
+                    }
+                    $planned += $amount;
+                }
+
+                // Fallback to average if no active components found
+                if ($planned <= 0 && $avgMonthly > 0) {
+                    $planned = $avgMonthly;
+                }
+            }
+            
+            $months[] = [
+                'label' => $label,
+                'actual' => (float) $actual,
+                'planned' => (float) $planned,
+                'status' => $slot->payroll_slot_status,
+            ];
+        }
+
+        // Summary
+        $ytdPaid = collect($months)->sum('actual');
+        $remainingPlanned = collect($months)->where('actual', 0)->sum('planned');
+
+        return [
+            'ytd_paid' => (float) $ytdPaid,
+            'remaining_planned' => (float) $remainingPlanned,
+            'months' => $months,
+        ];
     }
 
     protected function roundOffTax($amount)
@@ -2271,10 +2377,17 @@ class PayrollCycles extends Component
     protected function getActualYTDEarnings($employeeId, $fyStart, $currentSlotToDate)
     {
 
+        $employeeContributionIds = SalaryComponent::where('firm_id', Session::get('firm_id'))
+            ->where('component_type', 'employee_contribution')
+            ->pluck('id');
+
         return PayrollComponentsEmployeesTrack::where('employee_id', $employeeId)
             ->where('firm_id', Session::get('firm_id'))
             ->where('nature', 'earning')
-            ->where('taxable', true)
+            ->where(function ($q) use ($employeeContributionIds) {
+                $q->where('taxable', true)
+                  ->orWhereIn('salary_component_id', $employeeContributionIds);
+            })
             ->whereBetween('salary_period_from', [$fyStart, $currentSlotToDate])
             ->sum('amount_payable');
 
@@ -2309,20 +2422,23 @@ class PayrollCycles extends Component
     }
 
     /**
-     * Projected annual income = YTD actual + (current month earnings × remaining months) - standard deduction
+     * Projected annual income using the same calculation method as EmployeeSalaryDetails and TdsCheckScreen
      */
     protected function getProjectedAnnualIncome($employeeId, $currentMonthlyEarnings, $currentSlotToDate)
     {
+        $firmId = (int)Session::get('firm_id');
+        $fyStart = Carbon::parse(session('fy_start'));
+        $fyEnd = Carbon::parse(session('fy_end'));
 
-
-        $fyStart = session('fy_start');
-        $fyEnd = session('fy_end');
-        $actualYTDEarnings = $this->getActualYTDEarnings($employeeId, $fyStart, $currentSlotToDate);
-
-        $remainingMonths = (int)$this->getRemainingMonthsInFY($currentSlotToDate, $fyEnd);
-        $projectedRemainingEarnings = $currentMonthlyEarnings * $remainingMonths;
-
-        return $actualYTDEarnings + $projectedRemainingEarnings - 75000;
+        // Use the same calculation method as EmployeeSalaryDetails
+        $salaryData = $this->buildEmployeeSalaryMonths($firmId, $employeeId, $fyStart, $fyEnd);
+        
+        // Calculate annual salary from YTD paid + remaining planned
+        $annualSalary = $salaryData['ytd_paid'] + $salaryData['remaining_planned'];
+        
+        // Apply standard deduction
+        $standardDeduction = 75000;
+        return max(0, $annualSalary - $standardDeduction);
     }
 
     protected function isEmployeeInSlotExecutionGroup($employeeId, $payrollSlot)

@@ -7,8 +7,11 @@ use App\Models\Hrms\EmployeesSalaryExecutionGroup;
 use App\Models\Hrms\PayrollComponentsEmployeesTrack;
 use App\Models\Hrms\PayrollSlot;
 use App\Models\Hrms\EmployeeJobProfile;
+use App\Models\Hrms\SalaryComponentsEmployee;
+use App\Models\Hrms\SalaryComponent;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Arr;
 use Livewire\Component;
 use Livewire\Attributes\Computed;
 
@@ -27,12 +30,23 @@ class EmployeeSalaryDetails extends Component
     public int $perPage = 50;
     public int $page = 1;
 
+    // Track which popover is open per row/cell: openMap[employeeId][labelKey] => bool
+    public array $openMap = [];
+
     public function updating($name, $value)
     {
         if (str_starts_with($name, 'filters.')) {
             $this->page = 1;
             // also refresh cached filtered collection reference
             $this->refreshEmployeesCache();
+        }
+
+        // Ensure only one popover is open at a time
+        if (str_starts_with($name, 'openMap.') && $value === true) {
+            // Reset all, then set only the current key to true
+            $keyPath = substr($name, strlen('openMap.'));
+            $this->openMap = [];
+            Arr::set($this->openMap, $keyPath, true);
         }
     }
 
@@ -167,12 +181,19 @@ class EmployeeSalaryDetails extends Component
         $completedSum = 0;
         $completedCount = 0;
         foreach ($completed as $slot) {
-            // Sum taxable earnings for slot
+            // Sum earnings including taxable and employee contributions
+            $employeeContributionIds = SalaryComponent::where('firm_id', $firmId)
+                ->where('component_type', 'employee_contribution')
+                ->pluck('id');
+
             $sum = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
                 ->where('employee_id', $employeeId)
                 ->where('payroll_slot_id', $slot->id)
                 ->where('nature', 'earning')
-                ->where('taxable', true)
+                ->where(function ($q) use ($employeeContributionIds) {
+                    $q->where('taxable', true)
+                      ->orWhereIn('salary_component_id', $employeeContributionIds);
+                })
                 ->sum('amount_payable');
             if ($sum > 0) {
                 $completedSum += $sum;
@@ -188,26 +209,95 @@ class EmployeeSalaryDetails extends Component
                 continue;
             }
             $label = strtoupper(Carbon::parse($slot->from_date)->format('M')) . ' ' . Carbon::parse($slot->from_date)->format('Y');
+            $employeeContributionIds = SalaryComponent::where('firm_id', $firmId)
+                ->where('component_type', 'employee_contribution')
+                ->pluck('id');
+
             $actual = PayrollComponentsEmployeesTrack::where('firm_id', $firmId)
                 ->where('employee_id', $employeeId)
                 ->where('payroll_slot_id', $slot->id)
                 ->where('nature', 'earning')
-                ->where('taxable', true)
+                ->where(function ($q) use ($employeeContributionIds) {
+                    $q->where('taxable', true)
+                      ->orWhereIn('salary_component_id', $employeeContributionIds);
+                })
                 ->sum('amount_payable');
-            // Simple breakup: taxable earnings vs (planned estimate)
-            $earningBreakup = $actual > 0 ? [
-                'taxable_earnings' => (float) $actual,
-            ] : [];
+            // Actual breakup by component (earning + taxable)
+            $actualBreakup = [];
+            if ($actual > 0) {
+                $trackRows = PayrollComponentsEmployeesTrack::query()
+                    ->where('firm_id', $firmId)
+                    ->where('employee_id', $employeeId)
+                    ->where('payroll_slot_id', $slot->id)
+                    ->where('nature', 'earning')
+                    ->where(function ($q) use ($employeeContributionIds) {
+                        $q->where('taxable', true)
+                          ->orWhereIn('salary_component_id', $employeeContributionIds);
+                    })
+                    ->get();
+                foreach ($trackRows as $row) {
+                    $title = $row->relationLoaded('salary_component')
+                        ? ($row->salary_component->title ?? 'Component')
+                        : (SalaryComponent::find($row->salary_component_id)->title ?? 'Component');
+                    $actualBreakup[] = [
+                        'title' => $title,
+                        'amount' => (float) $row->amount_payable,
+                    ];
+                }
+            }
             $planned = 0;
+            $projectedBreakup = [];
             if ($actual == 0 && ($slot->payroll_slot_status !== 'CM' || Carbon::parse($slot->to_date)->gt(now()))) {
-                $planned = $avgMonthly;
+                // Build a projected breakup from employee's active earning components (taxable) for this month
+                $fromDate = Carbon::parse($slot->from_date)->startOfDay();
+                $toDate = Carbon::parse($slot->to_date)->endOfDay();
+
+                $components = SalaryComponentsEmployee::query()
+                    ->where('firm_id', $firmId)
+                    ->where('employee_id', $employeeId)
+                    ->where('nature', 'earning')
+                    ->where(function ($q) use ($employeeContributionIds) {
+                        $q->where('taxable', true)
+                          ->orWhereIn('salary_component_id', $employeeContributionIds);
+                    })
+                    // component is active in the month window (date range overlaps)
+                    ->whereDate('effective_from', '<=', $toDate)
+                    ->where(function ($q) use ($fromDate) {
+                        $q->whereNull('effective_to')
+                          ->orWhereDate('effective_to', '>=', $fromDate);
+                    })
+                    ->get();
+
+                foreach ($components as $comp) {
+                    // Load title via relationship if not loaded
+                    $title = $comp->relationLoaded('salary_component')
+                        ? ($comp->salary_component->title ?? 'Component')
+                        : (SalaryComponent::find($comp->salary_component_id)->title ?? 'Component');
+
+                    $amount = (float) ($comp->amount ?? 0);
+                    if ($amount <= 0) {
+                        continue;
+                    }
+                    $projectedBreakup[] = [
+                        'title' => $title,
+                        'amount' => $amount,
+                    ];
+                    $planned += $amount;
+                }
+
+                // Fallback to average if no active components found
+                if ($planned <= 0 && $avgMonthly > 0) {
+                    $planned = $avgMonthly;
+                }
             }
             $months[] = [
                 'label' => $label,
                 'actual' => (float) $actual,
                 'planned' => (float) $planned,
                 'status' => $slot->payroll_slot_status,
-                'breakup' => $earningBreakup,
+                'breakup' => $actual > 0 ? ['taxable_earnings' => (float) $actual] : [],
+                'actual_breakup' => $actualBreakup,
+                'projected_breakup' => $projectedBreakup,
             ];
         }
 
