@@ -54,7 +54,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('firm_id')->constrained('firms')->onDelete('cascade');
             $table->foreignId('work_shift_id')->constrained('work_shifts')->onDelete('cascade');
-            $table->string('week_off_pattern')->nullable();
+            $table->text('week_off_pattern')->nullable();
             $table->unsignedBigInteger('holiday_calendar_id')->nullable();
             $table->boolean('allow_wfh')->default(false);
             $table->string('half_day_rule')->nullable();
