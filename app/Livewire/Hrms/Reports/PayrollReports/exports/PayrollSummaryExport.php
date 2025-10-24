@@ -92,7 +92,7 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
                 if (!isset($arrearsByMonth[$monthKey][$arrear->salary_component_id])) {
                     $arrearsByMonth[$monthKey][$arrear->salary_component_id] = 0;
                 }
-                $arrearsByMonth[$monthKey][$arrear->salary_component_id] += $amountToShow;
+                $arrearsByMonth[$monthKey][$arrear->salary_component_id] += round($amountToShow, 2);
             }
             foreach ($arrearsByMonth as $monthKey => $componentTotals) {
                 $this->rows->push([
@@ -302,7 +302,7 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
                 });
             $trackByComponent = $payrollTracks
                 ->groupBy('salary_component_id')
-                ->map(fn($items) => $items->sum('amount_payable'));
+                ->map(fn($items) => round($items->sum('amount_payable'), 2));
 
             $row = [
                 $serial++,
@@ -317,21 +317,21 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
 
             $earnTotal = 0;
             foreach ($this->earnings as $component) {
-                $amount = $trackByComponent[$component->id] ?? 0;
+                $amount = round($trackByComponent[$component->id] ?? 0, 2);
                 $row[] = $amount;
                 $earnTotal += $amount;
             }
-            $row[] = $earnTotal;
+            $row[] = round($earnTotal, 2);
 
             $dedTotal = 0;
             foreach ($this->deductions as $component) {
-                $amount = $trackByComponent[$component->id] ?? 0;
+                $amount = round($trackByComponent[$component->id] ?? 0, 2);
                 $row[] = $amount;
                 $dedTotal += $amount;
             }
-            $row[] = $dedTotal;
+            $row[] = round($dedTotal, 2);
 
-            $row[] = $earnTotal - $dedTotal;
+            $row[] = round($earnTotal - $dedTotal, 2);
 
             return $row;
         }
@@ -355,22 +355,22 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
 
         $earnTotal = 0;
         foreach ($this->earnings as $component) {
-            $amount = (float) ($arrearComponentTotals[$component->id] ?? 0);
+            $amount = round((float) ($arrearComponentTotals[$component->id] ?? 0), 2);
             $row[] = $amount;
             $earnTotal += $amount;
         }
-        $row[] = $earnTotal;
+        $row[] = round($earnTotal, 2);
 
         $dedTotal = 0;
         foreach ($this->deductions as $component) {
             // Only place amount if the arrear component is actually a deduction
-            $amount = (float) ($arrearComponentTotals[$component->id] ?? 0);
+            $amount = round((float) ($arrearComponentTotals[$component->id] ?? 0), 2);
             $row[] = $amount;
             $dedTotal += $amount;
         }
-        $row[] = $dedTotal;
+        $row[] = round($dedTotal, 2);
 
-        $row[] = $earnTotal - $dedTotal;
+        $row[] = round($earnTotal - $dedTotal, 2);
 
         return $row;
     }
@@ -567,7 +567,7 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
         ];
     }
 
-    // Ensure Paylevel column is always text in Excel
+    // Ensure Paylevel column is always text in Excel and round financial values
     public function bindValue(Cell $cell, $value)
     {
         // Paylevel is column C (3rd column)
@@ -575,6 +575,13 @@ class PayrollSummaryExport extends DefaultValueBinder implements FromCollection,
             $cell->setValueExplicit((string)$value, DataType::TYPE_STRING);
             return true;
         }
+        
+        // Round financial values to 2 decimal places for all numeric columns
+        if (is_numeric($value) && $cell->getRow() > 4) {
+            $cell->setValueExplicit(round((float)$value, 2), DataType::TYPE_NUMERIC);
+            return true;
+        }
+        
         return parent::bindValue($cell, $value);
     }
 }
