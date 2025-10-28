@@ -195,6 +195,15 @@
                                             <flux:badge color="gray">No</flux:badge>
                                         @endif
                                         @break
+                                    @case('select')
+                                        @if($field === 'leave_nature')
+                                            {{ \App\Models\Hrms\LeaveType::LEAVE_NATURE_OPTIONS[$item->$field] ?? $item->$field }}
+                                        @elseif($field === 'leave_type_main')
+                                            {{ \App\Models\Hrms\LeaveType::LEAVE_TYPE_MAIN_OPTIONS[$item->$field] ?? $item->$field }}
+                                        @else
+                                            {{ $item->$field }}
+                                        @endif
+                                        @break
                                     @default
                                         {{ $item->$field }}
                                 @endswitch

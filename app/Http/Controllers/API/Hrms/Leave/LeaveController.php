@@ -16,6 +16,7 @@ use App\Models\Hrms\LeaveApprovalRule;
 use App\Models\Hrms\LeaveType;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmpLeaveTransaction;
+use App\Models\Saas\College;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -1947,6 +1948,513 @@ class LeaveController extends Controller
             })->implode("\n");
 
             throw new \Exception("You have conflicting leave requests:\n\n{$conflicts}\n\nPlease cancel or modify existing requests before applying for new leave.");
+        }
+    }
+
+    /**
+     * GET /api/hrms/colleges
+     * Get list of colleges for the authenticated user's firm
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getColleges(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+            $firmId = $employee->firm_id;
+
+            // Get all active colleges for the firm
+            $colleges = College::where('firm_id', $firmId)
+                ->where('is_inactive', false)
+                ->with('firm:id,name')
+                ->orderBy('name', 'asc')
+                ->get();
+
+            // Shape the response data
+            $data = $colleges->map(function ($college) {
+                return [
+                    'id' => $college->id,
+                    'name' => $college->name,
+                    'code' => $college->code,
+                    'established_year' => $college->established_year,
+                    'address' => $college->address,
+                    'city' => $college->city,
+                    'state' => $college->state,
+                    'country' => $college->country,
+                    'phone' => $college->phone,
+                    'email' => $college->email,
+                    'website' => $college->website,
+                    'full_address' => $college->full_address,
+                    'display_name' => $college->display_name,
+                    'firm_name' => $college->firm->name ?? null,
+                ];
+            });
+
+            return Response::json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => $data->count() . ' colleges found',
+                'data' => $data,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to fetch colleges: ' . $e->getMessage());
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => [],
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/hrms/leave/leave-balances-v2
+     * Get leave balances with document requirements for each leave type
+     */
+    public function leavesBalancesV2(Request $request)
+    {
+        // Get authenticated user (employee)
+        $user = $request->user();
+        if (!$user) {
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'flash',
+                'message' => 'Unauthenticated'
+            ], 401);
+        }
+
+        $employee = $user->employee;
+
+        // Fetch leave balances with their types and document requirements
+        $balances = EmpLeaveBalance::with('leave_type')
+            ->where('employee_id', $employee->id)
+            ->get();
+
+        // Shape the output with document requirements
+        $data = $balances->map(function ($b) {
+            return [
+                'leave_type_id'        => $b->leave_type_id,
+                'leave_type_name'      => $b->leave_type->leave_title,
+                'leave_type_code'      => $b->leave_type->leave_code,
+                'leave_nature'         => $b->leave_type->leave_nature,
+                'leave_type_main'      => $b->leave_type->leave_type_main,
+                'requires_document'    => $b->leave_type->requires_document ?? false,
+                'max_days'             => $b->leave_type->max_days,
+                'carry_forward'        => $b->leave_type->carry_forward,
+                'encashable'           => $b->leave_type->encashable,
+                'period_start'         => $b->period_start->toDateString(),
+                'period_end'           => $b->period_end->toDateString(),
+                'allocated_days'       => $b->allocated_days,
+                'consumed_days'        => $b->consumed_days,
+                'carry_forwarded_days' => $b->carry_forwarded_days,
+                'lapsed_days'          => $b->lapsed_days,
+                'balance'              => $b->balance,
+            ];
+        });
+
+        // Return as JSON
+        return Response::json([
+            'message_type' => 'success',
+            'message_display' => 'none',
+            'message' => 'Leave balances fetched with document requirements',
+            'leavesbalnces' => $data,
+            'allow_hourly_leave' => 'no',
+            'allow_half_day_leave' => 'yes',
+            'leave_age' => [
+                [
+                    'id' => 1,
+                    'title' => 'Single Day',
+                    'code' => 'single'
+                ],
+                [
+                    'id' => 2, 
+                    'title' => 'Multi Day',
+                    'code' => 'multi'
+                ],
+                [
+                    'id' => 3,
+                    'title' => 'Half Day',
+                    'code' => 'half',
+                    'options' => [
+                        [
+                            'id' => 1,
+                            'title' => 'First Half',
+                            'code' => 'first_half'
+                        ],
+                        [
+                            'id' => 2,
+                            'title' => 'Second Half', 
+                            'code' => 'second_half'
+                        ]
+                    ]
+                ],
+                [
+                    'id' => 4,
+                    'title' => 'Hourly',
+                    'code' => 'hourly'
+                ]
+            ]
+        ], 200);
+    }
+
+    /**
+     * POST /api/hrms/leave/submitleaverequestv3
+     * Submit leave request with document upload support
+     */
+    public function submitLeaveRequestV3(Request $request)
+    {
+        try {
+            $user     = $request->user();
+            $employee = $user->employee;
+            $firmId   = $employee->firm_id;
+
+            try {
+                $validated = $request->validate([
+                    'leave_type_id' => 'required|integer|exists:leave_types,id',
+                    'apply_from'    => 'required|date',
+                    'apply_to'      => 'required|date|after_or_equal:apply_from',
+                    'reason'        => 'nullable|string|max:1000',
+                    'leave_age'     => 'required|string|in:single,multi,half,hourly',
+                    'time_from'     => 'nullable|date_format:H:i',
+                    'time_to'       => 'nullable|date_format:H:i|after:time_from',
+                    'half_day_type' => 'nullable|string|in:first_half,second_half',
+                    'document'      => 'nullable|file|mimes:pdf,jpeg,png,jpg|max:5120', // 5MB max
+                    'supporting_documents' => 'nullable|array|max:5',
+                    'supporting_documents.*' => 'file|mimes:pdf,jpeg,png,jpg|max:5120',
+                ]);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return Response::json([
+                    'message_type'    => 'error',
+                    'message_display' => 'popup',
+                    'message'         => 'Validation Error: ' . $e->getMessage(),
+                    'errors'          => $e->errors(),
+                ], 422);
+            }
+            
+            $from = Carbon::parse($validated['apply_from'])->startOfDay();
+            $to   = Carbon::parse($validated['apply_to'])->startOfDay();
+            
+            // Get leave type to check document requirements
+            $leaveType = LeaveType::find($validated['leave_type_id']);
+            if (!$leaveType) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Leave type not found'
+                ], 404);
+            }
+
+            // Check if document is required but not provided
+            if ($leaveType->requires_document && !$request->hasFile('document')) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Document is required for this leave type',
+                    'requires_document' => true,
+                    'leave_type_name' => $leaveType->leave_title
+                ], 422);
+            }
+            
+            // Validate no overlapping leave requests
+            $this->validateNoOverlappingLeaves($employee->id, $firmId, $from, $to, $validated['leave_age']);
+            
+            // Calculate days based on leave type
+            if ($validated['leave_age'] === 'half') {
+                $days = 0.5;
+                
+                // Set default time values for half day if not provided
+                if (!$validated['time_from'] || !$validated['time_to']) {
+                    if ($validated['half_day_type'] === 'first_half') {
+                        $validated['time_from'] = '09:00';
+                        $validated['time_to'] = '13:00';
+                    } else {
+                        $validated['time_from'] = '13:00';
+                        $validated['time_to'] = '17:00';
+                    }
+                }
+            } else {
+                $days = $from->diffInDays($to) + 1;
+            }
+
+            DB::beginTransaction();
+            try {
+                // Create the leave request
+                $lr = EmpLeaveRequest::create([
+                    'firm_id'       => $firmId,
+                    'employee_id'   => $employee->id,
+                    'leave_type_id' => $validated['leave_type_id'],
+                    'apply_from'    => $from,
+                    'apply_to'      => $to,
+                    'apply_days'    => $days,
+                    'time_from'     => $validated['time_from'] ? Carbon::parse($validated['time_from']) : null,
+                    'time_to'       => $validated['time_to'] ? Carbon::parse($validated['time_to']) : null,
+                    'reason'        => $validated['reason'] ?? null,
+                    'status'        => 'applied',
+                ]);
+
+                // Upload primary document if provided
+                if ($request->hasFile('document')) {
+                    $lr->addMediaFromRequest('document')
+                        ->toMediaCollection('leave_documents');
+                }
+
+                // Upload supporting documents if provided
+                if ($request->hasFile('supporting_documents')) {
+                    foreach ($request->file('supporting_documents') as $file) {
+                        $lr->addMedia($file)
+                            ->toMediaCollection('supporting_documents');
+                    }
+                }
+
+                // Fetch the *latest* active rule for THIS employee
+                $rules = LeaveApprovalRule::with('employees')
+                    ->where('firm_id', $firmId)
+                    ->where('approval_mode','!=','view_only')
+                    ->where('is_inactive', false)
+                    ->whereDate('period_start', '<=', Carbon::now())
+                    ->whereDate('period_end',   '>=', Carbon::now())
+                    ->where(function($q) use ($validated) {
+                        $q->whereNull('leave_type_id')
+                            ->orWhere('leave_type_id', $validated['leave_type_id']);
+                    })
+                    ->whereHas('employees', function($q) use ($employee) {
+                        $q->where('employee_id', $employee->id);
+                    })
+                    ->get();
+
+                if ($rules->isEmpty()) {
+                    $debugInfo = [
+                        'firm_id' => $firmId,
+                        'leave_type_id' => $validated['leave_type_id'],
+                        'employee_id' => $employee->id,
+                        'period_now' => Carbon::now()->toDateString(),
+                        'rule_count' => $rules->count(),
+                    ];
+                    \Log::error('No applicable leave approval rule found for this request', $debugInfo);
+                    return Response::json([
+                        'message_type' => 'error',
+                        'message_display' => 'popup',
+                        'message' => 'No applicable leave approval rule found for this employee',
+                        'debug' => $debugInfo,
+                    ], 500);
+                }
+
+                // Log the "created" event
+                LeaveRequestEvent::create([
+                    'emp_leave_request_id' => $lr->id,
+                    'user_id'              => $user->id,
+                    'event_type'           => 'status_changed',
+                    'from_status'          => null,
+                    'to_status'            => 'applied',
+                    'remarks'              => $validated['reason'] ?? null,
+                    'firm_id'              => $firmId,
+                    'created_at'           => Carbon::now(),
+                ]);
+
+                DB::commit();
+
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                Log::error('Leave request DB error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+                return Response::json([
+                    'message_type'    => 'error',
+                    'message_display' => 'popup',
+                    'message'         => 'Server Error: ' . $e->getMessage(),
+                    'trace'           => app()->environment('production') ? null : $e->getTraceAsString(),
+                ], 500);
+            }
+
+            // ──────────────── STAGE NOTIFICATIONS ─────────────────
+
+            $now = Carbon::now();
+
+            $fromFormatted = $from->format('j-M-Y');
+            $toFormatted   = $to->format('j-M-Y');
+
+            // Add time information for half day leaves
+            $timeInfo = '';
+            if ($validated['leave_age'] === 'half' && $validated['time_from'] && $validated['time_to']) {
+                $timeInfo = " ({$validated['time_from']} - {$validated['time_to']})";
+            }
+
+            // Add document information
+            $documentInfo = '';
+            if ($request->hasFile('document')) {
+                $documentInfo = ' (with document)';
+            }
+            if ($request->hasFile('supporting_documents')) {
+                $supportingCount = count($request->file('supporting_documents'));
+                $documentInfo .= " (with {$supportingCount} supporting document" . ($supportingCount > 1 ? 's' : '') . ")";
+            }
+
+            // Payload for applicant
+            $applicantPayload = [
+                'firm_id' => $firmId,
+                'subject' => 'Your leave request is submitted',
+                'message' => "You have applied for leave from {$fromFormatted} to {$toFormatted}{$timeInfo}{$documentInfo}.",
+                'company_name' => "{$employee->firm->name}",
+            ];
+
+            NotificationQueue::create([
+                'firm_id'         => $firmId,
+                'notifiable_type'=> User::class,
+                'notifiable_id'  => $user->id,
+                'channel'        => 'mail',
+                'data'           => json_encode($applicantPayload),
+                'status'         => 'pending',
+                'created_at'     => $now,
+                'updated_at'     => $now,
+            ]);
+
+            // Payload for approver
+            $approverPayload = [
+                'firm_id'      => $firmId,
+                'subject'      => 'New leave request pending your approval',
+                'message'      => "{$employee->fname} {$employee->lname} has requested leave ({$fromFormatted} → {$toFormatted}){$timeInfo}{$documentInfo}.",
+                'company_name' => "{$employee->firm->name}",
+            ];
+
+            // Get approver IDs
+            $approverIds = $rules
+                ->pluck('approver_id')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            $approverUsers = User::whereIn('id', $approverIds)->get();
+
+            foreach ($approverUsers as $approver) {
+                NotificationQueue::create([
+                    'firm_id'         => $firmId,
+                    'notifiable_type' => User::class,
+                    'notifiable_id'   => $approver->id,
+                    'channel'         => 'mail',
+                    'data'            => json_encode($approverPayload),
+                    'status'          => 'pending',
+                    'created_at'      => Carbon::now(),
+                    'updated_at'      => Carbon::now(),
+                ]);
+            }
+
+            return Response::json([
+                'message_type'    => 'success',
+                'message_display' => 'popup',
+                'message'         => 'Leave request submitted successfully',
+                'data'            => [
+                    'leave_request' => $lr->load('leave_type'),
+                    'has_document' => $request->hasFile('document'),
+                    'has_supporting_documents' => $request->hasFile('supporting_documents'),
+                    'document_count' => $request->hasFile('supporting_documents') ? count($request->file('supporting_documents')) : 0,
+                ],
+            ], 201);
+        } catch (\Throwable $e) {
+            Log::error('Leave request v3 fatal error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+            return Response::json([
+                'message_type'    => 'error',
+                'message_display' => 'popup',
+                'message'         => 'Fatal Server Error: ' . $e->getMessage(),
+                'trace'           => app()->environment('production') ? null : $e->getTraceAsString(),
+            ], 500);
+        }
+    }
+
+    /**
+     * GET /api/hrms/employee-details
+     * Get employee details including name, designation, date of joining, biometric code, college name, and department
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getEmployeeDetails(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user || !$user->employee) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'flash',
+                    'message' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $employee = $user->employee;
+
+            // Load employee with all necessary relationships
+            $employeeWithDetails = Employee::with([
+                'emp_job_profile.designation',
+                'emp_job_profile.department',
+                'collegeEmployees.college'
+            ])->find($employee->id);
+
+            if (!$employeeWithDetails) {
+                return Response::json([
+                    'message_type' => 'error',
+                    'message_display' => 'popup',
+                    'message' => 'Employee not found'
+                ], 404);
+            }
+
+            // Build employee name
+            $employeeName = trim(
+                ($employeeWithDetails->fname ?? '') . ' ' . 
+                ($employeeWithDetails->mname ?? '') . ' ' . 
+                ($employeeWithDetails->lname ?? '')
+            );
+
+            // Get job profile details
+            $jobProfile = $employeeWithDetails->emp_job_profile;
+            $designation = $jobProfile ? $jobProfile->designation : null;
+            $department = $jobProfile ? $jobProfile->department : null;
+
+            // Get college names
+            $collegeNames = $employeeWithDetails->collegeEmployees->map(function ($collegeEmployee) {
+                return $collegeEmployee->college ? $collegeEmployee->college->name : null;
+            })->filter()->values()->toArray();
+
+            // Prepare response data
+            $data = [
+                'employee_id' => $employeeWithDetails->id,
+                'employee_name' => $employeeName,
+                'designation' => $designation ? $designation->title : null,
+                'designation_code' => $designation ? $designation->code : null,
+                'date_of_joining' => $jobProfile ? ($jobProfile->doh ? Carbon::parse($jobProfile->doh)->format('Y-m-d') : null) : null,
+                'date_of_joining_formatted' => $jobProfile ? ($jobProfile->doh ? Carbon::parse($jobProfile->doh)->format('jS F Y') : null) : null,
+                'biometric_code' => $jobProfile ? $jobProfile->biometric_emp_code : null,
+                'college_names' => $collegeNames,
+                'college_count' => count($collegeNames),
+                'department' => $department ? $department->title : null,
+                'department_code' => $department ? $department->code : null,
+                'employee_code' => $jobProfile ? $jobProfile->employee_code : null,
+                'firm_id' => $employeeWithDetails->firm_id,
+            ];
+
+            return Response::json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => 'Employee details retrieved successfully',
+                'data' => $data,
+            ], 200);
+
+        } catch (\Throwable $e) {
+            Log::error('Failed to fetch employee details: ' . $e->getMessage());
+            return Response::json([
+                'message_type' => 'error',
+                'message_display' => 'popup',
+                'message' => 'Server error: ' . $e->getMessage(),
+                'data' => [],
+            ], 500);
         }
     }
 }

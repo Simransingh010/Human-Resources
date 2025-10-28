@@ -10,6 +10,8 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Spatie\MediaLibrary\HasMedia;
+use Spatie\MediaLibrary\InteractsWithMedia;
 
 /**
  * Class EmpLeaveRequest
@@ -37,9 +39,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * @package App\Models\Hrms
  */
-class EmpLeaveRequest extends Model
+class EmpLeaveRequest extends Model implements HasMedia
 {
-	use SoftDeletes;
+	use SoftDeletes, InteractsWithMedia;
 	protected $table = 'emp_leave_requests';
 
 	protected $casts = [
@@ -185,5 +187,57 @@ class EmpLeaveRequest extends Model
 	public function leave_request_events()
 	{
 		return $this->hasMany(LeaveRequestEvent::class);
+	}
+
+	/**
+	 * Register media collections for leave request documents
+	 */
+	public function registerMediaCollections(): void
+	{
+		$this->addMediaCollection('leave_documents')
+			->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'])
+			->singleFile(); // Only allow one document per leave request
+
+		$this->addMediaCollection('supporting_documents')
+			->acceptsMimeTypes(['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'])
+			->acceptsFile(function ($file) {
+				return $file->getSize() <= 5 * 1024 * 1024; // 5MB limit
+			});
+	}
+
+	/**
+	 * Get the primary leave document
+	 */
+	public function getLeaveDocument()
+	{
+		return $this->getFirstMedia('leave_documents');
+	}
+
+	/**
+	 * Get all supporting documents
+	 */
+	public function getSupportingDocuments()
+	{
+		return $this->getMedia('supporting_documents');
+	}
+
+	/**
+	 * Check if leave request has required documents
+	 */
+	public function hasRequiredDocuments(): bool
+	{
+		// Check if the leave type requires documents
+		$leaveType = $this->leave_type;
+		
+		if (!$leaveType) {
+			return false;
+		}
+
+		// Check if this leave type requires documents
+		if ($leaveType->requires_document) {
+			return $this->getFirstMedia('leave_documents') !== null;
+		}
+
+		return true; // No documents required for this leave type
 	}
 }

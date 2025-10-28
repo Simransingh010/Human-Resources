@@ -15,12 +15,11 @@ class EmployeeJobProfiles extends Component
 {
     use \Livewire\WithPagination;
     public Employee $employee;
-//sanpr isngh ixn fj3 eddi 33if9 spdv9w fjufi09 vvooo3
     public $profileData = [
         'id' => null,
         'employee_id' => '',
         'employee_code' => '',
-        'doh' => '', // date of hire
+        'doh' => '',
         'department_id' => '',
         'designation_id' => '',
         'reporting_manager' => '',

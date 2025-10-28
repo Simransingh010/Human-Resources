@@ -47,7 +47,8 @@ class LeaveType extends Model
 		'max_days' => 'int',
 		'carry_forward' => 'bool',
 		'encashable' => 'bool',
-		'is_inactive' => 'bool'
+		'is_inactive' => 'bool',
+		'requires_document' => 'bool'
 	];
 
 	protected $fillable = [
@@ -60,7 +61,8 @@ class LeaveType extends Model
 		'max_days',
 		'carry_forward',
 		'encashable',
-		'is_inactive'
+		'is_inactive',
+		'requires_document'
 	];
 
 	public function firm()

@@ -164,5 +164,22 @@ class Employee extends Model
             'salary_execution_group_id'
         );
     }
+
+    /**
+     * Get the college employees for this employee.
+     */
+    public function collegeEmployees()
+    {
+        return $this->hasMany(\App\Models\Saas\CollegeEmployee::class);
+    }
+
+    /**
+     * Get the colleges associated with this employee.
+     */
+    public function colleges()
+    {
+        return $this->belongsToMany(\App\Models\Saas\College::class, 'college_employee', 'employee_id', 'college_id')
+                    ->withTimestamps();
+    }
 }
 
