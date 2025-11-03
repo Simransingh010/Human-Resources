@@ -608,8 +608,9 @@ class LeaveAllocations extends Component
                     ->get();
 
                 foreach ($transactionItems as $item) {
-                    if ($transaction = EmpLeaveTransaction::withTrashed()->find($item->model_id)) {
-                        $transaction->forceDelete();
+                    $transaction = EmpLeaveTransaction::find($item->model_id);
+                    if ($transaction) {
+                        $transaction->delete();
                     }
                 }
 

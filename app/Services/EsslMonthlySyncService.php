@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class EsslMonthlySyncService
 {
@@ -12,14 +13,21 @@ class EsslMonthlySyncService
         $year = date('Y');
         $deviceLogsTable = "DeviceLogs_{$month}_{$year}";
 
+        // Check if current month's DeviceLogs table exists; if not, abort gracefully
+        if (!Schema::connection('iqwingl_essl')->hasTable($deviceLogsTable)) {
+            // You can choose to log, throw exception, or just return
+            // \Log::warning("Device logs table $deviceLogsTable not found for ESSL sync.");
+            return; // aborts without error
+        }
+
         // Fetch unsynced/pending rows from current month's table
-        $rows = DB::connection('essl_db')
+        $rows = DB::connection('iqwingl_essl')
             ->table($deviceLogsTable)
             ->where(function ($q) {
                 $q->whereNull('hrapp_syncstatus')->orWhere('hrapp_syncstatus', 0);
             })
             ->orderBy('UserId')
-            ->orderBy('LogDate')
+            ->orderBy('LogDate')    
             ->limit($limit)
             ->get();
 
@@ -62,7 +70,7 @@ class EsslMonthlySyncService
                     ->where('attendance_status_main', 'L')
                     ->exists();
                 if ($onLeave) {
-                    DB::connection('essl_db')->table($deviceLogsTable)
+                    DB::connection('iqwingl_essl')->table($deviceLogsTable)
                         ->whereIn('DeviceLogId', $deviceLogIds)
                         ->update(['hrapp_syncstatus' => 2]);
                     foreach ($deviceLogIds as $id) {
@@ -81,7 +89,7 @@ class EsslMonthlySyncService
                     })
                     ->first();
                 if (!$empWorkShift) {
-                    DB::connection('essl_db')->table($deviceLogsTable)
+                    DB::connection('iqwingl_essl')->table($deviceLogsTable)
                         ->whereIn('DeviceLogId', $deviceLogIds)
                         ->update(['hrapp_syncstatus' => 3]);
                     foreach ($deviceLogIds as $id) {
@@ -97,7 +105,7 @@ class EsslMonthlySyncService
                     ->where('work_date', $date)
                     ->first();
                 if (!$workShiftDay) {
-                    DB::connection('essl_db')->table($deviceLogsTable)
+                    DB::connection('iqwingl_essl')->table($deviceLogsTable)
                         ->whereIn('DeviceLogId', $deviceLogIds)
                         ->update(['hrapp_syncstatus' => 4]);
                     foreach ($deviceLogIds as $id) {
@@ -179,7 +187,7 @@ class EsslMonthlySyncService
                             $actualWorkedHours = $this->calculateWorkedHours($lastInPunch->punch_datetime, $punchDateTime);
                             $finalDayWeightage = $idealWorkingHours > 0 ? min(1, $actualWorkedHours / $idealWorkingHours) : 0;
 
-                            DB::table('emp_attendances')
+                    DB::table('emp_attendances')
                                 ->where('id', $attendance->id)
                                 ->update([
                                     'actual_worked_hours' => $actualWorkedHours,
@@ -213,7 +221,7 @@ class EsslMonthlySyncService
                     );
 
                     // Success markers for this row
-                    DB::connection('essl_db')->table($deviceLogsTable)
+                    DB::connection('iqwingl_essl')->table($deviceLogsTable)
                         ->where('DeviceLogId', $row->DeviceLogId)
                         ->update(['hrapp_syncstatus' => 1]);
                     $this->trackSync($deviceLogsTable, $row->DeviceLogId, 1, 'Synced');
@@ -226,19 +234,16 @@ class EsslMonthlySyncService
 
     protected function trackSync(string $deviceLogsTable, $deviceLogsRecId, int $synced, string $remarks = null): void
     {
-        DB::connection('essl_db')->table('iq_sync_track')->insert([
+        DB::connection('iqwingl_essl')->table('iq_sync_track')->insert([
             'deviceLogsTable' => $deviceLogsTable,
             'deviceLogsRecId' => $deviceLogsRecId,
             'synced' => $synced,
-            'remarks' => $remarks,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
     }
 
     protected function markEsslRow(string $deviceLogsTable, $deviceLogsRecId, int $status, string $remarks): void
     {
-        DB::connection('essl_db')->table($deviceLogsTable)
+        DB::connection('iqwingl_essl')->table($deviceLogsTable)
             ->where('DeviceLogId', $deviceLogsRecId)
             ->update(['hrapp_syncstatus' => $status]);
         $this->trackSync($deviceLogsTable, $deviceLogsRecId, $status, $remarks);

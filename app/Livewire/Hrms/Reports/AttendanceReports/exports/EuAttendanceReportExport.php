@@ -109,7 +109,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
         return $headers;
     }
 
-    public function map($item): array
+    public function     map($item): array
     {
         // Department header row
         if (is_array($item) && ($item['__type'] ?? null) === 'department') {
@@ -159,15 +159,16 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
         
         $punchStrings = [];
         
-        if ($firstPunch && $lastPunch) {
-            // Always show first punch as "in" regardless of actual in_out value
-            $punchStrings[] = Carbon::parse($firstPunch->punch_datetime)->format('H:i') . ' in';
-            
-            // Always show last punch as "out" only if it's different from first punch
-            if ($lastPunch->id !== $firstPunch->id) {
-                $punchStrings[] = Carbon::parse($lastPunch->punch_datetime)->format('H:i') . ' out';
-            }
-        }
+       if ($firstPunch && $lastPunch) {
+           // Always show first punch as "in" regardless of actual in_out value
+           $punchStrings[] = Carbon::parse($firstPunch->punch_datetime)->format('H:i') .' ';
+
+           // Always show last punch as "out" only if it's different from first punch
+           if ($lastPunch->id !== $firstPunch->id) {
+               $punchStrings[] = Carbon::parse($lastPunch->punch_datetime)->format('H:i') . ' ';
+           }
+       }
+       
 
         [$status, $firstIn, $lastOut] = $this->deriveStatus($date, $dayPunches);
 
