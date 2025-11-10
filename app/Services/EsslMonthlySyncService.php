@@ -4,21 +4,46 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use App\Models\NotificationQueue;
+use App\Models\User;
+use Carbon\Carbon;
 
 class EsslMonthlySyncService
 {
-    public function syncCurrentMonthForFirm(int $firmId = 29, int $limit = 10000): void
+    private const NOTIFICATION_EMAIL = 'iqwingsimranpreetsingh@gmail.com';
+
+    public function syncCurrentMonthForFirm(int $firmId = 29, int $limit = 10000, ?string $deviceLogsTableOverride = null): void
     {
-        $month = date('n');
-        $year = date('Y');
-        $deviceLogsTable = "DeviceLogs_{$month}_{$year}";
+        try {
+            // Use override if provided, otherwise use current month/year
+            if ($deviceLogsTableOverride !== null) {
+                $deviceLogsTable = $deviceLogsTableOverride;
+            } else {
+                $month = date('n');
+                $year = date('Y');
+                $deviceLogsTable = "DeviceLogs_{$month}_{$year}";
+            }
 
         // Check if current month's DeviceLogs table exists; if not, abort gracefully
         if (!Schema::connection('iqwingl_essl')->hasTable($deviceLogsTable)) {
-            // You can choose to log, throw exception, or just return
-            // \Log::warning("Device logs table $deviceLogsTable not found for ESSL sync.");
+            $message = "ESSL Monthly Sync: Device logs table {$deviceLogsTable} not found for firm {$firmId}";
+            Log::warning($message);
+            $this->sendNotification($firmId, 'ESSL Sync Warning', $message);
             return; // aborts without error
         }
+
+        // Check total records in table for diagnostics
+        $totalRecords = DB::connection('iqwingl_essl')->table($deviceLogsTable)->count();
+        $pendingRecords = DB::connection('iqwingl_essl')
+            ->table($deviceLogsTable)
+            ->where(function ($q) {
+                $q->whereNull('hrapp_syncstatus')->orWhere('hrapp_syncstatus', 0);
+            })
+            ->count();
+
+        Log::info("ESSL Monthly Sync: Table {$deviceLogsTable} - Total: {$totalRecords}, Pending: {$pendingRecords}, Firm: {$firmId}");
 
         // Fetch unsynced/pending rows from current month's table
         $rows = DB::connection('iqwingl_essl')
@@ -32,8 +57,15 @@ class EsslMonthlySyncService
             ->get();
 
         if ($rows->isEmpty()) {
+            $message = "ESSL Monthly Sync: No unsynced records found in {$deviceLogsTable} for firm {$firmId}. Total records: {$totalRecords}, Pending: {$pendingRecords}";
+            Log::info($message);
+            $this->sendNotification($firmId, 'ESSL Sync Info', $message);
             return;
         }
+
+        $processMessage = "ESSL Monthly Sync: Processing " . $rows->count() . " records from {$deviceLogsTable} for firm {$firmId}. Total records: {$totalRecords}, Pending: {$pendingRecords}";
+        Log::info($processMessage);
+        $this->sendNotification($firmId, 'ESSL Sync Started', $processMessage);
 
         // Group punches by UserId and work date
         $byUserDate = [];
@@ -229,6 +261,87 @@ class EsslMonthlySyncService
                     $lastInOut = $inOut;
                 }
             }
+        }
+
+        // Log summary
+        $syncedCount = DB::connection('iqwingl_essl')
+            ->table($deviceLogsTable)
+            ->where('hrapp_syncstatus', 1)
+            ->count();
+        
+        $completedMessage = "ESSL Monthly Sync: Completed for firm {$firmId}. Synced records in {$deviceLogsTable}: {$syncedCount}";
+        Log::info($completedMessage);
+        $this->sendNotification($firmId, 'ESSL Sync Completed', $completedMessage);
+        
+        } catch (\Throwable $e) {
+            $errorMessage = "ESSL Monthly Sync: Error for firm {$firmId}. Error: " . $e->getMessage() . " | Trace: " . $e->getTraceAsString();
+            Log::error($errorMessage);
+            $this->sendNotification($firmId, 'ESSL Sync Error', $errorMessage);
+            throw $e; // Re-throw to maintain error handling
+        }
+    }
+
+    /**
+     * Get or create notification user by email
+     */
+    protected function getNotificationUser(): ?User
+    {
+        try {
+            $user = User::where('email', self::NOTIFICATION_EMAIL)->first();
+            
+            if (!$user) {
+                // Create user if doesn't exist (for notification purposes)
+                $user = User::create([
+                    'name' => 'ESSL Sync Notifications',
+                    'email' => self::NOTIFICATION_EMAIL,
+                    'password' => bcrypt(Str::random(32)), // Random password
+                    'phone' => '0000000000',
+                    'passcode' => bcrypt('0000'),
+                ]);
+                Log::info("Created notification user for email: " . self::NOTIFICATION_EMAIL);
+            }
+            
+            return $user;
+        } catch (\Throwable $e) {
+            Log::error("Failed to get/create notification user: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Send notification email for ESSL sync events
+     */
+    protected function sendNotification(int $firmId, string $subject, string $message): void
+    {
+        try {
+            $user = $this->getNotificationUser();
+            if (!$user) {
+                Log::warning("Cannot send notification: User not found for email: " . self::NOTIFICATION_EMAIL);
+                return;
+            }
+
+            $payload = [
+                'firm_id' => $firmId,
+                'subject' => $subject,
+                'message' => $message,
+                'timestamp' => Carbon::now()->format('Y-m-d H:i:s'),
+                'company_name' => 'HRMS System',
+            ];
+
+            NotificationQueue::create([
+                'firm_id' => $firmId,
+                'notifiable_type' => User::class,
+                'notifiable_id' => $user->id,
+                'channel' => 'mail',
+                'data' => json_encode($payload),
+                'status' => 'pending',
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ]);
+
+            Log::info("Notification queued for ESSL sync: {$subject}");
+        } catch (\Throwable $e) {
+            Log::error("Failed to send notification: " . $e->getMessage());
         }
     }
 

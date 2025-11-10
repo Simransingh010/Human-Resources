@@ -2418,10 +2418,11 @@ class LeaveController extends Controller
             $designation = $jobProfile ? $jobProfile->designation : null;
             $department = $jobProfile ? $jobProfile->department : null;
 
-            // Get college names
-            $collegeNames = $employeeWithDetails->collegeEmployees->map(function ($collegeEmployee) {
-                return $collegeEmployee->college ? $collegeEmployee->college->name : null;
-            })->filter()->values()->toArray();
+            // Get single college name (employee has a single college)
+            $firstCollegeEmployee = $employeeWithDetails->collegeEmployees->first();
+            $collegeName = $firstCollegeEmployee && $firstCollegeEmployee->college
+                ? $firstCollegeEmployee->college->name
+                : null;
 
             // Prepare response data
             $data = [
@@ -2432,8 +2433,7 @@ class LeaveController extends Controller
                 'date_of_joining' => $jobProfile ? ($jobProfile->doh ? Carbon::parse($jobProfile->doh)->format('Y-m-d') : null) : null,
                 'date_of_joining_formatted' => $jobProfile ? ($jobProfile->doh ? Carbon::parse($jobProfile->doh)->format('jS F Y') : null) : null,
                 'biometric_code' => $jobProfile ? $jobProfile->biometric_emp_code : null,
-                'college_names' => $collegeNames,
-                'college_count' => count($collegeNames),
+                'college_name' => $collegeName,
                 'department' => $department ? $department->title : null,
                 'department_code' => $department ? $department->code : null,
                 'employee_code' => $jobProfile ? $jobProfile->employee_code : null,

@@ -5,11 +5,13 @@ namespace App\Livewire\Saas;
 use App\Models\Saas\College;
 use App\Models\Saas\CollegeEmployee;
 use App\Models\Hrms\Employee;
+use App\Models\Batch;
+use App\Models\BatchItem;
+use App\Services\BulkOperationService;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
 use Illuminate\Support\Facades\Session;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Flux;
 
@@ -18,42 +20,77 @@ class CollegeEmployees extends Component
     use WithPagination;
 
     public $perPage = 10;
-    public $sortBy = 'name';
-    public $sortDirection = 'asc';
+    public $sortBy = 'created_at';
+    public $sortDirection = 'desc';
     public $firmId = null;
+    public $isEditing = false;
+    public $selectedBatchId = null;
+    public $showItemsModal = false;
 
-    // Search and filter properties
-    public $collegeSearch = '';
-    public $employeeSearch = '';
+    // Form properties
     public $selectedCollegeId = null;
     public $selectedEmployeeIds = [];
-    public $selectAll = false;
-    public $showAssignedOnly = false;
-
-    // Cache keys
-    protected $collegeCacheKey = 'colleges_list';
-    protected $employeeCacheKey = 'employees_list';
-    protected $cacheTtl = 300; // 5 minutes
+    public $employeeSearch = '';
+    public $collegeSearch = '';
 
     // Field configuration
-    public array $collegeFieldConfig = [
-        'name' => ['label' => 'College Name', 'type' => 'text'],
-        'code' => ['label' => 'Code', 'type' => 'text'],
-        'city' => ['label' => 'City', 'type' => 'text'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
+    public array $fieldConfig = [
+        'title' => ['label' => 'Batch Title', 'type' => 'text'],
+        'modulecomponent' => ['label' => 'Module', 'type' => 'select', 'listKey' => 'modules'],
+        'action' => ['label' => 'Action', 'type' => 'select', 'listKey' => 'actions'],
+        'created_at' => ['label' => 'Created Date', 'type' => 'date'],
+        'items_count' => ['label' => 'Items Count', 'type' => 'badge'],
     ];
 
-    public array $employeeFieldConfig = [
-        'fname' => ['label' => 'First Name', 'type' => 'text'],
-        'lname' => ['label' => 'Last Name', 'type' => 'text'],
-        'email' => ['label' => 'Email', 'type' => 'text'],
-        'phone' => ['label' => 'Phone', 'type' => 'text'],
+    // Filter fields configuration
+    public array $filterFields = [
+        'title' => ['label' => 'Batch Title', 'type' => 'text'],
+        'modulecomponent' => ['label' => 'Module', 'type' => 'select', 'listKey' => 'modules'],
     ];
+
+    public array $listsForFields = [];
+    public array $filters = [];
+    public array $visibleFields = [];
+    public array $visibleFilterFields = [];
+
+    public $formData = [
+        'id' => null,
+        'firm_id' => null,
+    ];
+
+    protected function rules()
+    {
+        return [
+            'selectedCollegeId' => 'required|exists:college,id',
+            'selectedEmployeeIds' => 'required|array|min:1',
+            'selectedEmployeeIds.*' => 'exists:employees,id',
+        ];
+    }
 
     public function mount($firmId = null)
     {
         $this->firmId = $firmId;
+        $this->formData['firm_id'] = $this->getCurrentFirmId();
+        $this->initListsForFields();
         $this->resetPage();
+
+        // Set default visible fields
+        $this->visibleFields = ['title', 'modulecomponent', 'action', 'created_at', 'items_count'];
+        $this->visibleFilterFields = ['title', 'modulecomponent'];
+
+        // Initialize filters
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+
+    protected function initListsForFields(): void
+    {
+        $this->listsForFields['modules'] = [
+            'college_employee_assignment' => 'College Employee Assignment',
+        ];
+
+        $this->listsForFields['actions'] = [
+            'bulk_assignment' => 'Bulk Assignment',
+        ];
     }
 
     // Helper method to get the current firm ID
@@ -65,249 +102,313 @@ class CollegeEmployees extends Component
     #[Computed]
     public function colleges()
     {
-        return Cache::remember(
-            $this->collegeCacheKey . '_' . $this->getCurrentFirmId(),
-            $this->cacheTtl,
-            fn() => College::query()
-                ->where('firm_id', $this->getCurrentFirmId())
-                ->when($this->collegeSearch, fn($query, $value) => 
-                    $query->where(function($q) use ($value) {
-                        $q->where('name', 'like', "%{$value}%")
-                          ->orWhere('code', 'like', "%{$value}%")
-                          ->orWhere('city', 'like', "%{$value}%");
-                    }))
-                ->orderBy('name', 'asc')
-                ->get()
-        );
+        return College::query()
+            ->where('firm_id', $this->getCurrentFirmId())
+            ->when($this->collegeSearch, fn($query, $value) => 
+                $query->where(function($q) use ($value) {
+                    $q->where('name', 'like', "%{$value}%")
+                      ->orWhere('code', 'like', "%{$value}%")
+                      ->orWhere('city', 'like', "%{$value}%");
+                }))
+            ->orderBy('name', 'asc')
+            ->get();
     }
 
     #[Computed]
     public function employees()
     {
-        $cacheKey = $this->employeeCacheKey . '_' . $this->getCurrentFirmId() . '_' . md5($this->employeeSearch . '_' . $this->showAssignedOnly);
-        
-        return Cache::remember(
-            $cacheKey,
-            $this->cacheTtl,
-            fn() => Employee::query()
-                ->where('firm_id', $this->getCurrentFirmId())
-                ->when($this->employeeSearch, fn($query, $value) => 
-                    $query->where(function($q) use ($value) {
-                        $q->where('fname', 'like', "%{$value}%")
-                          ->orWhere('lname', 'like', "%{$value}%")
-                          ->orWhere('email', 'like', "%{$value}%")
-                          ->orWhere('phone', 'like', "%{$value}%");
-                    }))
-                ->when($this->showAssignedOnly && $this->selectedCollegeId, function($query) {
-                    $query->whereHas('collegeEmployees', function($q) {
-                        $q->where('college_id', $this->selectedCollegeId);
-                    });
-                })
-                ->orderBy('fname', 'asc')
-                ->get()
-        );
+        return Employee::query()
+            ->where('firm_id', $this->getCurrentFirmId())
+            ->where('is_inactive', false)
+            ->when($this->employeeSearch, fn($query, $value) => 
+                $query->where(function($q) use ($value) {
+                    $q->where('fname', 'like', "%{$value}%")
+                      ->orWhere('lname', 'like', "%{$value}%")
+                      ->orWhere('email', 'like', "%{$value}%")
+                      ->orWhere('phone', 'like', "%{$value}%");
+                }))
+            ->orderBy('fname', 'asc')
+            ->get();
     }
 
-    #[Computed]
-    public function assignedEmployees()
+    public function selectAllEmployees()
     {
-        if (!$this->selectedCollegeId) {
-            return collect();
-        }
-
-        return Cache::remember(
-            'assigned_employees_' . $this->selectedCollegeId,
-            $this->cacheTtl,
-            fn() => Employee::query()
-                ->where('firm_id', $this->getCurrentFirmId())
-                ->whereHas('collegeEmployees', function($query) {
-                    $query->where('college_id', $this->selectedCollegeId);
-                })
-                ->orderBy('fname', 'asc')
-                ->get()
-        );
+        $this->selectedEmployeeIds = $this->employees->pluck('id')->map(fn($id) => (string)$id)->toArray();
     }
 
-    public function selectCollege($collegeId)
+    public function deselectAllEmployees()
     {
-        $this->selectedCollegeId = $collegeId;
         $this->selectedEmployeeIds = [];
-        $this->selectAll = false;
+    }
+
+    public function store()
+    {
+        try {
+            $this->validate();
+
+            $college = College::findOrFail($this->selectedCollegeId);
+            $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployeeIds);
+
+            if (empty($actualSelectedEmployeeIds)) {
+                Flux::toast(
+                    variant: 'error',
+                    heading: 'Validation Error',
+                    text: 'Please select at least one employee.',
+                );
+                return;
+            }
+
+            DB::beginTransaction();
+            try {
+                // Start the batch operation
+                $batchTitle = "College Employee Assignment - College: {$college->name}";
+                
+                $batch = BulkOperationService::start(
+                    'college_employee_assignment',
+                    'bulk_assignment',
+                    $batchTitle
+                );
+
+                // Get existing assignments for this college
+                $existingAssignments = CollegeEmployee::where('college_id', $this->selectedCollegeId)
+                    ->whereIn('employee_id', $actualSelectedEmployeeIds)
+                    ->pluck('employee_id')
+                    ->toArray();
+
+                $createdCount = 0;
+                $skippedCount = 0;
+
+                // Process each selected employee
+                foreach ($actualSelectedEmployeeIds as $employeeId) {
+                    if (in_array($employeeId, $existingAssignments)) {
+                        // Employee already assigned - skip
+                        $skippedCount++;
+                        continue;
+                    }
+                    
+                    // Create new assignment
+                    try {
+                        $collegeEmployee = CollegeEmployee::create([
+                            'college_id' => $this->selectedCollegeId,
+                            'employee_id' => $employeeId,
+                        ]);
+                        
+                        BulkOperationService::logInsert($batch, $collegeEmployee);
+                        $createdCount++;
+                    } catch (\Exception $e) {
+                        // Skip if duplicate (race condition)
+                        $skippedCount++;
+                        continue;
+                    }
+                }
+
+                if ($createdCount === 0 && $skippedCount > 0) {
+                    // All employees were already assigned - rollback the transaction
+                    DB::rollBack();
+                    Flux::toast(
+                        variant: 'warning',
+                        heading: 'Info',
+                        text: 'All selected employees are already assigned to this college.',
+                    );
+                    return;
+                }
+
+                DB::commit();
+                $this->selectedBatchId = $batch->id;
+
+                $message = "Successfully assigned {$createdCount} employee(s) to college.";
+                if ($skippedCount > 0) {
+                    $message .= " {$skippedCount} employee(s) were already assigned.";
+                }
+                
+                Flux::toast(
+                    heading: 'Success',
+                    text: $message,
+                );
+
+                $this->resetForm();
+                $this->modal('mdl-assignment')->close();
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                throw $e;
+            }
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to assign employees: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    public function resetForm()
+    {
+        $this->selectedCollegeId = null;
+        $this->selectedEmployeeIds = [];
+        $this->employeeSearch = '';
+        $this->collegeSearch = '';
+        $this->isEditing = false;
+        $this->formData = [
+            'id' => null,
+            'firm_id' => $this->getCurrentFirmId(),
+        ];
+    }
+
+    public function applyFilters()
+    {
         $this->resetPage();
-        
-        // Clear cache for assigned employees
-        Cache::forget('assigned_employees_' . $collegeId);
-    }
-
-    public function toggleEmployee($employeeId)
-    {
-        if (in_array($employeeId, $this->selectedEmployeeIds)) {
-            $this->selectedEmployeeIds = array_filter($this->selectedEmployeeIds, fn($id) => $id != $employeeId);
-        } else {
-            $this->selectedEmployeeIds[] = $employeeId;
-        }
-        
-        $this->updateSelectAllState();
-    }
-
-    public function toggleSelectAll()
-    {
-        if ($this->selectAll) {
-            $this->selectedEmployeeIds = $this->employees->pluck('id')->toArray();
-        } else {
-            $this->selectedEmployeeIds = [];
-        }
-    }
-
-    public function updateSelectAllState()
-    {
-        $this->selectAll = count($this->selectedEmployeeIds) === $this->employees->count() && $this->employees->count() > 0;
-    }
-
-    public function assignEmployees()
-    {
-        if (!$this->selectedCollegeId || empty($this->selectedEmployeeIds)) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Validation Error',
-                text: 'Please select a college and at least one employee.',
-            );
-            return;
-        }
-
-        try {
-            DB::transaction(function () {
-                $college = College::findOrFail($this->selectedCollegeId);
-                
-                // Remove existing assignments for this college
-                CollegeEmployee::where('college_id', $this->selectedCollegeId)->delete();
-                
-                // Create new assignments
-                $assignments = collect($this->selectedEmployeeIds)->map(function ($employeeId) {
-                    return [
-                        'college_id' => $this->selectedCollegeId,
-                        'employee_id' => $employeeId,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ];
-                });
-                
-                CollegeEmployee::insert($assignments->toArray());
-            });
-
-            // Clear relevant caches
-            $this->clearCaches();
-
-            Flux::toast(
-                variant: 'success',
-                heading: 'Success',
-                text: 'Employees assigned to college successfully.',
-            );
-
-            $this->selectedEmployeeIds = [];
-            $this->selectAll = false;
-
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to assign employees. Please try again.',
-            );
-        }
-    }
-
-    public function removeEmployee($employeeId)
-    {
-        if (!$this->selectedCollegeId) {
-            return;
-        }
-
-        try {
-            CollegeEmployee::where('college_id', $this->selectedCollegeId)
-                          ->where('employee_id', $employeeId)
-                          ->delete();
-
-            // Clear relevant caches
-            $this->clearCaches();
-
-            Flux::toast(
-                variant: 'success',
-                heading: 'Success',
-                text: 'Employee removed from college successfully.',
-            );
-
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to remove employee. Please try again.',
-            );
-        }
-    }
-
-    public function clearAllAssignments()
-    {
-        if (!$this->selectedCollegeId) {
-            return;
-        }
-
-        try {
-            CollegeEmployee::where('college_id', $this->selectedCollegeId)->delete();
-
-            // Clear relevant caches
-            $this->clearCaches();
-
-            Flux::toast(
-                variant: 'success',
-                heading: 'Success',
-                text: 'All employees removed from college successfully.',
-            );
-
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to remove all employees. Please try again.',
-            );
-        }
-    }
-
-    public function clearCaches()
-    {
-        Cache::forget($this->collegeCacheKey . '_' . $this->getCurrentFirmId());
-        Cache::forget($this->employeeCacheKey . '_' . $this->getCurrentFirmId());
-        Cache::forget('assigned_employees_' . $this->selectedCollegeId);
-        
-        // Clear all employee cache variations
-        $cachePattern = $this->employeeCacheKey . '_' . $this->getCurrentFirmId() . '_*';
-        // Note: In a real application, you might want to use Redis or implement a more sophisticated cache clearing mechanism
     }
 
     public function clearFilters()
     {
-        $this->collegeSearch = '';
-        $this->employeeSearch = '';
-        $this->showAssignedOnly = false;
-        $this->selectedEmployeeIds = [];
-        $this->selectAll = false;
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
         $this->resetPage();
     }
 
-    public function updatedCollegeSearch()
+    public function toggleColumn(string $field)
     {
-        $this->resetPage();
+        if (in_array($field, $this->visibleFields)) {
+            $this->visibleFields = array_filter(
+                $this->visibleFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFields[] = $field;
+        }
+    }
+
+    public function toggleFilterColumn(string $field)
+    {
+        if (in_array($field, $this->visibleFilterFields)) {
+            $this->visibleFilterFields = array_filter(
+                $this->visibleFilterFields,
+                fn($f) => $f !== $field
+            );
+        } else {
+            $this->visibleFilterFields[] = $field;
+        }
+    }
+
+    #[Computed]
+    public function list()
+    {
+        return Batch::query()
+            ->where('modulecomponent', 'college_employee_assignment')
+            ->when($this->filters['title'] ?? null, fn($query, $value) =>
+                $query->where('title', 'like', "%{$value}%"))
+            ->withCount('items as items_count')
+            ->orderBy($this->sortBy, $this->sortDirection)
+            ->paginate($this->perPage);
+    }
+
+    public function showBatchItems($batchId)
+    {
+        try {
+            $batch = Batch::with([
+                'items' => function ($query) {
+                    $query->orderBy('created_at', 'desc');
+                }
+            ])->findOrFail($batchId);
+
+            $this->selectedBatchId = $batch->id;
+            $this->showItemsModal = true;
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to load batch items: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    public function closeItemsModal()
+    {
+        $this->showItemsModal = false;
+        $this->selectedBatchId = null;
+    }
+
+    public function rollbackBatch($batchId)
+    {
+        try {
+            DB::transaction(function () use ($batchId) {
+                $batch = Batch::with('items')->findOrFail($batchId);
+
+                // Process items in reverse order
+                foreach ($batch->items()->latest('id')->get() as $item) {
+                    $modelClass = $item->model_type;
+                    
+                    switch ($item->operation) {
+                        case 'insert':
+                            // Delete the created record
+                            if ($model = $modelClass::find($item->model_id)) {
+                                $model->delete();
+                            }
+                            break;
+
+                        case 'update':
+                            // Restore original data if possible
+                            if ($model = $modelClass::find($item->model_id)) {
+                                $originalData = json_decode($item->original_data, true);
+                                if ($originalData) {
+                                    $model->update($originalData);
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                // Update batch action
+                $batch->update(['action' => "{$batch->action}_rolled_back"]);
+            });
+
+            Flux::toast(
+                heading: 'Success',
+                text: 'College employee assignments rolled back successfully.',
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to rollback: ' . $e->getMessage(),
+            );
+        }
+    }
+
+    public function delete($id)
+    {
+        try {
+            $batch = Batch::findOrFail($id);
+
+            if ($batch->items()->count() > 0) {
+                $batch->items()->delete();
+            }
+
+            $batch->delete();
+
+            Flux::toast(
+                variant: 'success',
+                heading: 'Record Deleted.',
+                text: 'Batch has been deleted successfully',
+            );
+        } catch (\Exception $e) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'Failed to delete: ' . $e->getMessage(),
+            );
+        }
     }
 
     public function updatedEmployeeSearch()
     {
-        $this->resetPage();
+        // Clear selection when search changes significantly
+        // Optionally keep selection, but for simplicity we can reset
     }
 
-    public function updatedShowAssignedOnly()
+    public function updatedCollegeSearch()
     {
-        $this->selectedEmployeeIds = [];
-        $this->selectAll = false;
-        $this->resetPage();
+        // Reset college selection if it doesn't match search
     }
 
     public function render()
@@ -315,7 +416,6 @@ class CollegeEmployees extends Component
         return view()->file(app_path('Livewire/Saas/college-employees.blade.php'), [
             'colleges' => $this->colleges,
             'employees' => $this->employees,
-            'assignedEmployees' => $this->assignedEmployees,
         ]);
     }
 }

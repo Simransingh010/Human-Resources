@@ -10,6 +10,30 @@ use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Response;
 
+
+/*
+ Special-firm handling (firms 1 and 28)
+
+ For firm 1/28 we switch to a firm-scoped, user-direct permission model:
+ 1) Panel association: user must be linked to the panel with firm context
+    - user->panels() is checked with wherePivot('firm_id', $firmId)
+ 2) Component scoping (via component_panel) depends on user->role_main:
+    - L0_emp or L1_firm: only firm-specific rows (firm_id = $firmId)
+    - L2_agency or L3_company: firm-specific OR global rows (firm_id = $firmId OR NULL)
+    - Others: default to firm-specific
+ 3) Action source: direct user actions only (action_user for this firm)
+    - Role-based actions (action_role via role_user) are NOT considered here
+ 4) Actions must also pass:
+    - actions.is_inactive = false
+    - actions.component_id must be assigned to the selected panel per the rules above
+    - The component must resolve to a module, and the module to an app (or the action is skipped)
+
+ For all other firms:
+    - Panel association is not firm-scoped
+    - Actions come from roles (role_user → action_role)
+    - component_panel is not firm-scoped
+*/
+
 class MenuController extends Controller
 {
     /**
@@ -55,7 +79,7 @@ class MenuController extends Controller
             // Ensure that the user is associated with the selected panel.
             try {
                 if ($isSpecialFirm) {
-                    // For firm 27,     verify association in pivot with firm context
+                    // For firm 28,     verify association in pivot with firm context
                     $isPanelAssociated = $user->panels()
                         ->where('panels.id', $panelId)
                         ->wherePivot('firm_id', $firmId)
