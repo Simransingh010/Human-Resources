@@ -3,9 +3,9 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="a770c515-9483-45bd-a112-994185dca97f" name="150.241.245.183" url="http://150.241.245.183">
-        <fileTransfer host="150.241.245.183" port="21">
+        <fileTransfer rootFolder="/home/iqdigit/public_html/start" accessType="SFTP" host="150.241.245.183" port="22" sshConfigId="5dda1852-0989-4bee-b8a1-07ed2389985d" sshConfig="iqdigit@150.241.245.183:22 password">
           <advancedOptions>
-            <advancedOptions dataProtectionLevel="Private" connections="1005" shareSSLContext="true" />
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" connections="1005" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
         </fileTransfer>
         <option name="numberOfConnections" value="1005" />

@@ -25,20 +25,29 @@
                 </flux:select>
             </div>
             @if($selectedCycleId)
-                <div>
-                    <flux:radio.group label="Select Employee Groups" variant="segmented" class="max-sm:flex-col">
-                        @forelse($executionGroups as $group)
-                            <div class="!flex-none !w-48">
-                                <flux:radio class="!flex-none cursor-btn !w-48 bg-blue-400/20 h-8"
-                                            wire:click="loadPayrollSlots( {{ $group['id'] }})"
-                                            label="{{ $group['title'] }}"/>
-                            </div>
-                        @empty
-                            <flux:radio label="No Groups Available" value="0"/>
-                        @endforelse
-                    </flux:radio.group>
+    <div class="h-35 max-w-full overflow-x-auto overflow-y-hidden py-2">
+        <flux:radio.group 
+            label="Select Employee Groups" 
+            variant="segmented" 
+            class="flex flex-nowrap gap-2 items-stretch sm:flex-row max-sm:flex-col"
+        >
+            @forelse($executionGroups as $group)
+                <div class="!flex-none min-w-[14rem] max-w-[18rem]">
+                    <flux:radio 
+                        class="truncate table-cell-wrap !flex-none cursor-btn w-full bg-blue-400/20 min-h-[4.5rem] py-3 px-3 
+                               text-center whitespace-normal break-words leading-snug text-sm rounded-xl shadow-sm
+                               hover:bg-blue-400/30 transition-colors duration-200"
+                        wire:click="loadPayrollSlots({{ $group['id'] }})"
+                        label="{{ $group['title'] }}"
+                    />
                 </div>
-            @endif
+            @empty
+                <flux:radio label="No Groups Available" value="0"/>
+            @endforelse
+        </flux:radio.group>
+    </div>
+@endif
+
         </div>
         @if($selectedGroupId)
             <div class="flex justify-between mt-4">

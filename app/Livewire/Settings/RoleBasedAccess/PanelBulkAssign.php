@@ -43,6 +43,15 @@ class PanelBulkAssign extends Component
     public $employmentTypes = [];
     public $selectedEmploymentType = null;
 
+    // Toggle target: employees or students
+    public string $assignTo = 'employees';
+    // Students lists and selection
+    public array $students = [];
+    public array $filteredStudents = [];
+    public array $selectedStudents = [];
+    public string $studentSearch = '';
+    public array $studentPanelsMap = [];
+
     // Field configuration for form and table
     public array $fieldConfig = [
         'title' => ['label' => 'Batch Title', 'type' => 'text'],
@@ -74,8 +83,12 @@ class PanelBulkAssign extends Component
     {
         return [
             'formData.panel_id' => 'required|exists:panels,id',
-            'selectedEmployees' => 'required|array|min:1',
+            // Relax employee requirement - enforce conditionally in store()
+            'selectedEmployees' => 'array',
             'selectedEmployees.*' => 'exists:employees,id',
+            // Add student validation - also enforced conditionally
+            'selectedStudents' => 'array',
+            'selectedStudents.*' => 'exists:students,id',
         ];
     }
 
@@ -87,6 +100,8 @@ class PanelBulkAssign extends Component
         $this->loadDepartmentsWithEmployees();
         $this->loadEmploymentTypes();
         $this->fetchEmployeePanelsMap();
+        $this->loadStudents();
+        $this->fetchStudentPanelsMap();
 
         // Set default visible fields
         $this->visibleFields = ['title', 'modulecomponent', 'action', 'created_at', 'items_count'];
@@ -116,6 +131,20 @@ class PanelBulkAssign extends Component
             }
             return $map;
         });
+    }
+
+    protected function fetchStudentPanelsMap()
+    {
+        $firmId = session('firm_id');
+        $students = \App\Models\Hrms\Student::with(['user.panels' => function($q) use ($firmId) {
+            $q->where('panel_user.firm_id', $firmId);
+        }])->where('firm_id', $firmId)->where('is_inactive', false)->get();
+        $map = [];
+        foreach ($students as $student) {
+            $panelIds = $student->user ? $student->user->panels->pluck('id')->map(fn($id) => (string)$id)->toArray() : [];
+            $map[(string)$student->id] = $panelIds;
+        }
+        $this->studentPanelsMap = $map;
     }
 
     public function updatedEmployeeSearch()
@@ -166,6 +195,7 @@ class PanelBulkAssign extends Component
             $this->selectedPanel = null;
         }
         $this->filterEmployees();
+        $this->filterStudents();
     }
 
     protected function loadDepartmentsWithEmployees()
@@ -260,6 +290,51 @@ class PanelBulkAssign extends Component
         $this->filterEmployees();
     }
 
+    protected function loadStudents()
+    {
+        $firmId = session('firm_id');
+        $this->students = \App\Models\Hrms\Student::where('firm_id', $firmId)
+            ->where('is_inactive', false)
+            ->select(['id', 'fname', 'mname', 'lname', 'email', 'phone'])
+            ->get()
+            ->map(function ($student) {
+                return [
+                    'id' => (int) $student->id,
+                    'fname' => $student->fname,
+                    'mname' => $student->mname,
+                    'lname' => $student->lname,
+                    'email' => $student->email,
+                    'phone' => $student->phone,
+                ];
+            })
+            ->toArray();
+        $this->filterStudents();
+    }
+
+    protected function filterStudents()
+    {
+        $students = collect($this->students);
+        $searchTerm = strtolower($this->studentSearch);
+        $filtered = $students->filter(function ($student) use ($searchTerm) {
+            $studentName = strtolower(trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')));
+            $studentEmail = strtolower($student['email'] ?? '');
+            $studentPhone = strtolower($student['phone'] ?? '');
+            $matchesSearch = empty($this->studentSearch) ||
+                str_contains($studentName, $searchTerm) ||
+                str_contains($studentEmail, $searchTerm) ||
+                str_contains($studentPhone, $searchTerm);
+
+            $doesNotHavePanel = true;
+            if ($this->formData['panel_id']) {
+                $panels = $this->studentPanelsMap[(string)$student['id']] ?? [];
+                $doesNotHavePanel = !in_array((string)$this->formData['panel_id'], $panels);
+            }
+            return $matchesSearch && $doesNotHavePanel;
+        })->values()->all();
+
+        $this->filteredStudents = $filtered;
+    }
+
     public function selectAllEmployeesGlobal()
     {
         $allEmployeeIds = collect($this->departmentsWithEmployees)
@@ -307,43 +382,63 @@ class PanelBulkAssign extends Component
         }
     }
 
+    public function updatedStudentSearch()
+    {
+        $this->filterStudents();
+    }
+
+    public function clearStudentSearch()
+    {
+        $this->studentSearch = '';
+        $this->filterStudents();
+    }
+
+    public function selectAllStudents()
+    {
+        $ids = collect($this->filteredStudents)->pluck('id')->map(fn($id) => (string)$id)->toArray();
+        $this->selectedStudents = array_unique(array_merge($this->selectedStudents, $ids));
+    }
+
+    public function deselectAllStudents()
+    {
+        $this->selectedStudents = [];
+    }
+
     public function store()
     {
         try {
             $this->validate();
 
-            // Get the actual selected employee IDs and ensure they're integers
-            $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployees);
-
-            // Get employee details for the actually selected IDs
-            $selectedEmployeeDetails = Employee::with(['emp_job_profile.employment_type'])
-                ->whereIn('id', $actualSelectedEmployeeIds)
-                ->get()
-                ->map(function ($employee) {
-                    return [
-                        'id' => $employee->id,
-                        'name' => $employee->fname . ' ' . $employee->lname,
-                        'employment_type' => $employee->emp_job_profile?->employment_type?->title ?? 'N/A',
-                        'email' => $employee->email,
-                        'panel' => $this->selectedPanel?->name
-                    ];
-                })
-                ->toArray();
-
             DB::beginTransaction();
             try {
                 // Start the batch operation
                 $batchTitle = "Panel Assignment - Panel: {$this->selectedPanel->name}";
-
                 $batch = BulkOperationService::start(
                     'panel_assignment',
                     'bulk_assignment',
                     $batchTitle
                 );
 
-                // Process each selected employee
-                foreach ($actualSelectedEmployeeIds as $employeeId) {
-                    $this->assignPanelToEmployee($batch, $employeeId, $this->formData['panel_id']);
+                if ($this->assignTo === 'students') {
+                    // Validate students selection
+                    if (empty($this->selectedStudents)) {
+                        throw new \Exception('Please select at least one student.');
+                    }
+                    $actualSelectedStudentIds = array_map('intval', $this->selectedStudents);
+                    foreach ($actualSelectedStudentIds as $studentId) {
+                        $this->assignPanelToStudent($batch, $studentId, $this->formData['panel_id']);
+                    }
+                } else {
+                    // Default to employees
+                    if (empty($this->selectedEmployees)) {
+                        throw new \Exception('Please select at least one employee.');
+                    }
+                    // Get the actual selected employee IDs and ensure they're integers
+                    $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployees);
+                    // Process each selected employee
+                    foreach ($actualSelectedEmployeeIds as $employeeId) {
+                        $this->assignPanelToEmployee($batch, $employeeId, $this->formData['panel_id']);
+                    }
                 }
 
                 DB::commit();
@@ -353,6 +448,8 @@ class PanelBulkAssign extends Component
                 $this->refreshCaches();
                 $this->fetchEmployeePanelsMap();
                 $this->loadDepartmentsWithEmployees();
+                $this->fetchStudentPanelsMap();
+                $this->loadStudents();
 
                 Flux::toast(
                     heading: 'Success',
@@ -444,6 +541,75 @@ class PanelBulkAssign extends Component
         }
     }
 
+    protected function assignPanelToStudent($batch, $studentId, $panelId)
+    {
+        DB::beginTransaction();
+        try {
+            $firmId = session('firm_id');
+            $student = \App\Models\Hrms\Student::with('user')->find($studentId);
+            if (!$student || !$student->user) {
+                throw new \Exception("Student or associated user not found for ID {$studentId}");
+            }
+            $user = $student->user;
+            
+            // Check if panel assignment already exists
+            $existingPanelUser = PanelUser::where([
+                'user_id' => $user->id,
+                'panel_id' => $panelId,
+                'firm_id' => $firmId,
+            ])->first();
+
+            if ($existingPanelUser) {
+                $oldData = [
+                    'panel_id' => $panelId,
+                    'user_id' => $user->id,
+                    'firm_id' => $firmId
+                ];
+                
+                BatchItem::create([
+                    'batch_id' => $batch->id,
+                    'operation' => 'update',
+                    'model_type' => 'panel_user',
+                    'model_id' => $existingPanelUser->id,
+                    'original_data' => json_encode($oldData),
+                    'new_data' => json_encode($oldData)
+                ]);
+                
+                Flux::toast(
+                    variant: 'info',
+                    heading: 'Panel Updated',
+                    text: "Panel assignment updated for student ID {$studentId}.",
+                );
+            } else {
+                // Create new panel assignment
+                $panelUser = PanelUser::create([
+                    'user_id' => $user->id,
+                    'panel_id' => $panelId,
+                    'firm_id' => $firmId,
+                ]);
+                
+                BatchItem::create([
+                    'batch_id' => $batch->id,
+                    'operation' => 'insert',
+                    'model_type' => 'panel_user',
+                    'model_id' => $panelUser->id,
+                    'new_data' => json_encode([
+                        'user_id' => $user->id,
+                        'panel_id' => $panelId,
+                        'firm_id' => $firmId
+                    ])
+                ]);
+            }
+            
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw new \Exception(
+                "Error processing panel assignment for student ID {$studentId}: " . $e->getMessage()
+            );
+        }
+    }
+
     protected function refreshCaches()
     {
         $firmId = session('firm_id');
@@ -510,13 +676,16 @@ class PanelBulkAssign extends Component
             'panel_id' => null,
         ];
         $this->selectedEmployees = [];
+        $this->selectedStudents = [];
         $this->selectedPanel = null;
         $this->isEditing = false;
         $this->employeeSearch = '';
+        $this->studentSearch = '';
         $this->selectedEmploymentType = null;
 
         // Reset the filtered departments to show all employees
         $this->loadDepartmentsWithEmployees();
+        $this->loadStudents();
     }
 
     public function applyFilters()

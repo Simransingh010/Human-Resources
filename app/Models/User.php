@@ -15,6 +15,7 @@ use App\Models\Hrms\Employee;
 use App\Models\Saas\PermissionGroup;
 use App\Models\Saas\Permission;
 use App\Models\Saas\Role;
+use App\Models\Hrms\Student;
 
 
 class User extends Authenticatable
@@ -95,6 +96,10 @@ class User extends Authenticatable
     public function employee()
     {
         return $this->hasOne(Employee::class, 'user_id');
+    }
+    public function student()
+    {
+        return $this->hasOne(Student::class, 'user_id');
     }
     public function permissionGroups()
     {

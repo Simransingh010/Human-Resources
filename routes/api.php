@@ -10,6 +10,7 @@ use App\Http\Controllers\API\Hrms\Attendance\AttendanceController;
 use App\Http\Controllers\API\Hrms\Leave\LeaveController;
 use App\Http\Controllers\API\Hrms\Onboard\OnboardController;
 use App\Http\Controllers\API\Hrms\Payroll\PayrollController;
+use App\Http\Controllers\API\Hrms\Students\StudentAttendanceController;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/loginmobile', [AuthController::class, 'loginmobile']);
@@ -90,5 +91,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/hrms/employees/payroll-components', [PayrollController::class, 'getEmployeePayrollComponents']);
     Route::post('/payroll/salary-slip/download', [PayrollController::class, 'downloadSalarySlipPdf']);
 
+    // Student attendance & punches
+    Route::post('/students/attendance/punch', [StudentAttendanceController::class, 'punch']);
+    Route::get('/students/attendance/punch-status', [StudentAttendanceController::class, 'punchStatus']);
+    Route::get('/students/attendance', [StudentAttendanceController::class, 'attendanceWithPunches']);
+    Route::get('/students/attendance/coach/students', [StudentAttendanceController::class, 'coachStudents']);
+    Route::post('/students/attendance/coach/mark', [StudentAttendanceController::class, 'coachMarkAttendance']);
 });
  
