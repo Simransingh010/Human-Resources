@@ -8,68 +8,162 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use App\Models\OtpCode;
 use App\Models\Saas\DeviceToken;
+use App\Models\Hrms\StudentPersonalDetail;
 use Carbon\Carbon;
 use App\Services\SmsService;
 
-class AuthController extends Controller
+class   AuthController extends Controller
 {
     /**
      * Authenticate the user and generate an access token.
+     * Supports login with email or adharno (for students).
      */
     public function login(Request $request)
     {
-        // Validate the incoming request data.
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required'
-        ]);
+        $this->validateLoginRequest($request);
 
         try {
-            // Retrieve the user by email.
-            $user = User::where('email', $request->email)
-                        ->with('employee.emp_personal_detail') // Eager load employee and personal details
-                        ->first();
-
-            // If the user doesn't exist or the password is incorrect, return an error.
-            if (!$user || !Hash::check($request->password, $user->password)) {
-                return response()->json([
-                    'message_type' => 'error',
-                    'message_display' => 'popup',
-                    'message' => 'Invalid credentials',
-                    'message_type' => 'success',  // success, warning, error, info
-                    'message_display' => 'popup',  // flash,none,popup
-                ], 401);
+            $user = $this->findUserByEmailOrAdharno($request->email);
+            
+            if (!$this->isValidCredentials($user, $request->password)) {
+                return $this->invalidCredentialsResponse();
             }
 
-            // Generate a personal access token for the user.
-            $token = $user->createToken('api-token')->plainTextToken;
+            $token = $this->generateAccessToken($user);
+            $userData = $this->formatUserData($user);
 
-            // Return the token in the response.
-            return response()->json([
-                'access_token' => $token,
-                'user' => [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'phone' => $user->phone,
-                    'is_inactive' => (bool) $user->is_inactive,
-                    'employee_image' => $user->employee && $user->employee->emp_personal_detail
-                                    ? $user->employee->emp_personal_detail->employee_image
-                                    : null,
-                ],
-                'token_type' => 'Bearer'
-            ]);
-
+            return $this->successfulLoginResponse($token, $userData);
         } catch (\Throwable $e) {
-            // Log the error or handle it as needed
-            // \Log::error('Login failed: ' . $e->getMessage());
-
-            return response()->json([
-                'message_type' => 'error',
-                'message_display' => 'popup',
-                'message' => 'Server error: ' . $e->getMessage()
-            ], 500);
+            return $this->serverErrorResponse($e);
         }
+    }
+
+    /**
+     * Validate login request data.
+     */
+    private function validateLoginRequest(Request $request): void
+    {
+        $request->validate([
+            'email' => 'required|string',
+            'password' => 'required'
+        ]);
+    }
+
+    /**
+     * Find user by email or adharno (for students).
+     */
+    private function findUserByEmailOrAdharno(string $identifier): ?User
+    {
+        if ($this->isEmail($identifier)) {
+            return $this->findUserByEmail($identifier);
+        }
+
+        return $this->findUserByAdharno($identifier);
+    }
+
+    /**
+     * Check if the identifier is a valid email.
+     */
+    private function isEmail(string $identifier): bool
+    {
+        return filter_var($identifier, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    /**
+     * Find user by email.
+     */
+    private function findUserByEmail(string $email): ?User
+    {
+        return User::where('email', $email)
+            ->with('employee.emp_personal_detail')
+            ->first();
+    }
+
+    /**
+     * Find user by adharno through student personal details.
+     */
+    private function findUserByAdharno(string $adharno): ?User
+    {
+        $studentPersonalDetail = StudentPersonalDetail::where('adharno', $adharno)
+            ->with('student.user.employee.emp_personal_detail')
+            ->first();
+
+        return $studentPersonalDetail?->student?->user;
+    }
+
+    /**
+     * Verify if user exists and password is correct.
+     */
+    private function isValidCredentials(?User $user, string $password): bool
+    {
+        return $user && Hash::check($password, $user->password);
+    }
+
+    /**
+     * Generate access token for user.
+     */
+    private function generateAccessToken(User $user): string
+    {
+        return $user->createToken('api-token')->plainTextToken;
+    }
+
+    /**
+     * Format user data for response.
+     */
+    private function formatUserData(User $user): array
+    {
+        return [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone' => $user->phone,
+            'is_inactive' => (bool) $user->is_inactive,
+            'employee_image' => $this->getEmployeeImage($user),
+        ];
+    }
+
+    /**
+     * Get employee image from user's employee personal details.
+     */
+    private function getEmployeeImage(User $user): ?string
+    {
+        return $user->employee?->emp_personal_detail?->employee_image;
+    }
+
+    /**
+     * Return successful login response.
+     */
+    private function successfulLoginResponse(string $token, array $userData): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'access_token' => $token,
+            'user' => $userData,
+            'token_type' => 'Bearer'
+        ]);
+    }
+
+    /**
+     * Return invalid credentials error response.
+     */
+    private function invalidCredentialsResponse(): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'message_type' => 'error',
+            'message_display' => 'popup',
+            'message' => 'Invalid credentials'
+        ], 401);
+    }
+
+    /**
+     * Return server error response.
+     */
+    private function serverErrorResponse(\Throwable $e): \Illuminate\Http\JsonResponse
+    {
+        return response()->json([
+            'message_type' => 'error',
+            'message_display' => 'popup',
+            'message' => 'Server error: ' . $e->getMessage()
+        ], 500);
     }
 
     public function loginmobile(Request $request)
@@ -192,7 +286,7 @@ class AuthController extends Controller
             $data = $request->validate([
                 'firm_id' => 'required|exists:firms,id',
                 'token' => 'required|string', // removed unique validation
-                'device_type' => 'required|string',  // e
+                'device_type' => 'required|string',  // e.g., "ios", "android", "web"
                 'device_name' => 'nullable|string',
                 'os_version' => 'nullable|string',
             ]);

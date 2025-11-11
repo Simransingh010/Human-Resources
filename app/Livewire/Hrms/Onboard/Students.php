@@ -34,6 +34,7 @@ class Students extends Component
     public $sortDirection = 'desc';
     public $isEditing = false;
     public $selectedStudentId = null;
+	public $viewMode = 'table';
 
     public array $fieldConfig = [
         'fname' => ['label' => 'First Name', 'type' => 'text'],
@@ -69,6 +70,7 @@ class Students extends Component
         $this->visibleFields = ['fname', 'lname', 'email', 'phone'];
         $this->visibleFilterFields = ['fname', 'lname', 'email', 'phone'];
         $this->filters = array_fill_keys(array_merge(array_keys($this->filterFields), ['students']), '');
+		$this->viewMode = session('students_view_mode', $this->viewMode);
     }
 
     private function loadStudentStatuses()
@@ -118,6 +120,11 @@ class Students extends Component
     {
         return $student->study_centre ? $student->study_centre->name : '-';
     }
+
+	public function updatedViewMode($value): void
+	{
+		session(['students_view_mode' => $value]);
+	}
 
     public function fetchStudent($id)
     {

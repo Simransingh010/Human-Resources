@@ -15,6 +15,25 @@
     <flux:card>
         <flux:heading>Filters</flux:heading>
         <div class="flex flex-wrap gap-4">
+            <div class="w-full flex items-center gap-2">
+                <span class="text-sm text-gray-600">Assign to:</span>
+                <flux:button.group>
+                    <flux:button
+                        variant="{{ $assignTo === 'employees' ? 'primary' : 'outline' }}"
+                        wire:click="$set('assignTo','employees')"
+                        size="xs"
+                    >
+                        Employees
+                    </flux:button>
+                    <flux:button
+                        variant="{{ $assignTo === 'students' ? 'primary' : 'outline' }}"
+                        wire:click="$set('assignTo','students')"
+                        size="xs"
+                    >
+                        Students
+                    </flux:button>
+                </flux:button.group>
+            </div>
             @foreach($filterFields as $field => $cfg)
                 @if(in_array($field, $visibleFilterFields))
                     <div class="w-1/4">
@@ -141,6 +160,7 @@
                 </div>
 
                 <!-- Employee Selection Section -->
+                @if($assignTo === 'employees')
                 <div class="mt-6">
                     @if($selectedPanel)
                         <div class="mb-2 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
@@ -258,6 +278,82 @@
                         </flux:accordion>
                     </div>
                 </div>
+                @endif
+
+                <!-- Student Selection Section -->
+                @if($assignTo === 'students')
+                <div class="mt-6">
+                    @if($selectedPanel)
+                        <div class="mb-2 bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                            <span class="text-yellow-700 text-sm font-medium">Only students who do not already have the selected panel are shown.</span>
+                        </div>
+                    @endif
+                    <div class="flex justify-between items-center mb-4">
+                        <label class="block text-sm font-medium text-gray-700">Select Students</label>
+                        <div class="flex space-x-2">
+                            <flux:button size="xs" variant="outline" wire:click="selectAllStudents">Select All</flux:button>
+                            <flux:button size="xs" variant="ghost" wire:click="deselectAllStudents">Deselect</flux:button>
+                        </div>
+                    </div>
+                    <!-- Student Search -->
+                    <div class="mb-4">
+                        <div class="grid grid-cols-12 gap-4 lg:grid-cols-2 items-end">
+                            <div class="col-span-6 relative">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">Search Students</label>
+                                <flux:input
+                                    type="search"
+                                    placeholder="Search students by name, email or phone..."
+                                    wire:model.live="studentSearch"
+                                    class="w-full"
+                                >
+                                    <x-slot:prefix>
+                                        <flux:icon name="magnifying-glass" class="w-5 h-5 text-gray-400"/>
+                                    </x-slot:prefix>
+                                    @if($studentSearch)
+                                        <x-slot:suffix>
+                                            <flux:button
+                                                wire:click="clearStudentSearch"
+                                                variant="ghost"
+                                                size="xs"
+                                                icon="x-mark"
+                                                class="text-gray-400 hover:text-gray-600"
+                                            />
+                                        </x-slot:suffix>
+                                    @endif
+                                </flux:input>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-2 overflow-y-auto max-h-[60vh] pr-2">
+                        <div class="divide-y divide-gray-100">
+                            @forelse($filteredStudents as $student)
+                                <div class="flex items-center justify-between py-2">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        <flux:checkbox
+                                            wire:model="selectedStudents"
+                                            label="{{ $student['fname'] }} {{ $student['lname'] }}"
+                                            value="{{ $student['id'] }}"
+                                            id="student-{{ $student['id'] }}"
+                                        />
+                                        <div class="text-xs text-gray-500 truncate">
+                                            <span class="mr-2">{{ $student['email'] }}</span>
+                                            <span>{{ $student['phone'] }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            @empty
+                                <div class="text-center py-4 text-gray-500">
+                                    @if($studentSearch)
+                                        No students found matching "{{ $studentSearch }}"
+                                    @else
+                                        No students available
+                                    @endif
+                                </div>
+                            @endforelse
+                        </div>
+                    </div>
+                </div>
+                @endif
 
                 <!-- Submit Button -->
                 <div class="flex justify-end space-x-2 pt-4">

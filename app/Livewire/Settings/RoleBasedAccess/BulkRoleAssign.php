@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Saas\ActionRole;
 use App\Models\Saas\ActionUser;
 use App\Services\BulkOperationService;
+use App\Models\Hrms\Student;
 use Livewire\Component;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
@@ -43,6 +44,15 @@ class BulkRoleAssign extends Component
     public $employmentTypes = [];
     public $selectedEmploymentType = null;
 
+    // Toggle target: employees or students
+    public string $assignTo = 'employees';
+    // Students lists and selection
+    public array $students = [];
+    public array $filteredStudents = [];
+    public array $selectedStudents = [];
+    public string $studentSearch = '';
+    public array $studentRolesMap = [];
+
     // Field configuration for form and table
     public array $fieldConfig = [
         'title' => ['label' => 'Batch Title', 'type' => 'text'],
@@ -74,8 +84,12 @@ class BulkRoleAssign extends Component
     {
         return [
             'formData.role_id' => 'required|exists:roles,id',
-            'selectedEmployees' => 'required|array|min:1',
+            // Relax employee requirement - enforce conditionally in store()
+            'selectedEmployees' => 'array',
             'selectedEmployees.*' => 'exists:employees,id',
+            // Add student validation - also enforced conditionally
+            'selectedStudents' => 'array',
+            'selectedStudents.*' => 'exists:students,id',
         ];
     }
 
@@ -87,6 +101,8 @@ class BulkRoleAssign extends Component
         $this->loadDepartmentsWithEmployees();
         $this->loadEmploymentTypes();
         $this->fetchEmployeeRolesMap();
+        $this->loadStudents();
+        $this->fetchStudentRolesMap();
 
         // Set default visible fields
         $this->visibleFields = ['title', 'modulecomponent', 'action', 'created_at', 'items_count'];
@@ -111,6 +127,20 @@ class BulkRoleAssign extends Component
             $map[(string)$employee->id] = $roleIds;
         }
         $this->employeeRolesMap = $map;
+    }
+
+    protected function fetchStudentRolesMap()
+    {
+        $firmId = session('firm_id');
+        $students = Student::with(['user.roles' => function($q) use ($firmId) {
+            $q->where('role_user.firm_id', $firmId);
+        }])->where('firm_id', $firmId)->where('is_inactive', false)->get();
+        $map = [];
+        foreach ($students as $student) {
+            $roleIds = $student->user ? $student->user->roles->pluck('id')->map(fn($id) => (string)$id)->toArray() : [];
+            $map[(string)$student->id] = $roleIds;
+        }
+        $this->studentRolesMap = $map;
     }
 
     public function updatedEmployeeSearch()
@@ -156,6 +186,7 @@ class BulkRoleAssign extends Component
             $this->selectedRole = null;
         }
         $this->filterEmployees();
+        $this->filterStudents();
     }
 
     protected function loadDepartmentsWithEmployees()
@@ -191,6 +222,27 @@ class BulkRoleAssign extends Component
         })->toArray();
 
         $this->filterEmployees();
+    }
+
+    protected function loadStudents()
+    {
+        $firmId = session('firm_id');
+        $this->students = Student::where('firm_id', $firmId)
+            ->where('is_inactive', false)
+            ->select(['id', 'fname', 'mname', 'lname', 'email', 'phone'])
+            ->get()
+            ->map(function ($student) {
+                return [
+                    'id' => (int) $student->id,
+                    'fname' => $student->fname,
+                    'mname' => $student->mname,
+                    'lname' => $student->lname,
+                    'email' => $student->email,
+                    'phone' => $student->phone,
+                ];
+            })
+            ->toArray();
+        $this->filterStudents();
     }
 
     protected function filterEmployees()
@@ -238,6 +290,30 @@ class BulkRoleAssign extends Component
 
         $this->departmentsWithEmployees = $filteredDepartments;
         $this->filteredDepartmentsWithEmployees = $filteredDepartments;
+    }
+
+    protected function filterStudents()
+    {
+        $students = collect($this->students);
+        $searchTerm = strtolower($this->studentSearch);
+        $filtered = $students->filter(function ($student) use ($searchTerm) {
+            $studentName = strtolower(trim(($student['fname'] ?? '') . ' ' . ($student['lname'] ?? '')));
+            $studentEmail = strtolower($student['email'] ?? '');
+            $studentPhone = strtolower($student['phone'] ?? '');
+            $matchesSearch = empty($this->studentSearch) ||
+                str_contains($studentName, $searchTerm) ||
+                str_contains($studentEmail, $searchTerm) ||
+                str_contains($studentPhone, $searchTerm);
+
+            $doesNotHaveRole = true;
+            if ($this->formData['role_id']) {
+                $roles = $this->studentRolesMap[(string)$student['id']] ?? [];
+                $doesNotHaveRole = !in_array((string)$this->formData['role_id'], $roles);
+            }
+            return $matchesSearch && $doesNotHaveRole;
+        })->values()->all();
+
+        $this->filteredStudents = $filtered;
     }
 
     public function updatedSelectedEmploymentType()
@@ -292,43 +368,63 @@ class BulkRoleAssign extends Component
         }
     }
 
+    public function updatedStudentSearch()
+    {
+        $this->filterStudents();
+    }
+
+    public function clearStudentSearch()
+    {
+        $this->studentSearch = '';
+        $this->filterStudents();
+    }
+
+    public function selectAllStudents()
+    {
+        $ids = collect($this->filteredStudents)->pluck('id')->map(fn($id) => (string)$id)->toArray();
+        $this->selectedStudents = array_unique(array_merge($this->selectedStudents, $ids));
+    }
+
+    public function deselectAllStudents()
+    {
+        $this->selectedStudents = [];
+    }
+
     public function store()
     {
         try {
             $this->validate();
 
-            // Get the actual selected employee IDs and ensure they're integers
-            $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployees);
-
-            // Get employee details for the actually selected IDs
-            $selectedEmployeeDetails = Employee::with(['emp_job_profile.employment_type'])
-                ->whereIn('id', $actualSelectedEmployeeIds)
-                ->get()
-                ->map(function ($employee) {
-                    return [
-                        'id' => $employee->id,
-                        'name' => $employee->fname . ' ' . $employee->lname,
-                        'employment_type' => $employee->emp_job_profile?->employment_type?->title ?? 'N/A',
-                        'email' => $employee->email,
-                        'role' => $this->selectedRole?->name
-                    ];
-                })
-                ->toArray();
-
             DB::beginTransaction();
             try {
                 // Start the batch operation
                 $batchTitle = "Role Assignment - Role: {$this->selectedRole->name}";
-
                 $batch = BulkOperationService::start(
                     'role_assignment',
                     'bulk_assignment',
                     $batchTitle
                 );
 
-                // Process each selected employee
-                foreach ($actualSelectedEmployeeIds as $employeeId) {
-                    $this->assignRoleToEmployee($batch, $employeeId, $this->formData['role_id']);
+                if ($this->assignTo === 'students') {
+                    // Validate students selection
+                    if (empty($this->selectedStudents)) {
+                        throw new \Exception('Please select at least one student.');
+                    }
+                    $actualSelectedStudentIds = array_map('intval', $this->selectedStudents);
+                    foreach ($actualSelectedStudentIds as $studentId) {
+                        $this->assignRoleToStudent($batch, $studentId, $this->formData['role_id']);
+                    }
+                } else {
+                    // Default to employees
+                    if (empty($this->selectedEmployees)) {
+                        throw new \Exception('Please select at least one employee.');
+                    }
+                    // Get the actual selected employee IDs and ensure they're integers
+                    $actualSelectedEmployeeIds = array_map('intval', $this->selectedEmployees);
+                    // Process each selected employee
+                    foreach ($actualSelectedEmployeeIds as $employeeId) {
+                        $this->assignRoleToEmployee($batch, $employeeId, $this->formData['role_id']);
+                    }
                 }
 
                 DB::commit();
@@ -337,6 +433,8 @@ class BulkRoleAssign extends Component
                 // Refresh employee roles map and employee list after save
                 $this->fetchEmployeeRolesMap();
                 $this->loadDepartmentsWithEmployees();
+                $this->fetchStudentRolesMap();
+                $this->loadStudents();
 
                 Flux::toast(
                     heading: 'Success',
@@ -375,7 +473,8 @@ class BulkRoleAssign extends Component
                     'role_id' => $roleId,
                     'user_id' => $user->id
                 ];
-                $user->roles()->updateExistingPivot($roleId, []);
+                // Role already exists for this firm; no update needed to avoid empty SET SQL
+                // Ensure the pivot exists and do nothing
                 // Fetch the RoleUser pivot row
                 $roleUser = \App\Models\Saas\RoleUser::where([
                     'user_id' => $user->id,
@@ -421,6 +520,73 @@ class BulkRoleAssign extends Component
             DB::rollBack();
             throw new \Exception(
                 "Error processing role assignment for employee ID {$employeeId}: " . $e->getMessage()
+            );
+        }
+    }
+
+    protected function assignRoleToStudent($batch, $studentId, $roleId)
+    {
+        DB::beginTransaction();
+        try {
+            $firmId = session('firm_id');
+            $student = Student::with('user')->find($studentId);
+            if (!$student || !$student->user) {
+                throw new \Exception("Student or associated user not found for ID {$studentId}");
+            }
+            $user = $student->user;
+            $existingRole = $user->roles()->where('role_id', $roleId)->wherePivot('firm_id', $firmId)->first();
+            if ($existingRole) {
+                $oldData = [
+                    'role_id' => $roleId,
+                    'user_id' => $user->id
+                ];
+                // Role already exists for this firm; no update needed to avoid empty SET SQL
+                // Ensure the pivot exists and do nothing
+                // Fetch the RoleUser pivot row
+                $roleUser = \App\Models\Saas\RoleUser::where([
+                    'user_id' => $user->id,
+                    'role_id' => $roleId,
+                    'firm_id' => $firmId,
+                ])->first();
+                BatchItem::create([
+                    'batch_id' => $batch->id,
+                    'operation' => 'update',
+                    'model_type' => 'role_user',
+                    'model_id' => $roleUser ? $roleUser->id : null,
+                    'old_data' => json_encode($oldData),
+                    'new_data' => json_encode([])
+                ]);
+                Flux::toast(
+                    variant: 'info',
+                    heading: 'Role Updated',
+                    text: "Role assignment updated for student ID {$studentId}.",
+                );
+            } else {
+                $user->roles()->attach($roleId, ['firm_id' => $firmId]);
+                // Fetch the RoleUser pivot row
+                $roleUser = \App\Models\Saas\RoleUser::where([
+                    'user_id' => $user->id,
+                    'role_id' => $roleId,
+                    'firm_id' => $firmId,
+                ])->first();
+                BatchItem::create([
+                    'batch_id' => $batch->id,
+                    'operation' => 'insert',
+                    'model_type' => 'role_user',
+                    'model_id' => $roleUser ? $roleUser->id : null,
+                    'new_data' => json_encode([
+                        'user_id' => $user->id,
+                        'role_id' => $roleId,
+                        'firm_id' => $firmId
+                    ])
+                ]);
+            }
+            $this->syncUserActionsWithRole($user, $firmId);
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw new \Exception(
+                "Error processing role assignment for student ID {$studentId}: " . $e->getMessage()
             );
         }
     }
@@ -510,13 +676,16 @@ class BulkRoleAssign extends Component
             'role_id' => null,
         ];
         $this->selectedEmployees = [];
+        $this->selectedStudents = [];
         $this->selectedRole = null;
         $this->isEditing = false;
         $this->employeeSearch = '';
+        $this->studentSearch = '';
         $this->selectedEmploymentType = null;
 
         // Reset the filtered departments to show all employees
         $this->loadDepartmentsWithEmployees();
+        $this->loadStudents();
     }
 
     public function applyFilters()

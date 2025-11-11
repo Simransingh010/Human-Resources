@@ -40,7 +40,7 @@ class MenuController extends Controller
      * Return the menu items based on the selected firm and panel,
      * filtering permissions according to the modules assigned to that panel,
      * and grouping them hierarchically (App → Modules → Permissions).
-     */
+     */ 
     public function index(Request $request)
     {
         try {
