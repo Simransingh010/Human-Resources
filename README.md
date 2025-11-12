@@ -1,4 +1,4 @@
-# HRMS_12
+# HRMS
 
 A multi-tenant Human Resource Management System (HRMS) built on Laravel and Livewire, providing employee onboarding, attendance, leave management, payroll processing, taxation, reporting, and a SaaS administration layer. The project exposes a web UI (Livewire + Blade) and a mobile/3rd‑party friendly API (Laravel Sanctum).
 
