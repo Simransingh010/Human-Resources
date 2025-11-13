@@ -446,6 +446,7 @@ class StudentAttendanceController extends Controller
 		$att = $attendanceMap->get($student->id);
 		$status = $att->attendance_status_main ?? null;
 		$label = $status ? (StudentAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$status] ?? $status) : null;
+		$marked = $att ? 'yes' : 'no';
 		return [
 			'id' => $student->id,
 			'student_id' => $student->id,
@@ -460,6 +461,7 @@ class StudentAttendanceController extends Controller
 			'date' => $date,
 			'attendance_status_main' => $status,
 			'attendance_status_label' => $label,
+			'marked_attendence' => $marked,
 		];
 	}
 
