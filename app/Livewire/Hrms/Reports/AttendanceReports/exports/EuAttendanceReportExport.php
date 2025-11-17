@@ -5,6 +5,7 @@ namespace App\Livewire\Hrms\Reports\AttendanceReports\exports;
 use App\Models\Hrms\EmpPunch;
 use App\Models\Hrms\Employee;
 use App\Models\Saas\Firm;
+use App\Models\Saas\College;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
@@ -43,15 +44,15 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
     public function collection()
     {
         $query = Employee::with([
-            'emp_job_profile.department',
+            'colleges',
             'emp_job_profile.employment_type',
             'emp_job_profile.joblocation',
         ])->where('firm_id', session('firm_id'));
 
-        if (!empty($this->filters['department_id'])) {
-            $departmentIds = (array) $this->filters['department_id'];
-            $query->whereHas('emp_job_profile', function ($q) use ($departmentIds) {
-                $q->whereIn('department_id', $departmentIds);
+        if (!empty($this->filters['college_id'])) {
+            $collegeIds = (array) $this->filters['college_id'];
+            $query->whereHas('colleges', function ($q) use ($collegeIds) {
+                $q->whereIn('id', $collegeIds);
             });
         }
 
@@ -73,14 +74,25 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
             });
         }
 
-        $employees = $query->get()->sortBy(fn($e) => optional($e->emp_job_profile->department)->title . ' ' . ($e->fname ?? ''));
+        $employees = $query->get()->sortBy(fn($e) => optional($e->colleges->first())->name . ' ' . ($e->fname ?? ''));
 
-        // Build a flattened list with department header rows
-        $grouped = $employees->groupBy(fn($e) => optional($e->emp_job_profile->department)->title ?? 'Unassigned');
+        // Build a flattened list with college header rows
+        $grouped = $employees->groupBy(fn($e) => optional($e->colleges->first())->name ?? 'Unassigned');
+
+        // Move unassigned group to the end if present
+        $unassigned = $grouped->pull('Unassigned');
+
         $rows = collect();
-        foreach ($grouped as $dept => $emps) {
-            $rows->push(['__type' => 'department', 'department' => $dept]);
+        foreach ($grouped as $college => $emps) {
+            $rows->push(['__type' => 'college', 'college' => $college]);
             foreach ($emps as $emp) {
+                $rows->push(['__type' => 'employee', 'model' => $emp]);
+            }
+        }
+
+        if ($unassigned) {
+            $rows->push(['__type' => 'college', 'college' => 'Unassigned']);
+            foreach ($unassigned as $emp) {
                 $rows->push(['__type' => 'employee', 'model' => $emp]);
             }
         }
@@ -111,9 +123,9 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
 
     public function     map($item): array
     {
-        // Department header row
-        if (is_array($item) && ($item['__type'] ?? null) === 'department') {
-            $label =  ($item['department'] ?? '');
+        // College header row
+        if (is_array($item) && ($item['__type'] ?? null) === 'college') {
+            $label =  ($item['college'] ?? '');
             $row = [$label];
             // pad remaining columns as blanks
             $totalCols = 4 + count($this->dateRange);
@@ -134,9 +146,9 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
             ->groupBy(fn($p) => Carbon::parse($p->work_date)->format('Y-m-d'));
 
         $row = [
-            $job->biometric_emp_code ?? '',
+            optional($job)->biometric_emp_code ?? '',
             trim(($employee->fname ?? '') . ' ' . ($employee->lname ?? '')),
-            optional($job->doh)->format('d-m-Y') ?? '',
+            optional(optional($job)->doh)->format('d-m-Y') ?? '',
         ];
 
         foreach ($this->dateRange as $date) {
@@ -152,13 +164,13 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
     protected function buildCellForDate(Carbon $date, Collection $dayPunches): string
     {
         $dayCode = $date->dayOfWeek; // 0 Sun .. 6 Sat
-        
+
         // Get only first entry (in) and last entry (out) of the day
         $firstPunch = $dayPunches->first();
         $lastPunch = $dayPunches->last();
-        
+
         $punchStrings = [];
-        
+
        if ($firstPunch && $lastPunch) {
            // Always show first punch as "in" regardless of actual in_out value
            $punchStrings[] = Carbon::parse($firstPunch->punch_datetime)->format('H:i') .' ';
@@ -168,7 +180,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
                $punchStrings[] = Carbon::parse($lastPunch->punch_datetime)->format('H:i') . ' ';
            }
        }
-       
+
 
         [$status, $firstIn, $lastOut] = $this->deriveStatus($date, $dayPunches);
 
@@ -198,7 +210,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
         // Get first IN punch and last OUT punch specifically
         $firstInPunch = $dayPunches->firstWhere('in_out', 'I');
         $lastOutPunch = $dayPunches->where('in_out', 'O')->last();
-        
+
         // Fallback: if no specific IN/OUT punches, use first and last punches
         $firstIn = $firstInPunch?->punch_datetime ?? $dayPunches->first()?->punch_datetime;
         $lastOut = $lastOutPunch?->punch_datetime ?? $dayPunches->last()?->punch_datetime;
@@ -377,14 +389,14 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
 
 
 
-                // Format department header rows: bold, merged across columns, shaded
+                // Format college header rows: bold, merged across columns, shaded
                 for ($row = 4; $row <= $lastRow; $row++) {
                     $a = (string) $sheet->getCell('A' . $row)->getValue();
                     $b = (string) $sheet->getCell('B' . $row)->getValue();
                     $c = (string) $sheet->getCell('C' . $row)->getValue();
                     $d = (string) $sheet->getCell('D' . $row)->getValue();
-                    $isDeptRow = ($a !== '') && ($b === '') && ($c === '') && ($d === '');
-                    if ($isDeptRow) {
+                    $isCollegeRow = ($a !== '') && ($b === '') && ($c === '') && ($d === '');
+                    if ($isCollegeRow) {
                         $range = 'A' . $row . ':' . $endColumn . $row;
                         $sheet->mergeCells($range);
                         $sheet->getStyle($range)->getFont()->setBold(true)->setSize(12);

@@ -54,14 +54,34 @@ class StudentAttendanceController extends Controller
 			$studentIds = $this->normalizeStudentIds($data);
 			$this->assertDateIsToday($data['date']);
 			$results = collect($studentIds)->map(fn($sid) => $this->processCoachMark($sid, $data, $coach, $request));
+			
+			// Determine message type based on results
+			$hasErrors = $results->contains(fn($r) => $r['result'] === 'error');
+			$hasSuccess = $results->contains(fn($r) => $r['result'] === 'success');
+			$hasSkipped = $results->contains(fn($r) => $r['result'] === 'skipped');
+			
+			if ($hasErrors && !$hasSuccess) {
+				$messageType = 'error';
+				$message = 'Failed to mark attendance for all students';
+			} elseif ($hasErrors) {
+				$messageType = 'warning';
+				$message = 'Attendance processed with some errors';
+			} elseif ($hasSkipped && !$hasSuccess) {
+				$messageType = 'info';
+				$message = 'All students already had attendance marked';
+			} else {
+				$messageType = 'success';
+				$message = 'Attendance marked successfully';
+			}
+			
 			// Also return full assigned list with marked/not-marked for UI differentiation
 			$students = $this->fetchCoachStudents($coach->id);
 			$attendanceMap = $this->mapAttendancesForDate($students->pluck('id')->all(), $data['date']);
 			$studentsList = $students->map(fn($s) => $this->buildStudentSummaryMarked($s, $attendanceMap, $data['date']));
 			return response()->json([
-				'message_type' => 'success',
+				'message_type' => $messageType,
 				'message_display' => 'none',
-				'message' => 'Coach attendance processed',
+				'message' => $message,
 				'date' => $data['date'],
 				'results' => $results,
 				'students' => $studentsList,
@@ -142,7 +162,7 @@ class StudentAttendanceController extends Controller
 					'message_display' => 'none',
 					'message' => 'No punches found for today',
 					'nextpunch' => 'in',
-					'study_centre_id' => $student->study_centre_id,
+					'study_centre_id' => optional($student->student_education_detail)->study_centre_id,
 					'todaypunches' => [],
 				], 200);
 			}
@@ -152,7 +172,7 @@ class StudentAttendanceController extends Controller
 				'message_display' => 'none',
 				'message' => 'Today punches fetched',
 				'nextpunch' => $next,
-				'study_centre_id' => $student->study_centre_id,
+				'study_centre_id' => optional($student->student_education_detail)->study_centre_id,
 				'todaypunches' => $punches,
 			], 200);
 		} catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
@@ -169,6 +189,30 @@ class StudentAttendanceController extends Controller
 				'Failed to fetch today punches. Internal server error.',
 				'INTERNAL_ERROR'
 			);
+		}
+	}
+
+	/**
+	 * Get complete student details including personal and education information.
+	 */
+	public function studentDetails(Request $request)
+	{
+		try {
+			$student = $this->getAuthenticatedStudent($request);
+			$studentWithDetails = $this->fetchStudentWithAllDetails($student->id);
+			$details = $this->buildCompleteStudentDetails($studentWithDetails);
+			
+			return response()->json([
+				'message_type' => 'success',
+				'message_display' => 'none',
+				'message' => 'Student details fetched',
+				'student' => $details,
+			], 200);
+		} catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+			return $this->errorResponse($e->getStatusCode(), $e->getMessage(), 'HTTP_ERROR');
+		} catch (\Throwable $e) {
+			\Log::error('Student details error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
+			return $this->errorResponseThrowable($e, 500, 'Failed to fetch student details. Internal server error.', 'INTERNAL_ERROR');
 		}
 	}
 
@@ -267,7 +311,9 @@ class StudentAttendanceController extends Controller
 		abort_if(!$user, 401, 'Unauthenticated: No user found in request. Please provide a valid Bearer token.');
 		abort_if(!method_exists($user, 'student'), 500, 'User model does not have a student relationship. Please check your user setup.');
 		abort_if(!$user->student, 404, 'Authenticated user does not have a student record. Please onboard the user as a student.');
-		return $user->student;
+		$student = $user->student;
+		$student->load('student_education_detail.study_centre');
+		return $student;
 	}
 
 	/**
@@ -425,7 +471,7 @@ class StudentAttendanceController extends Controller
 
 	private function fetchCoachStudents(int $coachEmployeeId)
 	{
-		return \App\Models\Hrms\Student::with(['study_centre', 'student_education_detail'])
+		return \App\Models\Hrms\Student::with(['study_centre', 'student_education_detail.study_centre'])
 			->whereHas('student_education_detail', function ($q) use ($coachEmployeeId) {
 				$q->where('reporting_coach_id', $coachEmployeeId);
 			})
@@ -455,12 +501,12 @@ class StudentAttendanceController extends Controller
 			
 			'email' => $student->email,
 			'phone' => $student->phone,
-			'student_code' => optional($student->student_education_detail)->student_code,
-			'study_centre_id' => $student->study_centre_id,
-			'study_centre' => optional($student->study_centre)->name,
+			'student_code' => optional($student->student_education_detail)->student_code ?? '',
+			'study_centre_id' => optional($student->student_education_detail)->study_centre_id ?? '',
+			'study_centre' => optional($student->student_education_detail)->study_centre->name ?? '',
 			'date' => $date,
-			'attendance_status_main' => $status,
-			'attendance_status_label' => $label,
+			'attendance_status_main' => $status ?? '',
+			'attendance_status_label' => $label ?? '',
 			'marked_attendence' => $marked,
 		];
 	}
@@ -528,7 +574,7 @@ class StudentAttendanceController extends Controller
 
 	private function createCoachAttendance(int $studentId, array $data, $coach): StudentAttendance
 	{
-		$student = \App\Models\Hrms\Student::findOrFail($studentId);
+		$student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->findOrFail($studentId);
 		$coachName = trim(($coach->fname ?? '') . ' ' . ($coach->lname ?? ''));
 		$remarks = 'Marked by Coach - ' . $coachName;
 		if (!empty($data['remarks'])) {
@@ -537,7 +583,7 @@ class StudentAttendanceController extends Controller
 		return StudentAttendance::create([
 			'firm_id' => (int) $student->firm_id,
 			'student_id' => $student->id,
-			'study_centre_id' => $student->study_centre_id,
+			'study_centre_id' => optional($student->student_education_detail)->study_centre_id,
 			'attendance_date' => $data['date'],
 			'attendance_status_main' => $data['attendance_status_main'],
 			'duration_hours' => 0,
@@ -572,10 +618,10 @@ class StudentAttendanceController extends Controller
         if (!$hasSelfie && !$hasLatLng) {
             return;
         }
-        $student = \App\Models\Hrms\Student::findOrFail($studentId);
+        $student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->findOrFail($studentId);
         [$today, $now] = $this->getTodayAndNow();
         $punch = $this->createPunchRecord($student, $attendance, [
-            'study_centre_id' => $student->study_centre_id,
+            'study_centre_id' => optional($student->student_education_detail)->study_centre_id,
             'in_out' => 'in',
             'punch_type' => 'manual',
             'latitude' => $data['latitude'] ?? null,
@@ -583,6 +629,134 @@ class StudentAttendanceController extends Controller
             'device_id' => null,
         ], $data['date'] ?? $today, $now);
         $this->attachSelfieIfProvided($request, $punch);
+	}
+
+	// ---------------------------
+	// Student details helpers
+	// ---------------------------
+
+	private function fetchStudentWithAllDetails(int $studentId): Student
+	{
+		return Student::with([
+			'student_personal_detail',
+			'student_education_detail.study_centre',
+			'student_education_detail.reporting_coach',
+			'student_education_detail.location',
+			'firm',
+			'user'
+		])->findOrFail($studentId);
+	}
+
+	private function buildCompleteStudentDetails(Student $student): array
+	{
+		return array_merge(
+			$this->extractStudentBasicInfo($student),
+			$this->extractPersonalDetails($student),
+			$this->extractEducationDetails($student)
+		);
+	}
+
+	private function extractStudentBasicInfo(Student $student): array
+	{
+		return [
+			'id' => $student->id,
+			'firm_id' => $student->firm_id,
+			'user_id' => $student->user_id,
+			'name' => $this->buildFullName($student),
+			'fname' => $student->fname,
+			'mname' => $student->mname,
+			'lname' => $student->lname,
+			'email' => $student->email,
+			'phone' => $student->phone,
+			'is_inactive' => $student->is_inactive,
+			'created_at' => $student->created_at,
+			'updated_at' => $student->updated_at,
+		];
+	}
+
+	private function extractPersonalDetails(Student $student): array
+	{
+		$personal = $student->student_personal_detail;
+		if (!$personal) {
+			return $this->getEmptyPersonalDetails();
+		}
+		return [
+			'gender' => $personal->gender,
+			'fathername' => $personal->fathername,
+			'mothername' => $personal->mothername,
+			'mobile_number' => $personal->mobile_number,
+			'dob' => $personal->dob,
+			'admission_date' => $personal->admission_date,
+			'marital_status' => $personal->marital_status,
+			'doa' => $personal->doa,
+			'nationality' => $personal->nationality,
+			'adharno' => $personal->adharno,
+			'panno' => $personal->panno,
+		];
+	}
+
+	private function extractEducationDetails(Student $student): array
+	{
+		$education = $student->student_education_detail;
+		if (!$education) {
+			return $this->getEmptyEducationDetails();
+		}
+		return [
+			'student_code' => $education->student_code,
+			'doh' => $education->doh,
+			'study_centre_id' => $education->study_centre_id,
+			'study_centre_name' => optional($education->study_centre)->name,
+			'reporting_coach_id' => $education->reporting_coach_id,
+			'reporting_coach_name' => $this->buildCoachName($education->reporting_coach),
+			'location_id' => $education->location_id,
+			'location_name' => optional($education->location)->name,
+			'doe' => $education->doe,
+		];
+	}
+
+	private function buildFullName(Student $student): string
+	{
+		return trim(($student->fname ?? '') . ' ' . ($student->mname ?? '') . ' ' . ($student->lname ?? ''));
+	}
+
+	private function buildCoachName($coach): ?string
+	{
+		if (!$coach) {
+			return null;
+		}
+		return trim(($coach->fname ?? '') . ' ' . ($coach->lname ?? ''));
+	}
+
+	private function getEmptyPersonalDetails(): array
+	{
+		return [
+			'gender' => null,
+			'fathername' => null,
+			'mothername' => null,
+			'mobile_number' => null,
+			'dob' => null,
+			'admission_date' => null,
+			'marital_status' => null,
+			'doa' => null,
+			'nationality' => null,
+			'adharno' => null,
+			'panno' => null,
+		];
+	}
+
+	private function getEmptyEducationDetails(): array
+	{
+		return [
+			'student_code' => null,
+			'doh' => null,
+			'study_centre_id' => null,
+			'study_centre_name' => null,
+			'reporting_coach_id' => null,
+			'reporting_coach_name' => null,
+			'location_id' => null,
+			'location_name' => null,
+			'doe' => null,
+		];
 	}
 
 	// ---------------------------

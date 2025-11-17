@@ -50,6 +50,105 @@ class StudentBulkUpload extends Component
         $this->loadBatches();
     }
 
+    private function prescanCsvFile()
+    {
+        $file = fopen($this->csvFile->getRealPath(), 'r');
+        if (!$file) {
+            throw new \Exception("Could not open the CSV file. Please check if the file is valid.");
+        }
+
+        $headers = fgetcsv($file);
+        if (!$headers) {
+            fclose($file);
+            throw new \Exception("The CSV file appears to be empty or invalid.");
+        }
+
+        $validRows = [];
+        $phones = [];
+        $errors = [];
+        $rowNumber = 2;
+
+        while (($row = fgetcsv($file)) !== false) {
+            if (empty(array_filter($row))) {
+                $rowNumber++;
+                continue;
+            }
+
+            try {
+                $row = array_pad($row, 7, '');
+                $centreName = $this->normalizeCentreName($row[0] ?? '');
+                $centreKey = $this->normalizeCentreKey($centreName);
+                $phone = trim($row[4] ?? '');
+
+                if (empty($centreName)) {
+                    $errors[] = "Row $rowNumber: Center Name is required.";
+                    $rowNumber++;
+                    continue;
+                }
+
+                if (empty($phone)) {
+                    $errors[] = "Row $rowNumber: Mobile No is required.";
+                    $rowNumber++;
+                    continue;
+                }
+
+                if (!preg_match('/^\d{10,12}$/', $row[4])) {
+                    $errors[] = "Row $rowNumber: Invalid phone/identifier. Must be 10-12 digits: {$row[4]}";
+                    $rowNumber++;
+                    continue;
+                }
+
+                if (isset($phones[$phone])) {
+                    $errors[] = "Row $rowNumber: Duplicate phone $phone in uploaded file (previous row {$phones[$phone]}).";
+                    $rowNumber++;
+                    continue;
+                }
+
+                $phones[$phone] = $rowNumber;
+                $validRows[] = [
+                    'data' => $row,
+                    'rowNumber' => $rowNumber,
+                    'phone' => $phone,
+                    'centre_name' => $centreName,
+                    'centre_key' => $centreKey,
+                ];
+            } catch (\Throwable $rowError) {
+                $errors[] = "Row $rowNumber: " . $rowError->getMessage();
+                $rowNumber++;
+                continue;
+            }
+
+            $rowNumber++;
+        }
+
+        fclose($file);
+
+        if (!empty($phones)) {
+            $existingUsers = User::whereIn('phone', array_keys($phones))
+                ->pluck('id', 'phone')
+                ->all();
+
+            if (!empty($existingUsers)) {
+                foreach ($validRows as $index => $row) {
+                    $phone = $row['phone'] ?? null;
+                    if (!$phone) {
+                        continue;
+                    }
+
+                    if (isset($existingUsers[$phone])) {
+                        $errors[] = "Row {$row['rowNumber']}: User already exists for phone '$phone' (user id {$existingUsers[$phone]}) — skipping row.";
+                        unset($validRows[$index]);
+                    }
+                }
+            }
+        }
+
+        return [
+            'rows' => array_values($validRows),
+            'errors' => $errors,
+        ];
+    }
+
     private function loadBatches()
     {
         $this->batches = Batch::where('modulecomponent', 'hrms.onboard.student-bulk-upload')
@@ -106,6 +205,7 @@ class StudentBulkUpload extends Component
     private function writeTemplateHeaders($file)
     {
         fputcsv($file, [
+            'Center Name*',
             'Player Name*',
             'Gender*',
             'DOB',
@@ -118,6 +218,7 @@ class StudentBulkUpload extends Component
     private function writeTemplateSampleRow($file)
     {
         fputcsv($file, [
+            'GHANDHIR',
             'John Middle Doe',
             'Male',
             '2000-01-15',
@@ -177,7 +278,7 @@ class StudentBulkUpload extends Component
 
             $this->resetUploadState();
             $this->loadBatches();
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             $this->dispatch('notify', [
                 'type' => 'error',
@@ -190,42 +291,47 @@ class StudentBulkUpload extends Component
     {
         $items = $batch->items()->orderBy('id', 'desc')->get();
         $deletedCount = 0;
+        $batchUserIds = $items
+            ->where('model_type', User::class)
+            ->pluck('model_id')
+            ->toArray();
 
         foreach ($items as $item) {
-            $deletedCount += $this->deleteItemByType($item);
+            $deletedCount += $this->deleteItemByType($item, $batchUserIds);
         }
 
         return $deletedCount;
     }
 
-    private function deleteItemByType($item)
+    private function deleteItemByType($item, array $batchUserIds)
     {
         if ($item->model_type === Student::class) {
-            return $this->deleteStudentRecord($item);
+            return $this->deleteStudentRecord($item, $batchUserIds);
         }
 
         return $this->deleteStandardRecord($item);
     }
 
-    private function deleteStudentRecord($item)
+    private function deleteStudentRecord($item, array $batchUserIds)
     {
         $student = Student::where('id', $item->model_id)->first();
         if (!$student) {
             return 0;
         }
 
-        $this->deleteStudentRelatedRecords($student);
+        $this->deleteStudentRelatedRecords($student, $batchUserIds);
         $student->delete();
         return 1;
     }
 
-    private function deleteStudentRelatedRecords($student)
+    private function deleteStudentRelatedRecords($student, array $batchUserIds)
     {
         StudentPersonalDetail::where('student_id', $student->id)->delete();
         StudentEducationDetail::where('student_id', $student->id)->delete();
-        
-        if ($student->user_id) {
-            User::where('id', $student->user_id)->delete();
+
+        $userId = $student->user_id;
+        if ($userId && in_array($userId, $batchUserIds)) {
+            User::where('id', $userId)->delete();
         }
     }
 
@@ -312,10 +418,28 @@ class StudentBulkUpload extends Component
 
         try {
             $this->initializeUpload();
+            $scanResult = $this->prescanCsvFile();
+            $this->uploadErrors = $scanResult['errors'];
+
+            $validRows = $scanResult['rows'];
+            $this->totalRecords = count($validRows);
+
+            if (!empty($this->uploadErrors)) {
+                $this->dispatch('notify', [
+                    'type' => 'warning',
+                    'message' => 'Some rows were skipped due to validation errors. Remaining valid records will be processed.'
+                ]);
+            }
+
+            if ($this->totalRecords === 0) {
+                $this->dispatch('notify', [
+                    'type' => 'error',
+                    'message' => 'The upload file does not contain any valid records.'
+                ]);
+                return;
+            }
+
             $batch = $this->createBatch();
-            
-            // Count total records first
-            $this->countTotalRecords();
             
             // Start progress tracking
             $this->isUploading = true;
@@ -323,9 +447,9 @@ class StudentBulkUpload extends Component
             $this->processedCount = 0;
             $this->currentProgress = 0;
             
-            $result = $this->processCsvFile($batch);
+            $result = $this->processRows($validRows, $batch);
             $this->finalizeUpload($batch, $result);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             if (DB::transactionLevel() > 0) {
                 DB::rollBack();
             }
@@ -340,27 +464,6 @@ class StudentBulkUpload extends Component
         } finally {
             $this->isUploading = false;
         }
-    }
-    
-    private function countTotalRecords()
-    {
-        $file = fopen($this->csvFile->getRealPath(), 'r');
-        if (!$file) {
-            return;
-        }
-        
-        // Skip header
-        fgetcsv($file);
-        
-        $count = 0;
-        while (($row = fgetcsv($file)) !== false) {
-            if (!empty(array_filter($row))) {
-                $count++;
-            }
-        }
-        
-        fclose($file);
-        $this->totalRecords = $count;
     }
     
     private function initializeUpload()
@@ -385,26 +488,8 @@ class StudentBulkUpload extends Component
         return $batch;
     }
 
-    private function processCsvFile($batch)
+    private function processRows(array $rows, $batch)
     {
-        $file = fopen($this->csvFile->getRealPath(), 'r');
-        if (!$file) {
-            throw new \Exception("Could not open the CSV file. Please check if the file is valid.");
-        }
-
-        $headers = fgetcsv($file);
-        if (!$headers) {
-            throw new \Exception("The CSV file appears to be empty or invalid.");
-        }
-
-        return $this->processCsvRows($file, $batch);
-    }
-
-    private function processCsvRows($file, $batch)
-    {
-        $rows = [];
-        $rowNumber = 2;
-
         // Cache values once - major performance improvement
         $studentRole = Role::where('name', 'student')->first();
         $studentRoleId = $studentRole ? $studentRole->id : null;
@@ -414,35 +499,17 @@ class StudentBulkUpload extends Component
             throw new \Exception("Firm ID not found in session");
         }
 
+        $studyCentreMap = $this->ensureStudyCentresForRows($rows, $firmId, $batch);
+
         // Pre-hash password once instead of per record
         $hashedPassword = Hash::make('password');
         $hashedPasscode = Hash::make('password');
         $now = now();
 
-        while (($row = fgetcsv($file)) !== false) {
-            // Skip empty rows
-            if (empty(array_filter($row))) {
-                $rowNumber++;
-                continue;
-            }
-            
-            $rows[] = ['data' => $row, 'rowNumber' => $rowNumber];
-
-            // Process in chunks of 300 for optimal performance
-            if (count($rows) >= 300) {
-                $this->processChunk($rows, $batch, $studentRoleId, $firmId, $hashedPassword, $hashedPasscode, $now);
-                $rows = [];
-            }
-
-            $rowNumber++;
+        $chunks = array_chunk($rows, 300);
+        foreach ($chunks as $chunk) {
+            $this->processChunk($chunk, $batch, $studentRoleId, $firmId, $hashedPassword, $hashedPasscode, $now, $studyCentreMap);
         }
-
-        // Process remaining rows
-        if (count($rows) > 0) {
-            $this->processChunk($rows, $batch, $studentRoleId, $firmId, $hashedPassword, $hashedPasscode, $now);
-        }
-
-        fclose($file);
 
         return [
             'successCount' => $this->totalSuccess,
@@ -451,234 +518,296 @@ class StudentBulkUpload extends Component
         ];
     }
 
-    private function processChunk(array $rows, $batch, $studentRoleId, $firmId, $hashedPassword, $hashedPasscode, $now)
+    private function processChunk(array $rows, $batch, $studentRoleId, $firmId, $hashedPassword, $hashedPasscode, $now, array $studyCentreMap)
     {
         DB::beginTransaction();
         try {
             $usersToInsert = [];
             $studentsToInsert = [];
-            $personalDetailsToInsert = [];
-            $roleUserPivots = [];
-            $batchItemsToInsert = [];
-            $phonesToCheck = [];
-            $phoneToIndexMap = []; // Track phone to index mapping for deduplication
-
+            $personalDetailEntries = [];
+            $educationDetailEntries = [];
+            $phoneToIndexMap = [];
+            $rowNumbersByPhone = [];
             $studentNames = [];
-            $validIndices = []; // Track which rows are valid
-            
+
             foreach ($rows as $index => $rowData) {
-                $row = $rowData['data'];
+                $row = array_pad($rowData['data'], 7, '');
                 $rowNumber = $rowData['rowNumber'];
-                
+                $phone = trim($rowData['phone'] ?? $row[4] ?? '');
+                $centreName = $rowData['centre_name'] ?? $this->normalizeCentreName($row[0] ?? '');
+                $centreKey = $rowData['centre_key'] ?? $this->normalizeCentreKey($centreName);
+
                 try {
-                    // Ensure row has proper structure - pad to 6 elements
-                    $row = array_pad($row, 6, '');
-                    
-                    // Validate row
                     $this->validateRow($row);
-                    
-                    // Get phone number
-                    $phone = trim($row[3] ?? '');
-                    
-                    // Skip if phone already exists in this chunk (deduplicate within chunk)
-                    if (!empty($phone) && isset($phoneToIndexMap[$phone])) {
+
+                    if (empty($centreName)) {
+                        $this->totalErrors++;
+                        $this->errorMessages[] = "Row $rowNumber: Center Name is required.";
+                        continue;
+                    }
+
+                    if (!$centreKey || !isset($studyCentreMap[$centreKey])) {
+                        $this->totalErrors++;
+                        $this->errorMessages[] = "Row $rowNumber: Unable to resolve study centre '$centreName'.";
+                        continue;
+                    }
+                    $studyCentreId = $studyCentreMap[$centreKey] ?? null;
+
+                    if (empty($phone)) {
+                        $this->totalErrors++;
+                        $this->errorMessages[] = "Row $rowNumber: Mobile No is required.";
+                        continue;
+                    }
+
+                    if (isset($phoneToIndexMap[$phone])) {
                         $this->totalErrors++;
                         $this->errorMessages[] = "Row $rowNumber: Duplicate phone number '$phone' found in the same upload batch. Skipping duplicate.";
                         continue;
                     }
-                    
-                    // Track phone number
-                    if (!empty($phone)) {
-                        $phoneToIndexMap[$phone] = $index;
-                        $phonesToCheck[] = $phone;
-                    }
-                    
-                    // Get student name for display
-                    $nameParts = $this->splitPlayerName($row[0] ?? '');
-                    $studentName = trim(implode(' ', array_filter($nameParts)));
-                    $studentNames[] = $studentName;
-                    
-                    // Prepare data for bulk insert
+
+                    $phoneToIndexMap[$phone] = $index;
+                    $rowNumbersByPhone[$phone] = $rowNumber;
+
+                    $nameParts = $this->splitPlayerName($row[1] ?? '');
+                    $studentNames[] = trim(implode(' ', array_filter($nameParts)));
+
                     $userData = $this->prepareUserDataForBulk($row, $hashedPassword, $hashedPasscode, $now);
                     $studentData = $this->prepareStudentDataForBulk($row, $userData, $firmId, $now);
                     $personalDetailData = $this->preparePersonalDetailDataForBulk($row, $now);
-                    
+
                     $usersToInsert[] = $userData;
                     $studentsToInsert[] = $studentData;
-                    $personalDetailsToInsert[] = $personalDetailData;
-                    $validIndices[] = $index; // Track valid row index
-                    
-                    if ($studentRoleId) {
-                        $roleUserPivots[] = [
-                            'user_id' => null, // Will be set after user insert
-                            'role_id' => $studentRoleId,
-                            'firm_id' => $firmId
-                        ];
-                    }
-                    
-                    $this->totalSuccess++;
-                } catch (\Exception $e) {
+                    $personalDetailEntries[] = [
+                        'phone' => $phone,
+                        'data' => $personalDetailData,
+                    ];
+                    $educationDetailEntries[] = [
+                        'phone' => $phone,
+                        'study_centre_id' => $studyCentreId,
+                    ];
+                } catch (\Throwable $e) {
                     $this->totalErrors++;
                     $this->errorMessages[] = "Row $rowNumber: " . $e->getMessage();
                 }
             }
 
-            // Check for existing users by phone and delete old student data
-            if (count($phonesToCheck) > 0) {
-                // Remove duplicates from phonesToCheck array
-                $phonesToCheck = array_unique($phonesToCheck);
-                $this->deleteExistingStudentsByPhone($phonesToCheck, $firmId);
-            }
+            $insertedUsers = collect();
+            $userPhoneMap = [];
+            $failedPhones = [];
+            $chunkSuccessCount = 0;
 
-            // Bulk insert/update users
             if (count($usersToInsert) > 0) {
-                $userPhoneMap = $this->insertOrUpdateUsers($usersToInsert);
-                
-                // Get all users in the correct order based on phones
-                $phones = array_column($usersToInsert, 'phone');
-                $insertedUsers = collect($phones)->map(function($phone) use ($userPhoneMap) {
-                    return $userPhoneMap[$phone] ?? null;
-                })->filter()->values();
-                
-                // Update student data with user_ids and track valid indices
-                $validStudentIndices = [];
-                foreach ($studentsToInsert as $index => &$studentData) {
-                    if (isset($insertedUsers[$index])) {
-                        $studentData['user_id'] = $insertedUsers[$index]->id;
-                        $validStudentIndices[] = $index; // Track which indices are valid
+                $insertResult = $this->insertNewUsersOnly($usersToInsert, $rowNumbersByPhone);
+                $insertedUsers = $insertResult['users'];
+                $userPhoneMap = $insertResult['userMap'];
+                $failedPhones = $insertResult['failed'];
+
+                if (!empty($failedPhones)) {
+                    foreach ($failedPhones as $phone => $failedRowNumber) {
+                        $this->totalErrors++;
+                        $prefix = $failedRowNumber ? "Row $failedRowNumber: " : '';
+                        $this->errorMessages[] = $prefix . "User already exists for phone '$phone'. Skipping row.";
                     }
-                }
-                
-                // Filter out students without valid user_ids
-                $validStudentsToInsert = array_filter($studentsToInsert, function($student) {
-                    return !empty($student['user_id']);
+
+                $studentsToInsert = array_filter($studentsToInsert, function ($student) use ($failedPhones) {
+                    return !isset($failedPhones[$student['phone']]);
                 });
-                $validStudentsToInsert = array_values($validStudentsToInsert); // Re-index array
-                
-                // Bulk insert students (only if we have valid students)
-                if (count($validStudentsToInsert) > 0) {
-                    Student::insert($validStudentsToInsert);
-                    
-                    // Get inserted student IDs by user_id
-                    $userIds = array_column($validStudentsToInsert, 'user_id');
-                    $insertedStudents = Student::whereIn('user_id', $userIds)->get();
-                    // Sort by insertion order
-                    $insertedStudents = $insertedStudents->sortBy(function($student) use ($userIds) {
-                        return array_search($student->user_id, $userIds);
-                    })->values();
-                } else {
-                    $insertedStudents = collect();
+                $personalDetailEntries = array_filter($personalDetailEntries, function ($entry) use ($failedPhones) {
+                    $phoneRef = $entry['phone'] ?? null;
+                    return $phoneRef && !isset($failedPhones[$phoneRef]);
+                });
+                    $educationDetailEntries = array_filter($educationDetailEntries, function ($entry) use ($failedPhones) {
+                        $phoneRef = $entry['phone'] ?? null;
+                        return $phoneRef && !isset($failedPhones[$phoneRef]);
+                    });
                 }
-                
-                // Build phone -> user_id map from userPhoneMap
+
                 $userIdByPhone = [];
                 foreach ($userPhoneMap as $phoneKey => $userObj) {
                     if ($userObj) {
                         $userIdByPhone[$phoneKey] = $userObj->id;
                     }
                 }
-                // Build user_id -> student_id map from inserted students
+
+                $personalDetailsByPhone = [];
+                foreach ($personalDetailEntries as $entry) {
+                    $personalDetailsByPhone[$entry['phone']] = $entry['data'];
+                }
+
+                $educationDetailsByPhone = [];
+                foreach ($educationDetailEntries as $entry) {
+                    $educationDetailsByPhone[$entry['phone']] = $entry['study_centre_id'];
+                }
+
+                $studentsReadyForInsert = [];
+                $userIds = [];
+
+                foreach ($studentsToInsert as $studentData) {
+                    $phone = $studentData['phone'];
+                    $userId = $userIdByPhone[$phone] ?? null;
+
+                    if (!$userId) {
+                        $rowNumber = $rowNumbersByPhone[$phone] ?? null;
+                        $this->totalErrors++;
+                        $messagePrefix = $rowNumber ? "Row $rowNumber: " : '';
+                        $this->errorMessages[] = $messagePrefix . "Unable to create user for phone '$phone'. Skipping student.";
+                        continue;
+                    }
+
+                    if (!isset($personalDetailsByPhone[$phone])) {
+                        $rowNumber = $rowNumbersByPhone[$phone] ?? null;
+                        $this->totalErrors++;
+                        $prefix = $rowNumber ? "Row $rowNumber: " : '';
+                        $this->errorMessages[] = $prefix . "Missing personal details for phone '$phone'. Skipping student.";
+                        continue;
+                    }
+
+                    if (!isset($educationDetailsByPhone[$phone])) {
+                        $rowNumber = $rowNumbersByPhone[$phone] ?? null;
+                        $this->totalErrors++;
+                        $prefix = $rowNumber ? "Row $rowNumber: " : '';
+                        $this->errorMessages[] = $prefix . "Missing study centre mapping for phone '$phone'. Skipping student.";
+                        continue;
+                    }
+
+                    $studentData['user_id'] = $userId;
+                    $studentsReadyForInsert[] = $studentData;
+                    $userIds[] = $userId;
+                }
+
+                if (count($studentsReadyForInsert) > 0) {
+                    Student::insert($studentsReadyForInsert);
+                    $insertedStudents = Student::whereIn('user_id', $userIds)->get();
+                    $insertedStudents = $insertedStudents->sortBy(function ($student) use ($userIds) {
+                        return array_search($student->user_id, $userIds);
+                    })->values();
+                    $chunkSuccessCount = count($studentsReadyForInsert);
+                } else {
+                    $insertedStudents = collect();
+                }
+
                 $studentIdByUserId = [];
                 foreach ($insertedStudents as $student) {
                     $studentIdByUserId[$student->user_id] = $student->id;
                 }
-                // Map personal details by phone -> user_id -> student_id
+
                 $finalPersonalDetails = [];
-                if (count($personalDetailsToInsert) > 0 && !empty($userIdByPhone) && !empty($studentIdByUserId)) {
-                    $phonesForRows = array_column($usersToInsert, 'phone');
-                    foreach ($personalDetailsToInsert as $idx => $detail) {
-                        $phoneForRow = $phonesForRows[$idx] ?? null;
-                        if (!$phoneForRow) {
-                            continue;
+                if (!empty($studentIdByUserId) && !empty($studentsReadyForInsert)) {
+                    foreach ($insertedStudents as $student) {
+                        $phoneForRow = $student->phone;
+                        $detail = $personalDetailsByPhone[$phoneForRow] ?? null;
+
+                        if (!$detail) {
+                            $rowNumber = $rowNumbersByPhone[$phoneForRow] ?? null;
+                            $prefix = $rowNumber ? "Row $rowNumber: " : '';
+                            throw new \Exception($prefix . "Failed to prepare personal details for phone '$phoneForRow'.");
                         }
-                        $userId = $userIdByPhone[$phoneForRow] ?? null;
-                        if (!$userId) {
-                            continue;
-                        }
-                        $studentId = $studentIdByUserId[$userId] ?? null;
-                        if (!$studentId) {
-                            continue;
-                        }
-                        $detail['student_id'] = $studentId;
-                        $finalPersonalDetails[] = $detail;
+
+                        $detail['student_id'] = $student->id;
+                        $finalPersonalDetails[$student->id] = $detail;
                     }
-                    // Deduplicate by student_id (ensure one personal detail per student)
-                    $dedupedByStudent = [];
-                    foreach ($finalPersonalDetails as $detail) {
-                        $dedupedByStudent[$detail['student_id']] = $detail;
-                    }
-                    $finalPersonalDetails = array_values($dedupedByStudent);
-                    if (count($finalPersonalDetails) > 0) {
-                        StudentPersonalDetail::insert($finalPersonalDetails);
+
+                    if (!empty($finalPersonalDetails)) {
+                        StudentPersonalDetail::insert(array_values($finalPersonalDetails));
+                    } else {
+                        throw new \Exception('Failed to prepare personal details for inserted students.');
                     }
                 }
-                
-                // Get inserted personal detail IDs
+
                 if (!empty($finalPersonalDetails)) {
-                    $studentIds = array_column($finalPersonalDetails, 'student_id');
+                    $studentIds = array_keys($finalPersonalDetails);
                     $insertedPersonalDetails = StudentPersonalDetail::whereIn('student_id', $studentIds)->get();
-                    // Sort by insertion order
-                    $insertedPersonalDetails = $insertedPersonalDetails->sortBy(function($detail) use ($studentIds) {
+                    $insertedPersonalDetails = $insertedPersonalDetails->sortBy(function ($detail) use ($studentIds) {
                         return array_search($detail->student_id, $studentIds);
                     })->values();
                 } else {
                     $insertedPersonalDetails = collect();
                 }
-                
-                // Update role user pivots with user_ids
-                foreach ($roleUserPivots as $index => &$pivot) {
-                    if (isset($insertedUsers[$index])) {
-                        $pivot['user_id'] = $insertedUsers[$index]->id;
+
+                $finalEducationDetails = [];
+                if (!empty($studentIdByUserId) && !empty($studentsReadyForInsert)) {
+                    foreach ($insertedStudents as $student) {
+                        $phoneForRow = $student->phone;
+                        $studyCentreId = $educationDetailsByPhone[$phoneForRow] ?? null;
+
+                        if (!$studyCentreId) {
+                            $rowNumber = $rowNumbersByPhone[$phoneForRow] ?? null;
+                            $prefix = $rowNumber ? "Row $rowNumber: " : '';
+                            throw new \Exception($prefix . "Failed to resolve study centre for phone '$phoneForRow'.");
+                        }
+
+                        $finalEducationDetails[$student->id] = [
+                            'student_id' => $student->id,
+                            'study_centre_id' => $studyCentreId,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    }
+
+                    if (!empty($finalEducationDetails)) {
+                        StudentEducationDetail::insert(array_values($finalEducationDetails));
+                    } else {
+                        throw new \Exception('Failed to prepare study centre details for inserted students.');
                     }
                 }
-                
-                // Filter out pivots without valid user_ids
-                $roleUserPivots = array_filter($roleUserPivots, function($pivot) {
-                    return !empty($pivot['user_id']);
-                });
-                $roleUserPivots = array_values($roleUserPivots);
-                
-                // Bulk insert role user pivots
-                if (count($roleUserPivots) > 0) {
-                    DB::table('role_user')->insertOrIgnore($roleUserPivots);
+
+                if (!empty($finalEducationDetails)) {
+                    $educationStudentIds = array_keys($finalEducationDetails);
+                    $insertedEducationDetails = StudentEducationDetail::whereIn('student_id', $educationStudentIds)->get();
+                    $insertedEducationDetails = $insertedEducationDetails->sortBy(function ($detail) use ($educationStudentIds) {
+                        return array_search($detail->student_id, $educationStudentIds);
+                    })->values();
+                } else {
+                    $insertedEducationDetails = collect();
                 }
-                
-                // Track batch items (optional - can be skipped for speed)
+
+                if ($studentRoleId && !empty($userIds)) {
+                    $roleUserPivots = [];
+                    foreach (array_unique($userIds) as $userId) {
+                        $roleUserPivots[] = [
+                            'user_id' => $userId,
+                            'role_id' => $studentRoleId,
+                            'firm_id' => $firmId,
+                        ];
+                    }
+
+                    if (!empty($roleUserPivots)) {
+                        DB::table('role_user')->insertOrIgnore($roleUserPivots);
+                    }
+                }
+
                 if ($insertedUsers->isNotEmpty()) {
-                    $this->trackBatchItemsBulk($batch, $insertedUsers, $insertedStudents, $insertedPersonalDetails);
+                    $this->trackBatchItemsBulk($batch, $insertedUsers, $insertedStudents, $insertedPersonalDetails, $insertedEducationDetails);
                 }
-                
-                // Update progress after chunk is saved
-                $this->processedCount += count($studentNames);
-                $this->currentProgress = $this->totalRecords > 0 
-                    ? round(($this->processedCount / $this->totalRecords) * 100, 2) 
-                    : 0;
-                
-                // Calculate estimated time remaining
-                if ($this->processedCount > 0) {
-                    $elapsed = microtime(true) - $this->startTime;
-                    $avgTimePerRecord = $elapsed / $this->processedCount;
-                    $remaining = ($this->totalRecords - $this->processedCount) * $avgTimePerRecord;
-                    $this->estimatedTimeRemaining = max(0, round($remaining));
-                }
-                
-                // Show last student name being processed
-                if (!empty($studentNames)) {
-                    $this->currentStudentName = end($studentNames);
-                }
-                
-                // Dispatch progress update
-                $this->dispatch('progress-updated', [
-                    'progress' => $this->currentProgress,
-                    'processed' => $this->processedCount,
-                    'total' => $this->totalRecords,
-                    'currentStudent' => $this->currentStudentName,
-                    'timeRemaining' => $this->estimatedTimeRemaining
-                ]);
             }
 
+            $this->processedCount += count($rows);
+            $this->totalSuccess += $chunkSuccessCount;
+            $this->currentProgress = $this->totalRecords > 0
+                ? round(($this->processedCount / $this->totalRecords) * 100, 2)
+                : 0;
+
+            if ($this->processedCount > 0) {
+                $elapsed = microtime(true) - $this->startTime;
+                $avgTimePerRecord = $elapsed / $this->processedCount;
+                $remaining = ($this->totalRecords - $this->processedCount) * $avgTimePerRecord;
+                $this->estimatedTimeRemaining = max(0, round($remaining));
+            }
+
+            if (!empty($studentNames)) {
+                $this->currentStudentName = end($studentNames);
+            }
+
+            $this->dispatch('progress-updated', [
+                'progress' => $this->currentProgress,
+                'processed' => $this->processedCount,
+                'total' => $this->totalRecords,
+                'currentStudent' => $this->currentStudentName,
+                'timeRemaining' => $this->estimatedTimeRemaining
+            ]);
+
             DB::commit();
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             $chunkStartRow = $rows[0]['rowNumber'] ?? 0;
             $this->totalErrors += count($rows);
@@ -689,11 +818,11 @@ class StudentBulkUpload extends Component
 
     private function validateRow($row)
     {
-        // Ensure row has at least 6 elements, pad with empty strings if needed
-        $row = array_pad($row, 6, '');
+        // Ensure row has at least 7 elements, pad with empty strings if needed
+        $row = array_pad($row, 7, '');
         
-        if (count($row) < 6) {
-            throw new \Exception("Row has insufficient columns. Expected 6 columns.");
+        if (count($row) < 7) {
+            throw new \Exception("Row has insufficient columns. Expected 7 columns.");
         }
 
         $this->validateRequiredFields($row);
@@ -703,12 +832,14 @@ class StudentBulkUpload extends Component
     private function validateRequiredFields($row)
     {
         // Safely access array keys with null coalescing
-        $playerName = trim($row[0] ?? '');
-        $gender = trim($row[1] ?? '');
-        $mobileNo = trim($row[3] ?? '');
-        $aadhar = trim($row[4] ?? '');
-        $fatherName = trim($row[5] ?? '');
+        $centerName = trim($row[0] ?? '');
+        $playerName = trim($row[1] ?? '');
+        $gender = trim($row[2] ?? '');
+        $mobileNo = trim($row[4] ?? '');
+        $aadhar = trim($row[5] ?? '');
+        $fatherName = trim($row[6] ?? '');
         
+        if (empty($centerName)) throw new \Exception("Center Name is required");
         if (empty($playerName)) throw new \Exception("Player Name is required");
         if (empty($gender)) throw new \Exception("Gender is required");
         if (empty($mobileNo)) throw new \Exception("Mobile No is required");
@@ -718,16 +849,17 @@ class StudentBulkUpload extends Component
 
     private function validateFieldFormats($row)
     {
-        if (!empty($row[2] ?? '')) {
-            $this->validateDate($row[2]);
+        if (!empty($row[3] ?? '')) {
+            $this->validateDate($row[3]);
         }
 
-        if (!empty($row[3] ?? '') && !preg_match('/^\d{10}$/', $row[3])) {
-            throw new \Exception("Invalid mobile number format. Must be 10 digits: " . ($row[3] ?? ''));
-        }
+      // Allow 10-digit real phone OR 12-digit Aadhaar
+if (!preg_match('/^\d{10}$/', $row[4]) && !preg_match('/^\d{12}$/', $row[4])) {
+    throw new \Exception("Invalid phone/identifier. Must be 10 or 12 digits: " . $row[4]);
+}
 
-        if (!empty($row[4] ?? '') && !preg_match('/^\d{12}$/', $row[4])) {
-            throw new \Exception("Invalid Aadhar format. Must be 12 digits: " . ($row[4] ?? ''));
+        if (!empty($row[5] ?? '') && !preg_match('/^\d{12}$/', $row[5])) {
+            throw new \Exception("Invalid Aadhar format. Must be 12 digits: " . ($row[5] ?? ''));
         }
     }
 
@@ -735,197 +867,78 @@ class StudentBulkUpload extends Component
     {
         try {
             \Carbon\Carbon::parse($dateString);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             throw new \Exception("Invalid date format for DOB. Use YYYY-MM-DD format: " . $dateString);
         }
     }
 
 
-    private function deleteExistingStudentsByPhone(array $phones, $firmId)
+    private function insertNewUsersOnly(array $usersToInsert, array $rowNumbersByPhone)
     {
-        // Find existing users by phone
-        $existingUsers = User::whereIn('phone', $phones)->get();
-        
-        if ($existingUsers->isEmpty()) {
-            return;
+        if (empty($usersToInsert)) {
+            return [
+                'users' => collect(),
+                'userMap' => [],
+                'failed' => [],
+            ];
         }
-        
-        $userIds = $existingUsers->pluck('id')->toArray();
-        
-        // Find students linked to these users
-        $existingStudents = Student::whereIn('user_id', $userIds)
-            ->where('firm_id', $firmId)
-            ->get();
-        
-        if ($existingStudents->isEmpty()) {
-            return;
-        }
-        
-        $studentIds = $existingStudents->pluck('id')->toArray();
-        
-        // Delete related records
-        StudentPersonalDetail::whereIn('student_id', $studentIds)->delete();
-        StudentEducationDetail::whereIn('student_id', $studentIds)->delete();
-        
-        // Delete students
-        Student::whereIn('id', $studentIds)->delete();
-        
-        // Delete users
-        User::whereIn('id', $userIds)->delete();
-        
-        // Delete role_user pivots
-        DB::table('role_user')->whereIn('user_id', $userIds)->delete();
-    }
-    
-    private function insertOrUpdateUsers(array $usersToInsert)
-    {
-        // Get all phones and emails from the insert data
-        $phones = array_column($usersToInsert, 'phone');
-        $emails = array_column($usersToInsert, 'email');
-        
-        // Remove duplicates from phones array (in case same phone appears multiple times)
-        $phones = array_unique($phones);
-        $emails = array_unique($emails);
-        
-        // Find existing users
-        $existingUsers = User::whereIn('phone', $phones)
-            ->orWhereIn('email', $emails)
-            ->get();
-        
-        // Create maps for quick lookup
-        $existingByPhone = $existingUsers->keyBy('phone');
-        $existingByEmail = $existingUsers->keyBy('email');
-        
-        $newUsers = [];
-        $userPhoneMap = [];
-        $processedPhones = []; // Track processed phones to avoid duplicates
-        
+
+        $uniqueUsers = [];
+        $orderedPhones = [];
         foreach ($usersToInsert as $userData) {
             $phone = $userData['phone'];
-            $email = $userData['email'];
-            
-            // Skip if we've already processed this phone in this batch
-            if (isset($processedPhones[$phone])) {
+            if (empty($phone) || isset($uniqueUsers[$phone])) {
                 continue;
             }
-            
-            // Check if user exists by phone or email
-            $existingUser = $existingByPhone->get($phone) ?? $existingByEmail->get($email);
-            
-            if ($existingUser) {
-                // Update existing user
-                $existingUser->update([
-                    'name' => $userData['name'],
-                    'email' => $email,
-                    'password' => $userData['password'],
-                    'passcode' => $userData['passcode'],
-                    'role_main' => $userData['role_main'],
-                    'updated_at' => $userData['updated_at']
-                ]);
-                $userPhoneMap[$phone] = $existingUser;
-                $processedPhones[$phone] = true;
-            } else {
-                // New user to insert - check for duplicates in newUsers array
-                $isDuplicate = false;
-                foreach ($newUsers as $newUser) {
-                    if ($newUser['phone'] === $phone || $newUser['email'] === $email) {
-                        $isDuplicate = true;
-                        break;
-                    }
-                }
-                
-                if (!$isDuplicate) {
-                    $newUsers[] = $userData;
-                    $userPhoneMap[$phone] = null; // Will be set after insert
-                    $processedPhones[$phone] = true;
-                }
+            $uniqueUsers[$phone] = $userData;
+            $orderedPhones[] = $phone;
+        }
+
+        $failedPhones = [];
+
+        try {
+            User::insert(array_values($uniqueUsers));
+        } catch (\Throwable $e) {
+            \Log::warning('Bulk user insert failed during student upload: ' . $e->getMessage());
+            $conflictingPhones = User::whereIn('phone', array_keys($uniqueUsers))
+                ->pluck('phone')
+                ->toArray();
+
+            foreach ($conflictingPhones as $phone) {
+                $failedPhones[$phone] = $rowNumbersByPhone[$phone] ?? null;
             }
         }
-        
-        // Bulk insert new users, handling duplicates gracefully
-        if (count($newUsers) > 0) {
-            try {
-                // Try bulk insert first
-                User::insert($newUsers);
-                
-                // Get newly inserted users
-                $newPhones = array_column($newUsers, 'phone');
-                $newlyInserted = User::whereIn('phone', $newPhones)->get()->keyBy('phone');
-                
-                // Update the map with newly inserted users
-                foreach ($newlyInserted as $phone => $user) {
-                    $userPhoneMap[$phone] = $user;
-                }
-            } catch (\Exception $e) {
-                // If bulk insert fails due to duplicates, insert one by one
-                foreach ($newUsers as $userData) {
-                    try {
-                        $phone = $userData['phone'];
-                        $email = $userData['email'];
-                        
-                        // Check if user exists (might have been inserted by another process)
-                        $existingUser = User::where('phone', $phone)
-                            ->orWhere('email', $email)
-                            ->first();
-                        
-                        if ($existingUser) {
-                            // Update existing user
-                            $existingUser->update([
-                                'name' => $userData['name'],
-                                'email' => $email,
-                                'password' => $userData['password'],
-                                'passcode' => $userData['passcode'],
-                                'role_main' => $userData['role_main'],
-                                'updated_at' => $userData['updated_at']
-                            ]);
-                            $userPhoneMap[$phone] = $existingUser;
-                        } else {
-                            // Try to insert
-                            try {
-                                User::insert($userData);
-                                $insertedUser = User::where('phone', $phone)->first();
-                                if ($insertedUser) {
-                                    $userPhoneMap[$phone] = $insertedUser;
-                                }
-                            } catch (\Exception $insertException) {
-                                // If still fails, fetch and update
-                                $existingUser = User::where('phone', $phone)->first();
-                                if ($existingUser) {
-                                    $existingUser->update([
-                                        'name' => $userData['name'],
-                                        'email' => $email,
-                                        'password' => $userData['password'],
-                                        'passcode' => $userData['passcode'],
-                                        'role_main' => $userData['role_main'],
-                                        'updated_at' => $userData['updated_at']
-                                    ]);
-                                    $userPhoneMap[$phone] = $existingUser;
-                                } else {
-                                    \Log::error("Failed to insert/update user with phone: $phone - " . $insertException->getMessage());
-                                }
-                            }
-                        }
-                    } catch (\Exception $userException) {
-                        \Log::error("Error processing user with phone: " . ($userData['phone'] ?? 'unknown') . " - " . $userException->getMessage());
-                    }
-                }
-            }
+
+        $insertedUsers = User::whereIn('phone', array_keys($uniqueUsers))
+            ->get()
+            ->keyBy('phone');
+
+        foreach ($failedPhones as $phone => $rowNumber) {
+            unset($insertedUsers[$phone]);
         }
-        
-        return $userPhoneMap;
+
+        $orderedUsers = collect($orderedPhones)->map(function ($phone) use ($insertedUsers) {
+            return $insertedUsers->get($phone);
+        })->filter()->values();
+
+        return [
+            'users' => $orderedUsers,
+            'userMap' => $insertedUsers->all(),
+            'failed' => $failedPhones,
+        ];
     }
     
     private function prepareUserDataForBulk($row, $hashedPassword, $hashedPasscode, $now)
     {
-        $nameParts = $this->splitPlayerName($row[0] ?? '');
+        $nameParts = $this->splitPlayerName($row[1] ?? '');
         $fullName = trim(implode(' ', array_filter($nameParts)));
-        $email = $this->generateEmailFromName($fullName);
+        $email = $this->generateEmailFromName($fullName, $row[4] ?? '');
         
         return [
             'name' => $fullName,
             'email' => $email,
             'password' => $hashedPassword,
-            'phone' => $row[3] ?? '',
+            'phone' => $row[4] ?? '',
             'passcode' => $hashedPasscode,
             'role_main' => 'L0_student',
             'created_at' => $now,
@@ -935,14 +948,14 @@ class StudentBulkUpload extends Component
     
     private function prepareStudentDataForBulk($row, $userData, $firmId, $now)
     {
-        $nameParts = $this->splitPlayerName($row[0] ?? '');
+        $nameParts = $this->splitPlayerName($row[1] ?? '');
         
         return [
             'fname' => $nameParts['fname'],
             'mname' => $nameParts['mname'],
             'lname' => $nameParts['lname'],
             'email' => $userData['email'],
-            'phone' => $row[3] ?? '',
+            'phone' => $row[4] ?? '',
             'user_id' => null, // Will be set after user insert
             'firm_id' => $firmId,
             'is_inactive' => false,
@@ -955,27 +968,32 @@ class StudentBulkUpload extends Component
     {
         return [
             'student_id' => null, // Will be set after student insert
-            'gender' => $this->normalizeGender($row[1] ?? ''),
-            'dob' => $this->parseDate($row[2] ?? ''),
-            'mobile_number' => $row[3] ?? '',
-            'adharno' => $row[4] ?? '',
-            'fathername' => $row[5] ?? '',
+            'gender' => $this->normalizeGender($row[2] ?? ''),
+            'dob' => $this->parseDate($row[3] ?? ''),
+            'mobile_number' => $row[4] ?? '',
+            'adharno' => $row[5] ?? '',
+            'fathername' => $row[6] ?? '',
             'created_at' => $now,
             'updated_at' => $now,
         ];
     }
     
-    private function trackBatchItemsBulk($batch, $users, $students, $personalDetails)
+    private function trackBatchItemsBulk($batch, $users, $students, $personalDetails, $educationDetails)
     {
         $batchItems = [];
         
+        $metadata = json_encode([
+            'created_in_batch' => true,
+            'created_by_batch_id' => $batch->id,
+        ]);
+
         foreach ($users as $user) {
             $batchItems[] = [
                 'batch_id' => $batch->id,
                 'operation' => 'insert',
                 'model_type' => User::class,
                 'model_id' => $user->id,
-                'new_data' => json_encode($user->getAttributes()),
+                'new_data' => $metadata,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -987,7 +1005,7 @@ class StudentBulkUpload extends Component
                 'operation' => 'insert',
                 'model_type' => Student::class,
                 'model_id' => $student->id,
-                'new_data' => json_encode($student->getAttributes()),
+                'new_data' => $metadata,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -999,7 +1017,19 @@ class StudentBulkUpload extends Component
                 'operation' => 'insert',
                 'model_type' => StudentPersonalDetail::class,
                 'model_id' => $personalDetail->id,
-                'new_data' => json_encode($personalDetail->getAttributes()),
+                'new_data' => $metadata,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        foreach ($educationDetails as $educationDetail) {
+            $batchItems[] = [
+                'batch_id' => $batch->id,
+                'operation' => 'insert',
+                'model_type' => StudentEducationDetail::class,
+                'model_id' => $educationDetail->id,
+                'new_data' => $metadata,
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -1038,10 +1068,17 @@ class StudentBulkUpload extends Component
         ];
     }
 
-    private function generateEmailFromName($name)
+    private function generateEmailFromName($name, $phone = '')
     {
         $cleanName = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $name));
-        return $cleanName . '@student.local';
+        $cleanName = $cleanName !== '' ? $cleanName : 'student';
+
+        $phoneDigits = preg_replace('/\D/', '', (string) $phone);
+        if ($phoneDigits === '') {
+            $phoneDigits = substr((string) now()->timestamp, -6) . random_int(100, 999);
+        }
+
+        return $cleanName . '.' . $phoneDigits . '@student.local';
     }
 
 
@@ -1053,7 +1090,7 @@ class StudentBulkUpload extends Component
 
         try {
             return \Carbon\Carbon::parse($dateString)->format('Y-m-d');
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             throw new \Exception("Invalid date format: " . $dateString);
         }
     }
@@ -1068,6 +1105,99 @@ class StudentBulkUpload extends Component
             return 'Female';
         }
         return $gender;
+    }
+
+    private function normalizeCentreName($value)
+    {
+        return trim((string) $value);
+    }
+
+    private function normalizeCentreKey(?string $value)
+    {
+        $name = $this->normalizeCentreName($value);
+        return $name === '' ? '' : mb_strtolower($name);
+    }
+
+    private function ensureStudyCentresForRows(array $rows, $firmId, $batch)
+    {
+        $centreNames = [];
+        foreach ($rows as $row) {
+            $centreName = $row['centre_name'] ?? $this->normalizeCentreName($row['data'][0] ?? '');
+            if (empty($centreName)) {
+                continue;
+            }
+
+            $key = $this->normalizeCentreKey($centreName);
+            if ($key === '') {
+                continue;
+            }
+
+            if (!isset($centreNames[$key])) {
+                $centreNames[$key] = $centreName;
+            }
+        }
+
+        if (empty($centreNames)) {
+            return [];
+        }
+
+        $existingCentres = StudyCentre::where('firm_id', $firmId)
+            ->whereIn('name', array_values($centreNames))
+            ->get();
+
+        $centreMap = [];
+        foreach ($existingCentres as $centre) {
+            $centreMap[$this->normalizeCentreKey($centre->name)] = $centre->id;
+        }
+
+        $missingCentres = array_diff_key($centreNames, $centreMap);
+        $newlyCreated = collect();
+
+        foreach ($missingCentres as $key => $name) {
+            $centre = StudyCentre::create([
+                'firm_id' => $firmId,
+                'name' => $name,
+                'is_inactive' => false,
+            ]);
+            $centreMap[$key] = $centre->id;
+            $newlyCreated->push($centre);
+        }
+
+        if ($newlyCreated->isNotEmpty()) {
+            $this->trackStudyCentreBatchItems($batch, $newlyCreated);
+        }
+
+        return $centreMap;
+    }
+
+    private function trackStudyCentreBatchItems($batch, $centres)
+    {
+        if ($centres->isEmpty()) {
+            return;
+        }
+
+        $metadata = json_encode([
+            'created_in_batch' => true,
+            'created_by_batch_id' => $batch->id,
+        ]);
+
+        $items = [];
+        foreach ($centres as $centre) {
+            $items[] = [
+                'batch_id' => $batch->id,
+                'operation' => 'insert',
+                'model_type' => StudyCentre::class,
+                'model_id' => $centre->id,
+                'new_data' => $metadata,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        $chunks = array_chunk($items, 500);
+        foreach ($chunks as $chunk) {
+            BatchItem::insert($chunk);
+        }
     }
 
 

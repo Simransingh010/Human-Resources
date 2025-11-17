@@ -97,5 +97,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/students/attendance', [StudentAttendanceController::class, 'attendanceWithPunches']);
     Route::get('/students/attendance/coach/students', [StudentAttendanceController::class, 'coachStudents']);
     Route::post('/students/attendance/coach/mark', [StudentAttendanceController::class, 'coachMarkAttendance']);
+    Route::get('/students/details', [StudentAttendanceController::class, 'studentDetails']);
 });
  
