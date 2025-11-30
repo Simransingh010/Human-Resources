@@ -21,8 +21,17 @@ class Leftmenu extends Component
     {
         $this->apps = MenuCoordinator::getApps();
         $this->selectedAppId = MenuCoordinator::getSelectedAppId() ?? $this->apps[0]['id'] ?? null;
-        $firstModuleId = MenuCoordinator::selectApp($this->selectedAppId);
+        
+        // Only initialize if no app is selected yet
+        if (!MenuCoordinator::getSelectedAppId()) {
+            $firstModuleId = MenuCoordinator::selectApp($this->selectedAppId);
+            if ($firstModuleId) {
+                $this->dispatch('moduleSelected', $firstModuleId);
+            }
+        }
+        
         $this->modules = MenuCoordinator::getAppModules($this->selectedAppId);
+        $this->selectedModuleId = MenuCoordinator::getSelectedModuleId();
 
         // Get the firm's logo through user relationship
         $user = auth()->user();
@@ -33,10 +42,6 @@ class Leftmenu extends Component
                 $this->firmWideLogo = $firm->getMedia('wideLogo')->first()?->getUrl();
                 $this->firmSquareLogo = $firm->getMedia('squareLogo')->first()?->getUrl();
             }
-        }
-
-        if ($firstModuleId) {
-            $this->dispatch('moduleSelected', $firstModuleId);
         }
     }
 

@@ -5,21 +5,53 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 Route::get('/', function () {
-    return view('welcome');
+    return redirect()->route(auth()->check() ? 'dashboard' : 'login');
 })->name('home');
+
 Route::get('iim-sirmaur', function (){
     return view('index-page');
 })->name('iim-sirmaur');
-Route::redirect('/', '/login');
 
 Route::view('dashboard', 'dashboard')
     ->middleware(['auth', 'verified'])
     ->name('dashboard');
 
+// Fallback route for wire-based navigation - renders current session wire
+Route::get('/panel', function () {
+    return view('layouts.panel-screen', ['component' => null]);
+})
+->middleware(['auth', 'initialize.session'])
+->name('panel');
+
 Route::middleware(['auth'])->group(function () {
 
-    Route::get('onboard-dashboard',App\Livewire\Hrms\Onboard\OnboardDashboard::class)->name('onboard-dashboard');
-    Route::get('/hrms/onboard/employees',App\Livewire\Hrms\Onboard\Employees::class)->name('hrms.onboard.employee');
+    // Universal hybrid screen route - supports any Livewire component via URL
+    // Usage: /screen/hrms.onboard.employees or /screen/hrms.onboard.employees?module=2&app=3
+    Route::get('/screen/{component}', function ($component) {
+        return view('layouts.panel-screen', ['component' => $component]);
+    })
+    ->where('component', '[a-zA-Z0-9\.\-]+')
+    ->middleware(['initialize.session'])
+    ->name('panel.screen');
+
+    // New routing approach with proper URLs - using panel-screen layout
+    Route::get('onboard-dashboard', function () {
+        return view('layouts.panel-screen', ['component' => 'hrms.onboard.onboard-dashboard']);
+    })->middleware(['initialize.session'])->name('onboard-dashboard');
+    
+    Route::get('/hrms/onboard/employees', function () {
+        return view('layouts.panel-screen', ['component' => 'hrms.onboard.employees']);
+    })->middleware(['initialize.session'])->name('hrms.onboard.employees');
+    
+    // Payroll routes
+    Route::get('/hrms/onboard/payroll-cycles', function () {
+        return view('layouts.panel-screen', ['component' => 'hrms.payroll.payroll-cycles']);
+    })->middleware(['initialize.session'])->name('hrms.payroll.payroll-cycles');
+    
+    Route::get('/hrms/onboard/bulk-employee-salary-components', function () {
+        return view('layouts.panel-screen', ['component' => 'hrms.payroll.bulk-employee-salary-components']);
+    })->middleware(['initialize.session'])->name('hrms.payroll.bulk-employee-salary-components');
+    
     Route::get('/agencies',App\Livewire\Saas\Agencies\Index::class)->name('agencies.index');
     Route::get('/hrms/employee-addresses', App\Livewire\Hrms\EmployeesMeta\EmployeeAddresses::class)->name('employee-addresses.index');
     Route::get('/hrms/employee-bank-accounts', App\Livewire\Hrms\EmployeesMeta\EmployeeBankAccounts::class)->name('employee-bank-accounts.index');

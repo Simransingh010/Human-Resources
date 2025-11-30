@@ -250,29 +250,32 @@
                                     <flux:button variant="danger" size="sm" icon="trash"/>
                                 </flux:modal.trigger>
                             </div>
-
-                            <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
-                                <div class="space-y-6">
-                                    <div>
-                                        <flux:heading size="lg">Delete Salary Component?</flux:heading>
-                                        <flux:text class="mt-2">
-                                            <p>You're about to deactivate this salary component. This action cannot be undone.</p>
-                                        </flux:text>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <flux:spacer/>
-                                        <flux:modal.close>
-                                            <flux:button variant="ghost">Cancel</flux:button>
-                                        </flux:modal.close>
-                                        <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
-                                    </div>
-                                </div>
-                            </flux:modal>
                         </flux:table.cell>
                     </flux:table.row>
                 @endforeach
             </flux:table.rows>
         </flux:table>
+
+        <!-- Delete Modals for Each Item -->
+        @foreach($this->list as $item)
+            <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
+                <div class="space-y-6">
+                    <div>
+                        <flux:heading size="lg">Delete Salary Component?</flux:heading>
+                        <flux:text class="mt-2">
+                            <p>You're about to deactivate this salary component. This action cannot be undone.</p>
+                        </flux:text>
+                    </div>
+                    <div class="flex gap-2">
+                        <flux:spacer/>
+                        <flux:modal.close>
+                            <flux:button variant="ghost">Cancel</flux:button>
+                        </flux:modal.close>
+                        <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
+                    </div>
+                </div>
+            </flux:modal>
+        @endforeach
     </div>
 
     <!-- Calculation Rule Builder Modal -->

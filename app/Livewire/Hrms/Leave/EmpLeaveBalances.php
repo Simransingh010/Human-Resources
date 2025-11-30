@@ -375,6 +375,46 @@ class EmpLeaveBalances extends Component
         $this->viewMode = $this->viewMode === 'accordion' ? 'table' : 'accordion';
     }
 
+    // /**
+    //  * Quick adjust a specific field in leave balance
+    //  */
+    // public function quickAdjust($id, $field, $amount)
+    // {
+    //     $leaveBalance = EmpLeaveBalance::findOrFail($id);
+        
+    //     // Validate field
+    //     $allowedFields = ['allocated_days', 'consumed_days', 'carry_forwarded_days', 'lapsed_days'];
+    //     if (!in_array($field, $allowedFields)) {
+    //         Flux::toast(
+    //             variant: 'error',
+    //             heading: 'Invalid Field',
+    //             text: 'Cannot adjust this field.',
+    //         );
+    //         return;
+    //     }
+
+    //     // Update the field
+    //     $newValue = max(0, $leaveBalance->$field + $amount);
+    //     $leaveBalance->$field = $newValue;
+        
+    //     // Recalculate balance
+    //     $leaveBalance->balance = $this->calculateBalance(
+    //         $leaveBalance->allocated_days,
+    //         $leaveBalance->consumed_days,
+    //         $leaveBalance->carry_forwarded_days,
+    //         $leaveBalance->lapsed_days
+    //     );
+        
+    //     $leaveBalance->save();
+        
+    //     $fieldLabel = str_replace('_', ' ', ucfirst($field));
+    //     Flux::toast(
+    //         variant: 'success',
+    //         heading: 'Balance Updated',
+    //         text: "{$fieldLabel} adjusted by {$amount}. New balance: {$leaveBalance->balance}",
+    //     );
+    // }
+
     public function render()
     {
         return view()->file(app_path('Livewire/Hrms/Leave/blades/emp-leave-balances.blade.php'));

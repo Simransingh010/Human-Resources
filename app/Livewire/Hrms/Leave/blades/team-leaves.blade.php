@@ -357,7 +357,7 @@
                         variant="danger"
                         wire:click="handleAction('reject', {{ $id }})"
                     >
-                        Reject
+                        {{ ($formData['approval_level'] ?? 1) > 2 ? 'Reject' : 'Reject' }}
                     </flux:button>
 
                     <flux:button
@@ -365,7 +365,7 @@
                         variant="primary"
                         wire:click="handleAction('approve', {{ $id }})"
                     >
-                        Approve
+                        {{ ($formData['approval_level'] ?? 1) > 2 ? 'Accept' : 'Approve' }}
                     </flux:button>
                 </div>
             </div>

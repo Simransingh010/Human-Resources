@@ -94,6 +94,11 @@ class MenuCoordinator
 
     public static function selectWire($wire)
     {
+        \Log::info('MenuCoordinator::selectWire called', [
+            'wire' => $wire,
+            'before' => Session::get('selectedWire'),
+            'trace' => debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 3),
+        ]);
         Session::put('selectedWire', $wire ?? Session::get('defaultwire'));
     }
 
@@ -141,5 +146,62 @@ class MenuCoordinator
     protected static function isSaaSPanel(): bool
     {
         return Session::get('panel_id') === '6';
+    }
+
+    /**
+     * Check if a wire should use route-based navigation
+     * Automatically detects if a named route exists for the wire
+     */
+    public static function isRouteBased(string $wire): bool
+    {
+        // Check if a named route exists for this wire
+        return \Illuminate\Support\Facades\Route::has($wire);
+    }
+
+    /**
+     * Get the route URL for a wire if it's route-based
+     * Returns null if wire is not route-based
+     */
+    public static function getRouteUrl(string $wire, ?int $moduleId = null, ?int $appId = null): ?string
+    {
+        // If a named route exists for this wire, use it
+        if (\Illuminate\Support\Facades\Route::has($wire)) {
+            return route($wire);
+        }
+
+        return null;
+    }
+
+    /**
+     * Find the moduleId that contains a given wire
+     * Returns null if not found
+     */
+    public static function findModuleIdForWire(string $wire): ?int
+    {
+        if (self::isSaaSPanel()) {
+            foreach (self::$staticWiresByModule as $moduleId => $wires) {
+                foreach ($wires as $wireItem) {
+                    if ($wireItem['wire'] === $wire) {
+                        return $moduleId;
+                    }
+                }
+            }
+        } else {
+            // For dynamic panels, search through all modules
+            $apps = MenuService::getApps();
+            foreach ($apps as $app) {
+                $modules = MenuService::getModulesForApp($app['id']);
+                foreach ($modules as $module) {
+                    $components = MenuService::getComponentsForModule($module['id']);
+                    foreach ($components as $component) {
+                        if ($component['wire'] === $wire) {
+                            return $module['id'];
+                        }
+                    }
+                }
+            }
+        }
+        
+        return null;
     }
 }

@@ -31,6 +31,8 @@ class LopAdjustmentStep extends Component
         'lop_details' => '',
         'void_dates' => [], // for UI only
         'lop_dates' => [],  // for UI only
+        'void_half_dates' => [],
+        'lop_half_dates' => [],
     ];
 
     // Field configuration for form and table
@@ -169,6 +171,8 @@ class LopAdjustmentStep extends Component
                 'lop_details' => $record->lop_details,
                 'void_dates' => $details['void'],
                 'lop_dates' => $details['lop'],
+                'void_half_dates' => $details['void_half'],
+                'lop_half_dates' => $details['lop_half'],
             ];
             $this->showEditModal = true;
         }
@@ -237,33 +241,58 @@ class LopAdjustmentStep extends Component
         $month = null;
         $void = [];
         $lop = [];
+        $voidHalf = [];
+        $lopHalf = [];
         if ($json) {
             $data = json_decode($json, true);
             $month = $data['month'] ?? null;
             $void = $data['void'] ?? [];
             $lop = $data['lop'] ?? [];
+            $voidHalf = $data['void_half'] ?? [];
+            $lopHalf = $data['lop_half'] ?? [];
         }
         return [
             'month' => $month,
             'void' => $void,
             'lop' => $lop,
+            'void_half' => $voidHalf,
+            'lop_half' => $lopHalf,
         ];
     }
 
-    private function encodeLopDetails($month, $void, $lop)
+    private function encodeLopDetails($month, $void, $lop, $voidHalf = [], $lopHalf = [])
     {
         return json_encode([
             'month' => $month,
             'void' => array_values($void),
             'lop' => array_values($lop),
+            'void_half' => array_values($voidHalf),
+            'lop_half' => array_values($lopHalf),
         ]);
     }
 
     public function updateLopDays()
     {
-        // Auto-calculate days count from selected dates
-        $this->editForm['void_days_count'] = is_array($this->editForm['void_dates']) ? count($this->editForm['void_dates']) : 0;
-        $this->editForm['lop_days_count'] = is_array($this->editForm['lop_dates']) ? count($this->editForm['lop_dates']) : 0;
+        if (!$this->selectedRecord) {
+            Flux::toast(
+                variant: 'error',
+                heading: 'Error',
+                text: 'No employee selected for update.'
+            );
+            return;
+        }
+
+        $this->syncHalfDateSelections('void');
+        $this->syncHalfDateSelections('lop');
+
+        $this->editForm['void_days_count'] = $this->calculateDayCount(
+            $this->editForm['void_dates'],
+            $this->editForm['void_half_dates']
+        );
+        $this->editForm['lop_days_count'] = $this->calculateDayCount(
+            $this->editForm['lop_dates'],
+            $this->editForm['lop_half_dates']
+        );
 
         // Always generate lop_details JSON from selected dates
         $month = null;
@@ -274,15 +303,25 @@ class LopAdjustmentStep extends Component
         } else {
             $month = now()->format('Y-m');
         }
-        $lop_details_json = $this->encodeLopDetails($month, $this->editForm['void_dates'], $this->editForm['lop_dates']);
+        $lop_details_json = $this->encodeLopDetails(
+            $month,
+            $this->editForm['void_dates'],
+            $this->editForm['lop_dates'],
+            $this->editForm['void_half_dates'],
+            $this->editForm['lop_half_dates']
+        );
         $this->editForm['lop_details'] = $lop_details_json;
 
+        $cycleDays = $this->selectedRecord['cycle_days'] ?? 0;
+
         $this->validate([
-            'editForm.void_days_count' => 'required|integer|min:0|max:' . $this->selectedRecord['cycle_days'],
-            'editForm.lop_days_count' => 'required|integer|min:0|max:' . $this->selectedRecord['cycle_days'],
+            'editForm.void_days_count' => 'required|numeric|min:0|max:' . $cycleDays,
+            'editForm.lop_days_count' => 'required|numeric|min:0|max:' . $cycleDays,
             'editForm.lop_details' => 'nullable|string',
             'editForm.void_dates' => 'array',
             'editForm.lop_dates' => 'array',
+            'editForm.void_half_dates' => 'array',
+            'editForm.lop_half_dates' => 'array',
         ]);
 
         try {
@@ -311,6 +350,28 @@ class LopAdjustmentStep extends Component
         $this->closeEditModal();
     }
 
+    private function syncHalfDateSelections(string $type): void
+    {
+        $datesKey = "{$type}_dates";
+        $halfKey = "{$type}_half_dates";
+
+        $selectedDates = array_values($this->editForm[$datesKey] ?? []);
+        $halfDates = array_values($this->editForm[$halfKey] ?? []);
+
+        $halfDates = array_values(array_unique(array_intersect($halfDates, $selectedDates)));
+
+        $this->editForm[$datesKey] = $selectedDates;
+        $this->editForm[$halfKey] = $halfDates;
+    }
+
+    private function calculateDayCount(array $dates, array $halfDates): float
+    {
+        $half = array_values(array_intersect($halfDates, $dates));
+        $full = array_diff($dates, $half);
+
+        return count($full) + (count($half) * 0.5);
+    }
+
     public function closeEditModal()
     {
         $this->showEditModal = false;
@@ -321,6 +382,8 @@ class LopAdjustmentStep extends Component
             'lop_details' => '',
             'void_dates' => [],
             'lop_dates' => [],
+            'void_half_dates' => [],
+            'lop_half_dates' => [],
         ];
     }
 

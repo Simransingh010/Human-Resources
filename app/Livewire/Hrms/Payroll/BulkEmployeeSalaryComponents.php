@@ -22,7 +22,7 @@ class BulkEmployeeSalaryComponents extends Component
 {
     use WithPagination;
 
-    public $perPage = 10;
+    public $perPage = 5; // Reduced for better performance on low-end devices
     public $sortBy = 'fname';
     public $sortDirection = 'asc';
     public $selectedEmployees = [];
@@ -52,17 +52,32 @@ class BulkEmployeeSalaryComponents extends Component
     public array $listsForFields = [];
     public array $filters = [];
     public array $visibleFilterFields = [];
+    public bool $readyToLoad = false;
+    public $selectedEmployeeForConfig = null;
 
     public function mount()
     {
+        // Defer heavy operations
         $this->initListsForFields();
-        $this->loadComponents();
-
+        
         // Set default visible filter fields
         $this->visibleFilterFields = ['department_id', 'designation_id', 'employee_search', 'search'];
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+    
+    public function hydrate()
+    {
+        // Load components only when needed
+        if (empty($this->components)) {
+            $this->loadComponents();
+        }
+    }
+    
+    public function loadData()
+    {
+        $this->readyToLoad = true;
     }
 
     protected function initListsForFields(): void
@@ -82,13 +97,12 @@ class BulkEmployeeSalaryComponents extends Component
 
     protected function loadComponents()
     {
-        $this->components = SalaryComponent::where('firm_id', Session::get('firm_id'))
+        // Optimized: Filter in database instead of after fetching
+        $this->components = SalaryComponent::select(['id', 'title', 'nature', 'component_type', 'amount_type'])
+            ->where('firm_id', Session::get('firm_id'))
+            ->where('amount_type', 'static_known')
+            ->orderBy('title')
             ->get()
-            ->filter(function ($component) {
-                // Only include components with static_known or static_unknown amount_type
-                return in_array($component->amount_type, ['static_known', ]);
-            })
-            ->sortBy('title')
             ->map(function ($component) {
                 return [
                     'id' => $component->id,
@@ -104,35 +118,59 @@ class BulkEmployeeSalaryComponents extends Component
 
     protected function loadEmployeeComponents($employeeIds)
     {
+        if (empty($employeeIds)) {
+            $this->employeeComponents = [];
+            return;
+        }
 
-
-        $this->employeeComponents = SalaryComponentsEmployee::whereIn('employee_id', $employeeIds)
+        // Optimized: Select only needed columns
+        $components = SalaryComponentsEmployee::select(['employee_id', 'salary_component_id', 'amount', 'amount_type', 'nature'])
+            ->whereIn('employee_id', $employeeIds)
             ->where('firm_id', Session::get('firm_id'))
-            ->where(function ($query) {
-                $query->whereNull('effective_to')
-                    ->orWhere('effective_to', '>', now());
-            })
-            ->get()
-            ->map(function ($component) {
-                // Initialize bulkupdate with current values
-                $this->bulkupdate[$component->employee_id][$component->salary_component_id] = $component->amount;
+            ->where(fn($query) => $this->activeComponentScope($query))
+            ->get();
 
-                return [
-                    'employee_id' => $component->employee_id,
-                    'component_id' => $component->salary_component_id,
-                    'amount' => $component->amount,
-                    'amount_type' => $component->amount_type,
-                    'nature' => $component->nature
-                ];
-            })
-            ->groupBy('employee_id')
-            ->toArray();
+        $this->employeeComponents = [];
+        
+        foreach ($components as $component) {
+            // Initialize bulkupdate with current values
+            $this->bulkupdate[$component->employee_id][$component->salary_component_id] = $component->amount;
+
+            // Group by employee_id
+            if (!isset($this->employeeComponents[$component->employee_id])) {
+                $this->employeeComponents[$component->employee_id] = [];
+            }
+            
+            $this->employeeComponents[$component->employee_id][] = [
+                'employee_id' => $component->employee_id,
+                'component_id' => $component->salary_component_id,  // Keep as component_id for blade compatibility
+                'amount' => $component->amount,
+                'amount_type' => $component->amount_type,
+                'nature' => $component->nature
+            ];
+        }
+    }
+
+    protected function activeComponentScope($query): void
+    {
+        $query->whereNull('salary_components_employees.effective_to')
+            ->orWhere('salary_components_employees.effective_to', '>', now());
     }
 
     public function isComponentActive($employeeId, $componentId): bool
     {
-        return isset($this->employeeComponents[$employeeId]) &&
-            collect($this->employeeComponents[$employeeId])->contains('salary_component_id', $componentId);
+        if (!isset($this->employeeComponents[$employeeId])) {
+            return false;
+        }
+        
+        // Optimized: Direct loop instead of collect()->contains()
+        foreach ($this->employeeComponents[$employeeId] as $component) {
+            if ($component['component_id'] == $componentId) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     // Simple helper methods for template
@@ -240,6 +278,11 @@ class BulkEmployeeSalaryComponents extends Component
     #[Computed]
     public function list()
     {
+        // Don't load until ready
+        if (!$this->readyToLoad) {
+            return new \Illuminate\Pagination\LengthAwarePaginator([], 0, $this->perPage);
+        }
+        
         $query = SalaryComponentsEmployee::query()
             ->select([
                 'salary_components_employees.employee_id',
@@ -260,10 +303,7 @@ class BulkEmployeeSalaryComponents extends Component
             ->leftJoin('departments', 'employee_job_profiles.department_id', '=', 'departments.id')
             ->leftJoin('designations', 'employee_job_profiles.designation_id', '=', 'designations.id')
             ->where('salary_components_employees.firm_id', Session::get('firm_id'))
-            ->where(function ($query) {
-                $query->whereNull('salary_components_employees.effective_to')
-                    ->orWhere('salary_components_employees.effective_to', '>', now());
-            })
+            ->where(fn($query) => $this->activeComponentScope($query))
             ->where('employees.is_inactive', false)
             ->when($this->filters['department_id'], fn($query, $value) =>
                 $query->where('employee_job_profiles.department_id', $value))
@@ -317,10 +357,7 @@ class BulkEmployeeSalaryComponents extends Component
             $component = SalaryComponentsEmployee::where('employee_id', $employeeId)
                 ->where('salary_component_id', $componentId)
                 ->where('firm_id', Session::get('firm_id'))
-                ->where(function ($query) {
-                    $query->whereNull('effective_to')
-                        ->orWhere('effective_to', '>', now());
-                })
+                ->where(fn($query) => $this->activeComponentScope($query))
                 ->first();
 
             if (!$component) {
@@ -424,6 +461,37 @@ class BulkEmployeeSalaryComponents extends Component
         }
 
         return $order;
+    }
+
+    public function syncAllCalculations()
+    {
+        try {
+            $employeeIds = $this->employeeIdsForBulkSync();
+            if (empty($employeeIds)) {
+                throw new \Exception('No employees available for syncing');
+            }
+            $this->syncEmployees($employeeIds);
+            Flux::toast(variant: 'success', heading: 'Bulk Sync Complete', text: count($employeeIds) . ' employees synced successfully');
+        } catch (\Exception $e) {
+            Flux::toast(variant: 'error', heading: 'Bulk Sync Failed', text: $e->getMessage());
+        }
+    }
+
+    protected function syncEmployees(array $employeeIds): void
+    {
+        foreach ($employeeIds as $employeeId) {
+            $this->syncCalculations($employeeId);
+        }
+    }
+
+    protected function employeeIdsForBulkSync(): array
+    {
+        return SalaryComponentsEmployee::query()
+            ->where('firm_id', Session::get('firm_id'))
+            ->where(fn($query) => $this->activeComponentScope($query))
+            ->distinct()
+            ->pluck('employee_id')
+            ->toArray();
     }
 
     public function syncCalculations($employeeId)
@@ -1005,6 +1073,12 @@ $health_education_cess = .04 * $totalTax;
         $this->totalDeductions = 0;
         $this->netSalary = 0;
         $this->netSalaryInWords = '';
+    }
+    
+    public function openConfigModal($employeeId)
+    {
+        $this->selectedEmployeeForConfig = $employeeId;
+        $this->dispatch('open-config-modal');
     }
 
     protected function numberToWords($number)

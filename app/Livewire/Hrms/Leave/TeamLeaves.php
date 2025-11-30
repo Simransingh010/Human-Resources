@@ -586,12 +586,13 @@ class TeamLeaves extends Component
             }
 
             $this->selectedId = $leaveRequest->id;
+            $approvalLevel = $this->getApprovalLevel($leaveRequest);
 
             // Reset formData with proper initialization
             $this->formData = [
                 'id' => $leaveRequest->id,
                 'emp_leave_request_id' => $leaveRequest->id,
-                'approval_level' => $this->getApprovalLevel($leaveRequest),
+                'approval_level' => $approvalLevel,
                 'approver_id' => Auth::id(),
                 'status' => '',
                 'remarks' => '',

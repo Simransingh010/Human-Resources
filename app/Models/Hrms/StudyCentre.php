@@ -33,6 +33,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string|null $deleted_at
  *
  * @property Firm $firm
+ * @property Collection|StudyGroup[] $study_groups
  * @property Collection|Student[] $students
  * @property Collection|StudentEducationDetail[] $student_education_details
  * @property Collection|StudentAttendance[] $student_attendances
@@ -69,6 +70,13 @@ class StudyCentre extends Model
 	public function firm()
 	{
 		return $this->belongsTo(Firm::class);
+	}
+
+
+
+	public function study_groups()
+	{
+		return $this->hasMany(StudyGroup::class);
 	}
 
 	public function students()

@@ -52,7 +52,7 @@ class EuAttendanceReportExport implements FromCollection, WithHeadings, WithMapp
         if (!empty($this->filters['college_id'])) {
             $collegeIds = (array) $this->filters['college_id'];
             $query->whereHas('colleges', function ($q) use ($collegeIds) {
-                $q->whereIn('id', $collegeIds);
+                $q->whereIn('college.id', $collegeIds);
             });
         }
 

@@ -21,11 +21,13 @@ class SmsService
         $suid = 'Edutech';
         $spass = 'India@123';
         $ssenderid = 'IQWING';
-        $dlttempid = '1307160984068567287';
+//        $dlttempid = '1307160984068567287';
+//        $dltentityid = '1301159135888445655';
+        $dlttempid = '1707176353574994898';
         $dltentityid = '1301159135888445655';
         $fbpage = 'MyIQwing';
 
-        $message = "$otp is your IQdigit App OTP Pls subscribe our FB page to get update alerts $fbpage For enquiry vist www.iqwing.in";
+        $message = "$otp is your IQdigit App OTP. For any support or enquiry visit www.iqwing.in";
 
         $url = 'https://api.pinnacle.in/index.php/sms/urlsms?sender=' . $ssenderid .
             '&numbers=' . $phone .

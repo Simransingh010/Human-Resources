@@ -16,6 +16,9 @@ use App\Models\Hrms\LeaveApprovalRule;
 use App\Models\Hrms\LeaveType;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmpLeaveTransaction;
+use App\Models\Hrms\WorkShiftDay;
+use App\Models\Hrms\Holiday;
+use App\Models\Hrms\EmpWorkShift;
 use App\Models\Saas\College;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +30,54 @@ use Illuminate\Support\Facades\App;
 
 class LeaveController extends Controller
 {
+  
+    private function jsonErrorResponse(
+        string $message,
+        int $statusCode = 500,
+        string $display = 'popup',
+        string $code = 'server_error',
+        array $data = []
+    ) {
+        return Response::json([
+            'message_type' => 'error',
+            'message_display' => $display,
+            'message' => $message,
+            'code' => $code,
+            'data' => $data,
+        ], $statusCode);
+    }
+
+    /**
+     * Map domain/logic level error codes to user facing responses.
+     */
+    private function mapOffDayDomainError(string $code): array
+    {
+        $defaults = [
+            'message' => 'Unable to fetch off days.',
+            'status' => 422,
+            'display' => 'popup',
+            'code' => 'off_days_unavailable',
+            'data' => [],
+        ];
+
+        $map = [
+            'work_shift_not_found' => [
+                'message' => 'No work shift is configured for the selected date range.',
+                'status' => 404,
+                'display' => 'popup',
+                'code' => 'work_shift_not_found',
+            ],
+            'off_days_collection_failed' => [
+                'message' => 'Unable to compile off days for the selected range.',
+                'status' => 500,
+                'display' => 'popup',
+                'code' => 'off_days_collection_failed',
+            ],
+        ];
+
+        return array_merge($defaults, $map[$code] ?? []);
+    }
+
     /**
      * GET /api/hrms/pol-attendances
      * Return ALL POL attendances for the authenticated user's firm (no approver filtering).
@@ -2456,5 +2507,366 @@ class LeaveController extends Controller
                 'data' => [],
             ], 500);
         }
+    }
+
+    /**
+     * POST /api/hrms/leave/off-days-in-range
+     * Get all off days (week offs, Sundays, holidays) between two dates
+     */
+    public function getOffDaysInRange(Request $request)
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'from_date' => 'required|date',
+                'to_date' => 'required|date|after_or_equal:from_date',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->jsonErrorResponse(
+                    'Invalid parameters',
+                    422,
+                    'popup',
+                    'validation_failed',
+                    ['errors' => $validator->errors()]
+                );
+            }
+
+            $user = $request->user();
+            if (!$user) {
+                return $this->jsonErrorResponse('Unauthenticated', 401, 'flash', 'unauthenticated');
+            }
+
+            $employee = $user->employee;
+            if (!$employee) {
+                return $this->jsonErrorResponse('Employee profile not found', 404, 'flash', 'employee_not_found');
+            }
+
+            try {
+                $fromDate = Carbon::parse($request->input('from_date'))->startOfDay();
+                $toDate = Carbon::parse($request->input('to_date'))->endOfDay();
+            } catch (\Throwable $dateException) {
+                throw ValidationException::withMessages([
+                    'from_date' => ['Invalid date range provided.'],
+                ]);
+            }
+
+            if ($fromDate->gt($toDate)) {
+                return $this->jsonErrorResponse(
+                    'from_date cannot be greater than to_date',
+                    422,
+                    'popup',
+                    'invalid_date_range'
+                );
+            }
+
+            $offDays = $this->collectAllOffDays($employee, $fromDate, $toDate);
+
+            return Response::json([
+                'message_type' => 'success',
+                'message_display' => 'none',
+                'message' => count($offDays) . ' off days found',
+                'data' => $offDays,
+            ], 200);
+
+        } catch (ValidationException $validationException) {
+            return $this->jsonErrorResponse(
+                'Invalid parameters',
+                422,
+                'popup',
+                'validation_failed',
+                ['errors' => $validationException->errors()]
+            );
+        } catch (\DomainException $domainException) {
+            $meta = $this->mapOffDayDomainError($domainException->getMessage());
+            return $this->jsonErrorResponse(
+                $meta['message'],
+                $meta['status'],
+                $meta['display'],
+                $meta['code'],
+                $meta['data']
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to fetch off days', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            $message = app()->environment('production')
+                ? 'Unable to fetch off days at the moment.'
+                : 'Server error: ' . $e->getMessage();
+
+            return $this->jsonErrorResponse($message, 500, 'popup', 'server_error');
+        }
+    }
+
+    /**
+     * Collect all off days from various sources and merge them
+     * Combines week offs, Sundays, and holidays into a single list
+     */
+    private function collectAllOffDays($employee, Carbon $fromDate, Carbon $toDate): array
+    {
+        $workShift = $this->getEmployeeWorkShiftForRange($employee->id, $employee->firm_id, $fromDate, $toDate);
+        if (!$workShift) {
+            Log::warning('Work shift not found for off days request', [
+                'employee_id' => $employee->id,
+                'firm_id' => $employee->firm_id,
+                'from_date' => $fromDate->toDateString(),
+                'to_date' => $toDate->toDateString(),
+            ]);
+            throw new \DomainException('work_shift_not_found');
+        }
+
+        try {
+            $weekOffs = $this->getWeekOffDays($workShift->work_shift_id, $employee->firm_id, $fromDate, $toDate);
+            $sundays = $this->getSundaysInRange($fromDate, $toDate);
+            $holidays = $this->getHolidaysFromCalendar($employee->firm_id, $fromDate, $toDate);
+
+            return $this->mergeAndFormatOffDays($weekOffs, $sundays, $holidays);
+        } catch (\DomainException $domainException) {
+            throw $domainException;
+        } catch (\Throwable $e) {
+            Log::error('Failed to collect off days', [
+                'employee_id' => $employee->id,
+                'firm_id' => $employee->firm_id,
+                'from_date' => $fromDate->toDateString(),
+                'to_date' => $toDate->toDateString(),
+                'error' => $e->getMessage(),
+            ]);
+            throw new \DomainException('off_days_collection_failed', 0, $e);
+        }
+    }
+
+    /**
+     * Get employee's work shift for the given date range
+     * Returns the EmpWorkShift record that covers the date range
+     */
+    private function getEmployeeWorkShiftForRange(int $employeeId, int $firmId, Carbon $fromDate, Carbon $toDate)
+    {
+        return EmpWorkShift::where('employee_id', $employeeId)
+            ->where('firm_id', $firmId)
+            ->where(function ($query) use ($fromDate) {
+                $query->whereNull('end_date')
+                    ->orWhere('end_date', '>=', $fromDate);
+            })
+            ->where('start_date', '<=', $toDate)
+            ->first();
+    }
+
+    /**
+     * Get week off days from WorkShiftDay for the given work shift and date range
+     * Returns days marked as 'W' (Week Off) in WorkShiftDay
+     */
+    private function getWeekOffDays(int $workShiftId, int $firmId, Carbon $fromDate, Carbon $toDate): array
+    {
+        $workShiftDays = WorkShiftDay::where('work_shift_id', $workShiftId)
+            ->where('firm_id', $firmId)
+            ->where('day_status_main', 'W')
+            ->whereBetween('work_date', [$fromDate->toDateString(), $toDate->toDateString()])
+            ->get();
+
+        return $workShiftDays->map(function ($day) {
+            try {
+                $date = Carbon::parse($day->work_date);
+            } catch (\Throwable $e) {
+                Log::warning('Invalid work shift day date encountered', [
+                    'work_shift_day_id' => $day->id ?? null,
+                    'work_date' => $day->work_date,
+                ]);
+                return null;
+            }
+
+            $startTime = null;
+            $endTime = null;
+
+            if (!empty($day->start_time)) {
+                try {
+                    $startTime = Carbon::parse($day->start_time)->format('H:i');
+                } catch (\Throwable $e) {
+                    Log::warning('Invalid start_time on work shift day', [
+                        'work_shift_day_id' => $day->id ?? null,
+                        'start_time' => $day->start_time,
+                    ]);
+                }
+            }
+
+            if (!empty($day->end_time)) {
+                try {
+                    $endTime = Carbon::parse($day->end_time)->format('H:i');
+                } catch (\Throwable $e) {
+                    Log::warning('Invalid end_time on work shift day', [
+                        'work_shift_day_id' => $day->id ?? null,
+                        'end_time' => $day->end_time,
+                    ]);
+                }
+            }
+
+            return $this->formatOffDay($date, 'week_off', 'Week Off', [
+                'status' => $day->day_status_main ?? 'W',
+                'start_time' => $startTime,
+                'end_time' => $endTime,
+                'paid_percent' => $day->paid_percent ?? null,
+            ]);
+        })->filter()->values()->toArray();
+    }
+
+    /**
+     * Get all Sundays within the given date range
+     * Returns all Sundays that fall between from_date and to_date
+     */
+    private function getSundaysInRange(Carbon $fromDate, Carbon $toDate): array
+    {
+        $sundays = [];
+        $currentDate = $fromDate->copy();
+
+        if ($currentDate->dayOfWeek !== Carbon::SUNDAY) {
+            $currentDate->next(Carbon::SUNDAY);
+            if ($currentDate->gt($toDate)) {
+                return [];
+            }
+        }
+
+        while ($currentDate->lte($toDate)) {
+            $sundays[] = $this->formatOffDay($currentDate, 'sunday', 'Sunday');
+            $currentDate->addWeek();
+        }
+
+        return $sundays;
+    }
+
+    /**
+     * Format a single off day record with standard fields
+     * Creates a consistent structure for all off day types
+     */
+    private function formatOffDay(Carbon $date, string $type, string $typeLabel, array $additionalFields = []): array
+    {
+        return array_merge([
+            'date' => $date->format('Y-m-d'),
+            'date_formatted' => $date->format('jS F Y'),
+            'day_name' => $date->format('l'),
+            'type' => $type,
+            'type_label' => $typeLabel,
+            'status' => null,
+            'start_time' => null,
+            'end_time' => null,
+            'paid_percent' => null,
+        ], $additionalFields);
+    }
+
+    /**
+     * Get holidays from HolidayCalendar that overlap with the date range
+     * Returns holidays from active calendars that fall within or overlap the date range
+     */
+    private function getHolidaysFromCalendar(int $firmId, Carbon $fromDate, Carbon $toDate): array
+    {
+        $holidays = Holiday::where('firm_id', $firmId)
+            ->where('is_inactive', false)
+            ->where(function ($query) use ($fromDate, $toDate) {
+                $query->whereBetween('start_date', [$fromDate, $toDate])
+                    ->orWhereBetween('end_date', [$fromDate, $toDate])
+                    ->orWhere(function ($q) use ($fromDate, $toDate) {
+                        $q->where('start_date', '<=', $fromDate)
+                            ->where(function ($subQ) use ($toDate) {
+                                $subQ->whereNull('end_date')
+                                    ->orWhere('end_date', '>=', $toDate);
+                            });
+                    });
+            })
+            ->with('holiday_calendar')
+            ->get();
+
+        return $this->expandHolidayDates($holidays, $fromDate, $toDate);
+    }
+
+    /**
+     * Expand holiday date ranges into individual days
+     * Converts holidays with start_date and end_date into individual day records
+     */
+    private function expandHolidayDates($holidays, Carbon $fromDate, Carbon $toDate): array
+    {
+        $expandedDays = [];
+
+        foreach ($holidays as $holiday) {
+            if (empty($holiday->start_date)) {
+                Log::warning('Holiday missing start date', ['holiday_id' => $holiday->id ?? null]);
+                continue;
+            }
+
+            try {
+                $start = Carbon::parse($holiday->start_date)->max($fromDate);
+            } catch (\Throwable $e) {
+                Log::warning('Invalid holiday start date', [
+                    'holiday_id' => $holiday->id ?? null,
+                    'start_date' => $holiday->start_date,
+                ]);
+                continue;
+            }
+
+            $endDateValue = $holiday->end_date ?: $holiday->start_date;
+
+            try {
+                $end = Carbon::parse($endDateValue)->min($toDate);
+            } catch (\Throwable $e) {
+                Log::warning('Invalid holiday end date', [
+                    'holiday_id' => $holiday->id ?? null,
+                    'end_date' => $holiday->end_date,
+                ]);
+                $end = $start->copy();
+            }
+
+            if ($start->gt($toDate)) {
+                continue;
+            }
+
+            $current = $start->copy();
+            while ($current->lte($end)) {
+                $expandedDays[] = $this->formatOffDay($current, 'holiday', 'Holiday', [
+                    'holiday_title' => $holiday->holiday_title,
+                    'holiday_desc' => $holiday->holiday_desc,
+                    'calendar_title' => $holiday->holiday_calendar->title ?? null,
+                    'status' => $holiday->day_status_main ?? 'H',
+                ]);
+                $current->addDay();
+            }
+        }
+
+        return $expandedDays;
+    }
+
+    /**
+     * Merge and format off days from different sources
+     * Combines week offs, Sundays, and holidays, removes duplicates, and sorts by date
+     */
+    private function mergeAndFormatOffDays(array $weekOffs, array $sundays, array $holidays): array
+    {
+        $allOffDays = array_merge($weekOffs, $sundays, $holidays);
+        $uniqueDays = collect($allOffDays)->keyBy('date')->values();
+
+        return $uniqueDays->sortBy('date')->values()->toArray();
+    }
+
+    /**
+     * Build a standardized success response
+     */
+    private function jsonSuccess(string $message, array $data = [], array $extra = [], int $status = 200)
+    {
+        return Response::json(array_merge([
+            'message_type' => 'success',
+            'message_display' => 'none',
+            'message' => $message,
+            'data' => $data,
+        ], $extra), $status);
+    }
+
+    /**
+     * Build a standardized error response
+     */
+    private function jsonError(string $message, int $status = 500, array $errors = [])
+    {
+        return Response::json([
+            'message_type' => 'error',
+            'message_display' => $status >= 500 ? 'popup' : 'flash',
+            'message' => $message,
+            'errors' => $errors,
+        ], $status);
     }
 }

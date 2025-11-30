@@ -11,6 +11,13 @@
             @endforeach
         </flux:select>
 
+        <flux:select label="College" variant="listbox" multiple searchable wire:model.defer="filters.college_id">
+            <flux:select.option value="">All</flux:select.option>
+            @foreach($listsForFields['colleges'] as $id => $name)
+                <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
+            @endforeach
+        </flux:select>
+
         <flux:select label="Department" variant="listbox" multiple searchable wire:model.defer="filters.department_id">
             <flux:select.option value="">All</flux:select.option>
             @foreach($listsForFields['departments'] as $id => $name)

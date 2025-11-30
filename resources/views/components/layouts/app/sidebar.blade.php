@@ -1,3 +1,10 @@
+@props(['component' => null, 'title' => null])
+
+@php
+    // Get component from props, attributes, or route
+    $routeComponent = $component ?? $attributes->get('component') ?? request()->route('component');
+@endphp
+
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
 <head>
@@ -9,10 +16,10 @@
 @livewire('panel.leftmenu')
 <div class="flex-1 p-0 m-0">
     @livewire('panel.topbar')
-    @livewire('panel.topmenu')
+    @livewire('panel.topmenu', [], key('topmenu-' . session('selectedModuleId', 'default')))
     <div class="p-0 m-0">
-        @livewire('panel.main-content')
-{{--        @livewire('hrms.onboard.bulk-employee-job-profiles')--}}
+        @livewire('panel.router-wrapper', ['component' => $routeComponent])
+{{--        @livewire('panel.main-content')--}}
     </div>
 </div>
 

@@ -138,7 +138,50 @@
     </div>
     <!-- Edit LOP Days Modal -->
     <flux:modal wire:model="showEditModal">
-        <div class="p-4">
+        <div
+            class="p-4"
+            x-data="{
+                voidDates: @entangle('editForm.void_dates').live,
+                lopDates: @entangle('editForm.lop_dates').live,
+                voidHalfDates: @entangle('editForm.void_half_dates').live,
+                lopHalfDates: @entangle('editForm.lop_half_dates').live,
+                init() {
+                    this.cleanHalf('void');
+                    this.cleanHalf('lop');
+                    this.$watch('voidDates', () => this.cleanHalf('void'));
+                    this.$watch('lopDates', () => this.cleanHalf('lop'));
+                },
+                cleanHalf(type) {
+                    const datesKey = type === 'void' ? 'voidDates' : 'lopDates';
+                    const halfKey = type === 'void' ? 'voidHalfDates' : 'lopHalfDates';
+                    this[halfKey] = this[halfKey].filter(date => this[datesKey].includes(date));
+                },
+                toggleHalf(type, date) {
+                    const halfKey = type === 'void' ? 'voidHalfDates' : 'lopHalfDates';
+                    const datesKey = type === 'void' ? 'voidDates' : 'lopDates';
+                    if (!this[datesKey].includes(date)) return;
+                    if (this[halfKey].includes(date)) {
+                        this[halfKey] = this[halfKey].filter(d => d !== date);
+                    } else {
+                        this[halfKey] = [...this[halfKey], date];
+                    }
+                },
+                isHalf(type, date) {
+                    const halfKey = type === 'void' ? 'voidHalfDates' : 'lopHalfDates';
+                    return this[halfKey].includes(date);
+                },
+                selectedText(type) {
+                    const datesKey = type === 'void' ? 'voidDates' : 'lopDates';
+                    if (!this[datesKey].length) {
+                        return 'None';
+                    }
+                    return this[datesKey]
+                        .map(date => this.isHalf(type, date) ? `${date} (1/2)` : date)
+                        .join(', ');
+                }
+            }"
+            x-cloak
+        >
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold">Edit LOP Days</h2>
             </div>
@@ -155,14 +198,62 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Void Days (select dates)</label>
                         <flux:date-picker multiple wire:model="editForm.void_dates" :months="1" placeholder="Select void days..." />
-                        <div class="text-xs text-gray-500 mt-1">Selected: {{ collect($editForm["void_dates"])->join(', ') }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Selected:
+                            <span x-text="selectedText('void')"></span>
+                        </div>
                         @error('editForm.void_dates') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
+                        <div
+                            class="mt-3 space-y-2 bg-gray-50 rounded p-3 border border-gray-100"
+                            x-show="voidDates.length"
+                        >
+                            <div class="text-xs font-medium text-gray-600">Tap a date to toggle half day</div>
+                            <template x-for="date in voidDates" :key="`void-${date}`">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span>
+                                        <span x-text="date"></span>
+                                        <span class="text-gray-400" x-show="isHalf('void', date)"> (1/2)</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1 text-xs font-semibold rounded border transition"
+                                        :class="isHalf('void', date) ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-300 text-gray-700 bg-white'"
+                                        x-on:click="toggleHalf('void', date)"
+                                    >
+                                        <span x-text="isHalf('void', date) ? 'Half Day' : 'Full Day'"></span>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">LOP Days (select dates)</label>
                         <flux:date-picker multiple wire:model="editForm.lop_dates" :months="1" placeholder="Select LOP days..." />
-                        <div class="text-xs text-gray-500 mt-1">Selected: {{ collect($editForm["lop_dates"])->join(', ') }}</div>
+                        <div class="text-xs text-gray-500 mt-1">Selected:
+                            <span x-text="selectedText('lop')"></span>
+                        </div>
                         @error('editForm.lop_dates') <span class="text-red-500 text-sm">{{ $message }}</span> @enderror
+                        <div
+                            class="mt-3 space-y-2 bg-gray-50 rounded p-3 border border-gray-100"
+                            x-show="lopDates.length"
+                        >
+                            <div class="text-xs font-medium text-gray-600">Tap a date to toggle half day</div>
+                            <template x-for="date in lopDates" :key="`lop-${date}`">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span>
+                                        <span x-text="date"></span>
+                                        <span class="text-gray-400" x-show="isHalf('lop', date)"> (1/2)</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1 text-xs font-semibold rounded border transition"
+                                        :class="isHalf('lop', date) ? 'bg-orange-500 border-orange-500 text-white' : 'border-gray-300 text-gray-700 bg-white'"
+                                        x-on:click="toggleHalf('lop', date)"
+                                    >
+                                        <span x-text="isHalf('lop', date) ? 'Half Day' : 'Full Day'"></span>
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                 </div>
 

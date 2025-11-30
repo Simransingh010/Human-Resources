@@ -16,7 +16,10 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/loginmobile', [AuthController::class, 'loginmobile']);
 Route::post('/send-otp', [AuthController::class, 'sendOtp']);
 
-Route::middleware('auth:sanctum')->group(function () {
+
+
+
+Route::middleware(['auth:sanctum'])->group(function () {
     Route::get('/panels', [PanelController::class, 'index']);
     Route::get('/firms', [FirmController::class, 'index']);
     Route::get('/menu', [MenuController::class, 'index']);
@@ -48,6 +51,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('hrms/leave/bulk-leave-action', [LeaveController::class, 'handleBulkLeaveAction']);
     Route::get('hrms/leave/pol-attendances', [LeaveController::class, 'getPolAttendancesForApprover']);
     Route::post('hrms/leave/pol-attendance-action', [LeaveController::class, 'handlePolAttendanceAction']);
+    Route::post('hrms/leave/off-days-in-range', [LeaveController::class, 'getOffDaysInRange']);
     Route::get('hrms/colleges', [LeaveController::class, 'getColleges']);
     Route::get('hrms/employee-details', [LeaveController::class, 'getEmployeeDetails']);
 
@@ -95,6 +99,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/students/attendance/punch', [StudentAttendanceController::class, 'punch']);
     Route::get('/students/attendance/punch-status', [StudentAttendanceController::class, 'punchStatus']);
     Route::get('/students/attendance', [StudentAttendanceController::class, 'attendanceWithPunches']);
+    
+   
+    
     Route::get('/students/attendance/coach/students', [StudentAttendanceController::class, 'coachStudents']);
     Route::post('/students/attendance/coach/mark', [StudentAttendanceController::class, 'coachMarkAttendance']);
     Route::get('/students/details', [StudentAttendanceController::class, 'studentDetails']);

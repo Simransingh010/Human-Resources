@@ -5,6 +5,7 @@ namespace App\Livewire\Hrms\Reports\AttendanceReports;
 use App\Livewire\Hrms\Reports\AttendanceReports\exports\EuAttendanceReportExport;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\EmployeeJobProfile;
+use App\Models\Saas\College;
 use Livewire\Component;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -13,6 +14,7 @@ class EuAttendanceReport extends Component
     public $filters = [
         'date_range' => null,
         'employee_id' => null,
+        'college_id' => null,
         'department_id' => null,
         'joblocation_id' => null,
         'employment_type_id' => null,
@@ -37,6 +39,13 @@ class EuAttendanceReport extends Component
             ->mapWithKeys(function ($e) {
                 return [$e->id => trim(($e->fname ?? '') . ' ' . ($e->lname ?? ''))];
             })
+            ->toArray();
+
+        $this->listsForFields['colleges'] = College::select('id', 'name')
+            ->where('firm_id', session('firm_id'))
+            ->active()
+            ->orderBy('name')
+            ->pluck('name', 'id')
             ->toArray();
 
         $this->listsForFields['departments'] = EmployeeJobProfile::with('department')

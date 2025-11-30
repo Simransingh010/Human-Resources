@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\API\Hrms\Students;
 
 use App\Http\Controllers\Controller;
+use App\Models\Hrms\Employee;
 use App\Models\Hrms\Student;
 use App\Models\Hrms\StudentAttendance;
 use App\Models\Hrms\StudentPunch;
+use App\Models\Hrms\StudentEducationDetail;
+use App\Models\Hrms\StudyGroup;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +16,10 @@ use Illuminate\Support\Facades\Validator;
 
 class StudentAttendanceController extends Controller
 {
+	/**
+	 * Constructor removed - middleware applied at route level
+	 */
+
 	/**
 	 * List students assigned to the authenticated coach (by reporting_coach_id)
 	 * with their attendance status for the given date (defaults to today).
@@ -25,6 +32,7 @@ class StudentAttendanceController extends Controller
 			$students = $this->fetchCoachStudents($coach->id);
 			$attendanceMap = $this->mapAttendancesForDate($students->pluck('id')->all(), $date);
 			$list = $students->map(fn($s) => $this->buildStudentSummary($s, $attendanceMap, $date));
+			
 			return response()->json([
 				'message_type' => 'success',
 				'message_display' => 'none',
@@ -33,12 +41,29 @@ class StudentAttendanceController extends Controller
 				'students' => $list,
 			], 200);
 		} catch (\Illuminate\Validation\ValidationException $e) {
-			return $this->errorResponse(422, 'Validation failed', 'VALIDATION_ERROR', $e->errors());
+			return response()->json([
+				'message_type' => 'error',
+				'message' => 'Validation failed',
+				'error_type' => 'VALIDATION_ERROR',
+				'errors' => $e->errors()
+			], 422);
 		} catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
-			return $this->errorResponse($e->getStatusCode(), $e->getMessage(), 'HTTP_ERROR');
+			return response()->json([
+				'message_type' => 'error',
+				'message' => $e->getMessage(),
+				'error_type' => 'HTTP_ERROR',
+				'status_code' => $e->getStatusCode()
+			], $e->getStatusCode());
 		} catch (\Throwable $e) {
-			\Log::error('coachStudents error: ' . $e->getMessage(), ['trace' => $e->getTraceAsString()]);
-			return $this->errorResponseThrowable($e, 500, 'Failed to fetch coach students. Internal server error.', 'INTERNAL_ERROR');
+			return response()->json([
+				'message_type' => 'error',
+				'message' => 'Failed to fetch coach students',
+				'error_type' => 'INTERNAL_ERROR',
+				'error_message' => $e->getMessage(),
+				'error_file' => $e->getFile(),
+				'error_line' => $e->getLine(),
+				'error_trace' => explode("\n", $e->getTraceAsString())
+			], 500);
 		}
 	}
 
@@ -80,7 +105,7 @@ class StudentAttendanceController extends Controller
 			$studentsList = $students->map(fn($s) => $this->buildStudentSummaryMarked($s, $attendanceMap, $data['date']));
 			return response()->json([
 				'message_type' => $messageType,
-				'message_display' => 'none',
+				'message_display' => 'flash',
 				'message' => $message,
 				'date' => $data['date'],
 				'results' => $results,
@@ -308,9 +333,15 @@ class StudentAttendanceController extends Controller
 	private function getAuthenticatedStudent(Request $request): Student
 	{
 		$user = $request->user();
-		abort_if(!$user, 401, 'Unauthenticated: No user found in request. Please provide a valid Bearer token.');
-		abort_if(!method_exists($user, 'student'), 500, 'User model does not have a student relationship. Please check your user setup.');
-		abort_if(!$user->student, 404, 'Authenticated user does not have a student record. Please onboard the user as a student.');
+		if (!$user) {
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(401, 'Unauthenticated: No user found in request. Please provide a valid Bearer token.');
+		}
+		if (!method_exists($user, 'student')) {
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(500, 'User model does not have a student relationship. Please check your user setup.');
+		}
+		if (!$user->student) {
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(404, 'Authenticated user does not have a student record. Please onboard the user as a student.');
+		}
 		$student = $user->student;
 		$student->load('student_education_detail.study_centre');
 		return $student;
@@ -322,8 +353,20 @@ class StudentAttendanceController extends Controller
 	private function getAuthenticatedCoach(Request $request)
 	{
 		$user = $request->user();
-		abort_if(!$user, 401, 'Unauthenticated: No user found in request. Please provide a valid Bearer token.');
-		abort_if(!method_exists($user, 'employee') || !$user->employee, 403, 'Only employees can perform coach attendance actions.');
+		if (!$user) {
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(401, 'Unauthenticated: No user found in request. Please provide a valid Bearer token.');
+		}
+		
+		if (!method_exists($user, 'employee')) {
+			\Log::error('User model missing employee relationship', ['user_id' => $user->id]);
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(500, 'User model does not have an employee relationship. Please check your user setup.');
+		}
+		
+		if (!$user->employee) {
+			\Log::warning('User has no employee record', ['user_id' => $user->id]);
+			throw new \Symfony\Component\HttpKernel\Exception\HttpException(403, 'Only employees can perform coach attendance actions. Please ensure you are onboarded as an employee.');
+		}
+		
 		return $user->employee;
 	}
 
@@ -471,20 +514,88 @@ class StudentAttendanceController extends Controller
 
 	private function fetchCoachStudents(int $coachEmployeeId)
 	{
-		return \App\Models\Hrms\Student::with(['study_centre', 'student_education_detail.study_centre'])
-			->whereHas('student_education_detail', function ($q) use ($coachEmployeeId) {
-				$q->where('reporting_coach_id', $coachEmployeeId);
+		// Get coach's firm_id from the employee record
+		$coach = Employee::find($coachEmployeeId);
+		
+		if (!$coach) {
+			\Log::error("Coach employee not found", ['coach_id' => $coachEmployeeId]);
+			abort(404, 'Coach employee record not found. Please ensure the employee is properly set up.');
+		}
+		
+		if (!$coach->firm_id) {
+			\Log::error("Coach has no firm_id", ['coach_id' => $coachEmployeeId]);
+			abort(422, 'Coach employee has no firm assigned. Please contact administrator.');
+		}
+		
+		$firmId = $coach->firm_id;
+
+		// Get all active study groups assigned to this coach
+		$groups = StudyGroup::with('study_centre')
+			->where('coach_id', $coachEmployeeId)
+			->where('is_active', true)
+			->where('firm_id', $firmId)
+			->get();
+
+		if ($groups->isEmpty()) {
+			// Fallback: get students directly assigned via reporting_coach_id
+			return Student::with('student_education_detail.study_centre')
+				->where('firm_id', $firmId)
+				->where('is_inactive', false)
+				->whereHas('student_education_detail', fn($q) => $q->where('reporting_coach_id', $coachEmployeeId))
+				->orderBy('fname')
+				->get();
+		}
+
+		// Get all study centre IDs from the coach's groups
+		$studyCentreIds = $groups->pluck('study_centre_id')->filter()->unique()->toArray();
+
+		if (empty($studyCentreIds)) {
+			return collect();
+		}
+
+		// Fetch all students from those study centres (same logic as Livewire)
+		$students = Student::with('student_education_detail.study_centre')
+			->where('firm_id', $firmId)
+			->where('is_inactive', false)
+			->whereHas('student_education_detail', function ($q) use ($studyCentreIds) {
+				$q->whereIn('study_centre_id', $studyCentreIds);
 			})
 			->orderBy('fname')
-			->get(['id','firm_id','study_centre_id','fname','mname','lname','email','phone']);
+			->get();
+
+		return $students;
 	}
 
 	private function mapAttendancesForDate(array $studentIds, string $date)
 	{
-		return StudentAttendance::whereIn('student_id', $studentIds)
+		$attendances = StudentAttendance::whereIn('student_id', $studentIds)
 			->whereDate('attendance_date', $date)
-			->get(['student_id','attendance_status_main'])
+			->get(['id', 'student_id', 'attendance_status_main'])
 			->keyBy('student_id');
+		
+		// Manually load first and last punch for each attendance
+		$attendanceIds = $attendances->pluck('id')->all();
+		if (!empty($attendanceIds)) {
+			$allPunches = StudentPunch::whereIn('student_attendance_id', $attendanceIds)
+				->orderBy('punch_datetime', 'asc')
+				->get()
+				->groupBy('student_attendance_id');
+			
+			foreach ($attendances as $attendance) {
+				if ($allPunches->has($attendance->id)) {
+					$punches = $allPunches->get($attendance->id);
+					// Store both first and last punch
+					$attendance->setRelation('student_punches', collect([
+						'first' => $punches->first(),
+						'last' => $punches->last(),
+					]));
+				} else {
+					$attendance->setRelation('student_punches', collect());
+				}
+			}
+		}
+		
+		return $attendances;
 	}
 
 	private function buildStudentSummary($student, $attendanceMap, string $date): array
@@ -493,6 +604,32 @@ class StudentAttendanceController extends Controller
 		$status = $att->attendance_status_main ?? null;
 		$label = $status ? (StudentAttendance::ATTENDANCE_STATUS_MAIN_SELECT[$status] ?? $status) : null;
 		$marked = $att ? 'yes' : 'no';
+		
+		// Extract selfie and times from first and last punch if attendance exists
+		$selfieUrl = null;
+		$selfieThumbUrl = null;
+		$markedTime = null;
+		$exitTime = null;
+		
+		if ($att && $att->student_punches->isNotEmpty()) {
+			$firstPunch = $att->student_punches->get('first');
+			$lastPunch = $att->student_punches->get('last');
+			
+			if ($firstPunch) {
+				$media = $firstPunch->getMedia('selfie')->first();
+				if ($media) {
+					$selfieUrl = $media->getUrl();
+					$selfieThumbUrl = $media->getUrl('thumb');
+				}
+				$markedTime = $firstPunch->punch_datetime ? $firstPunch->punch_datetime->format('Y-m-d H:i:s') : null;
+			}
+			
+			// Only set exit time if there's a last punch and it's different from first (multiple punches)
+			if ($lastPunch && $firstPunch && $lastPunch->id !== $firstPunch->id) {
+				$exitTime = $lastPunch->punch_datetime ? $lastPunch->punch_datetime->format('Y-m-d H:i:s') : null;
+			}
+		}
+		
 		return [
 			'id' => $student->id,
 			'student_id' => $student->id,
@@ -508,24 +645,42 @@ class StudentAttendanceController extends Controller
 			'attendance_status_main' => $status ?? '',
 			'attendance_status_label' => $label ?? '',
 			'marked_attendence' => $marked,
+			'marked_time' => $markedTime,
+			'exit_time' => $exitTime,
+			'captured_image' => $selfieUrl,
+			'captured_image_thumb' => $selfieThumbUrl,
 		];
 	}
 
 	private function validateCoachMarkInput(Request $request): array
 	{
 		$allowed = implode(',', array_keys(StudentAttendance::ATTENDANCE_STATUS_MAIN_SELECT));
-		return Validator::validate($request->all(), [
+		$data = Validator::validate($request->all(), [
 			'date' => 'required|date',
 			'attendance_status_main' => "required|string|in:$allowed",
 			'remarks' => 'nullable|string|max:255',
 			'student_id' => 'nullable|integer',
 			'student_ids' => 'nullable|array',
 			'student_ids.*' => 'integer',
-			// Location required for coach mark (single or bulk)
-			'latitude' => 'required|numeric|between:-90,90',
-			'longitude' => 'required|numeric|between:-180,180',
+			'latitude' => 'nullable|numeric|between:-90,90',
+			'longitude' => 'nullable|numeric|between:-180,180',
 			'selfie' => 'nullable|image|max:4096',
 		]);
+		
+		// Validate location/selfie requirements based on attendance status
+		$status = $data['attendance_status_main'];
+		$statusesWithoutPresence = ['A', 'L', 'LWP', 'S']; // Absent, Leave, Leave without Pay, Suspended
+		
+		if (!in_array($status, $statusesWithoutPresence)) {
+			// For present statuses, require at least location
+			if (empty($data['latitude']) && empty($data['longitude'])) {
+				throw \Illuminate\Validation\ValidationException::withMessages([
+					'latitude' => ['Location (latitude/longitude) is required when marking attendance as present.'],
+				]);
+			}
+		}
+		
+		return $data;
 	}
 
 	private function normalizeStudentIds(array $data): array
@@ -550,9 +705,30 @@ class StudentAttendanceController extends Controller
 		if (!$this->isStudentAssignedToCoach($studentId, $coach->id)) {
 			return $this->coachResult($studentId, 'error', 'Student is not assigned to this coach', false);
 		}
-		if ($this->attendanceAlreadyExists($studentId, $data['date'])) {
+		
+		// Check if attendance exists
+		$attendanceExists = $this->attendanceAlreadyExists($studentId, $data['date']);
+		
+		if ($attendanceExists) {
+			// Attendance already exists - check if we should create additional punch
+			$attendance = StudentAttendance::where('student_id', $studentId)
+				->whereDate('attendance_date', $data['date'])
+				->first();
+			
+			// Only create punch if metadata (selfie/location) is provided
+			$hasSelfie = $request->hasFile('selfie');
+			$hasLatLng = isset($data['latitude']) || isset($data['longitude']);
+			
+			if ($hasSelfie || $hasLatLng) {
+				// Create additional punch based on last punch
+				$this->maybeCreateCoachPunch($request, $studentId, $attendance, $data);
+				return $this->coachResult($studentId, 'success', 'Additional punch recorded', true);
+			}
+			
 			return $this->coachResult($studentId, 'skipped', 'Attendance already marked', true);
 		}
+		
+		// Create new attendance
 		$attendance = $this->createCoachAttendance($studentId, $data, $coach);
 		$this->maybeCreateCoachPunch($request, $studentId, $attendance, $data);
 		return $this->coachResult($studentId, 'success', 'Attendance marked', true);
@@ -560,7 +736,27 @@ class StudentAttendanceController extends Controller
 
 	private function isStudentAssignedToCoach(int $studentId, int $coachEmployeeId): bool
 	{
-		return \App\Models\Hrms\StudentEducationDetail::where('student_id', $studentId)
+		// Get all study centre IDs from coach's active groups
+		$studyCentreIds = StudyGroup::where('coach_id', $coachEmployeeId)
+			->where('is_active', true)
+			->pluck('study_centre_id')
+			->filter()
+			->unique()
+			->toArray();
+
+		if (!empty($studyCentreIds)) {
+			// Check if student belongs to any of those study centres
+			$inStudyCentre = StudentEducationDetail::where('student_id', $studentId)
+				->whereIn('study_centre_id', $studyCentreIds)
+				->exists();
+
+			if ($inStudyCentre) {
+				return true;
+			}
+		}
+
+		// Fallback: check reporting_coach_id in education detail
+		return StudentEducationDetail::where('student_id', $studentId)
 			->where('reporting_coach_id', $coachEmployeeId)
 			->exists();
 	}
@@ -574,7 +770,18 @@ class StudentAttendanceController extends Controller
 
 	private function createCoachAttendance(int $studentId, array $data, $coach): StudentAttendance
 	{
-		$student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->findOrFail($studentId);
+		$student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->find($studentId);
+		
+		if (!$student) {
+			\Log::error('Student not found during coach attendance creation', ['student_id' => $studentId]);
+			abort(404, 'Student not found. Please verify the student ID.');
+		}
+		
+		if (!$student->firm_id) {
+			\Log::error('Student has no firm_id', ['student_id' => $studentId]);
+			abort(422, 'Student has no firm assigned. Please contact administrator.');
+		}
+		
 		$coachName = trim(($coach->fname ?? '') . ' ' . ($coach->lname ?? ''));
 		$remarks = 'Marked by Coach - ' . $coachName;
 		if (!empty($data['remarks'])) {
@@ -610,25 +817,54 @@ class StudentAttendanceController extends Controller
 
 	/**
 	 * Create a minimal punch if metadata (selfie or lat/long) provided during coach bulk mark.
+	 * Skip punch creation for absent/leave statuses.
+	 * Automatically determines IN/OUT based on last punch.
 	 */
 	private function maybeCreateCoachPunch(Request $request, int $studentId, StudentAttendance $attendance, array $data): void
 	{
+		// Don't create punch for absent/leave statuses
+		$statusesWithoutPresence = ['A', 'L', 'LWP', 'S']; // Absent, Leave, Leave without Pay, Suspended
+		if (in_array($data['attendance_status_main'], $statusesWithoutPresence)) {
+			return;
+		}
+		
         $hasSelfie = $request->hasFile('selfie');
         $hasLatLng = isset($data['latitude']) || isset($data['longitude']);
         if (!$hasSelfie && !$hasLatLng) {
             return;
         }
-        $student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->findOrFail($studentId);
+        $student = \App\Models\Hrms\Student::with('student_education_detail.study_centre')->find($studentId);
+        
+        if (!$student) {
+            \Log::error('Student not found during coach punch creation', ['student_id' => $studentId]);
+            return; // Silently skip punch creation if student not found
+        }
+        
         [$today, $now] = $this->getTodayAndNow();
+        
+        // Determine IN/OUT based on last punch for this date
+        $lastPunch = $this->getLastPunchForDate($studentId, $data['date'] ?? $today);
+        $inOut = 'in'; // Default to 'in'
+        
+        if ($lastPunch) {
+            // Alternate based on last punch
+            $inOut = ($lastPunch->in_out === 'in') ? 'out' : 'in';
+        }
+        
         $punch = $this->createPunchRecord($student, $attendance, [
             'study_centre_id' => optional($student->student_education_detail)->study_centre_id,
-            'in_out' => 'in',
+            'in_out' => $inOut,
             'punch_type' => 'manual',
             'latitude' => $data['latitude'] ?? null,
             'longitude' => $data['longitude'] ?? null,
             'device_id' => null,
         ], $data['date'] ?? $today, $now);
         $this->attachSelfieIfProvided($request, $punch);
+        
+        // Update duration if this is an 'out' punch
+        if ($inOut === 'out' && $lastPunch && $lastPunch->in_out === 'in') {
+            $this->updateDurationOnOutIfNeeded($attendance, $lastPunch, 'out', $now);
+        }
 	}
 
 	// ---------------------------

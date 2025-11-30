@@ -74,7 +74,7 @@ return [
             'prefix' => '',
         ],
 
-        'iqwingl_essl' => [
+        '   ' => [
             'driver' => 'mysql',
             'host' =>  'localhost',
             'port' =>  '3306',

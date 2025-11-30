@@ -32,6 +32,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  *
  * @property Firm $firm
  * @property StudyCentre|null $study_centre
+ * @property Collection|StudyGroup[] $study_groups
  * @property User|null $user
  * @property Collection|StudentPersonalDetail[] $student_personal_details
  * @property Collection|StudentEducationDetail[] $student_education_details
@@ -72,6 +73,13 @@ class Student extends Model
 	public function study_centre()
 	{
 		return $this->belongsTo(StudyCentre::class);
+	}
+
+	public function study_groups()
+	{
+		return $this->belongsToMany(StudyGroup::class, 'study_group_student')
+			->withPivot('joined_at', 'left_at')
+			->withTimestamps();
 	}
 
 	public function user()

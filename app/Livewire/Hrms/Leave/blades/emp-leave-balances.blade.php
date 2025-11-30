@@ -233,12 +233,12 @@
                         @endforeach
                         <flux:table.cell>
                             <div class="flex space-x-2">
-{{--                                <flux:button--}}
-{{--                                        variant="primary"--}}
-{{--                                        class="p-1"--}}
-{{--                                        icon="pencil"--}}
-{{--                                        wire:click="edit({{ $item->id }})"--}}
-{{--                                />--}}
+                                <flux:button
+                                        variant="primary"
+                                        class="p-1"
+                                        icon="pencil"
+                                        wire:click="edit({{ $item->id }})"
+                                />
                                 <flux:button
                                         wire:click="showLeaveTransactions({{ $item->id }})"
                                         color="green"
@@ -331,12 +331,12 @@
                                                                     {{ $this->getPeriodLabel($balance) }}
                                                                 </flux:badge>
                                                                 <div class="flex space-x-1">
-{{--                                                                    <flux:button--}}
-{{--                                                                            variant="danger"--}}
-{{--                                                                            icon="pencil"--}}
-{{--                                                                            wire:click="edit({{ $balance->id }})"--}}
-{{--                                                                            class="p-1"--}}
-{{--                                                                    />--}}
+                                                                    <flux:button
+                                                                            variant="danger"
+                                                                            icon="pencil"
+                                                                            wire:click="edit({{ $balance->id }})"
+                                                                            class="p-1"
+                                                                    />
                                                                     <flux:button
                                                                             variant="danger"
                                                                             icon="information-circle"
