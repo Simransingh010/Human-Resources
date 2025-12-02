@@ -3,13 +3,13 @@
 namespace App\Livewire\Hrms\Attendance;
 
 use Livewire\Component;
-use App\Models\Hrms\EmpLeaveAllocation;
+use App\Models\Hrms\EmpLeaveAllocation as EmpLeaveAllocationModel;
 use App\Models\Hrms\Employee;
 use App\Models\Hrms\LeaveType;
 use App\Models\Hrms\LeavesQuotaTemplate;
 use Flux;
 
-class EmpLeaveAllocations extends Component
+class EmpLeaveAllocation extends Component
 {
     use \Livewire\WithPagination;
 
@@ -47,7 +47,7 @@ class EmpLeaveAllocations extends Component
     #[\Livewire\Attributes\Computed]
     public function allocationsList()
     {
-        return EmpLeaveAllocation::query()
+        return EmpLeaveAllocationModel::query()
             ->with(['employee', 'leave_type', 'leaves_quota_template'])
             ->when($this->sortBy, fn($query) => $query->orderBy($this->sortBy, $this->sortDirection))
             ->where('firm_id', session('firm_id'))
@@ -84,7 +84,7 @@ class EmpLeaveAllocations extends Component
 
     public function fetchAllocation($id)
     {
-        $allocation = EmpLeaveAllocation::findOrFail($id);
+        $allocation = EmpLeaveAllocationModel::findOrFail($id);
         $this->allocationData = $allocation->toArray();
         $this->isEditing = true;
         $this->modal('mdl-leave-allocation')->show();
@@ -103,12 +103,12 @@ class EmpLeaveAllocations extends Component
         ]);
 
         if ($this->isEditing) {
-            $allocation = EmpLeaveAllocation::findOrFail($this->allocationData['id']);
+            $allocation = EmpLeaveAllocationModel::findOrFail($this->allocationData['id']);
             $allocation->update($validatedData['allocationData']);
             $message = 'Leave allocation updated successfully.';
         } else {
             $validatedData['allocationData']['firm_id'] = session('firm_id');
-            EmpLeaveAllocation::create($validatedData['allocationData']);
+            EmpLeaveAllocationModel::create($validatedData['allocationData']);
             $message = 'Leave allocation added successfully.';
         }
 
@@ -140,7 +140,7 @@ class EmpLeaveAllocations extends Component
     public function deleteAllocation($id)
     {
         try {
-            $allocation = EmpLeaveAllocation::findOrFail($id);
+            $allocation = EmpLeaveAllocationModel::findOrFail($id);
             $employeeName = $allocation->employee->fname . ' ' . $allocation->employee->lname;
             $allocation->delete();
 

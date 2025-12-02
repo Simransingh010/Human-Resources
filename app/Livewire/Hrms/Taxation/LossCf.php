@@ -9,12 +9,13 @@ use Illuminate\Support\Facades\Session;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-class LossCf extends Component3
+class LossCf extends Component
 {
     use WithPagination;
 
     public $perPage = 20;
     public $sortBy = 'created_at';
+
     public $sortDirection = 'desc';
     public $search = '';
 

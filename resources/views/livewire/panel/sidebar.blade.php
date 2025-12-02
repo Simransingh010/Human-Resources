@@ -3,14 +3,32 @@
         <flux:sidebar.toggle class="lg:hidden" icon="x-mark"/>
 
         <a href="{{ route('dashboard') }}" class="mr-5 flex items-center space-x-2" wire:navigate>
-{{--            <x-app-logo/>--}}
             <span class="flex items-center justify-center rounded-md">
+                @if($firmSquareLogo ?? false)
+                    <img
+                        src="{{ $firmSquareLogo }}"
+                        alt="{{ $firmShortName ?? $firmName ?? 'Logo' }}"
+                        class="h-10 w-auto"
+                    />
+                @elseif($firmWideLogo ?? false)
+                    <img
+                        src="{{ $firmWideLogo }}"
+                        alt="{{ $firmName ?? $firmShortName ?? 'Logo' }}"
+                        class="h-10 w-auto"
+                    />
+                @else
                     <img
                         src="https://iqwing.live/assets/images/logo-iqwing.webp"
                         alt="IQwing Logo"
                         class="h-10 w-auto"
                     />
-                    </span>
+                @endif
+            </span>
+            @if(($firmShortName ?? false) || ($firmName ?? false))
+                <span class="font-semibold text-sm text-gray-800 dark:text-white truncate max-w-[120px]">
+                    {{ $firmShortName ?? $firmName }}
+                </span>
+            @endif
         </a>
         {{-- App Selector --}}
         <flux:select variant="listbox" wire:model="selectedApp" wire:change="getModulesSelectedApp($event.target.value)" placeholder="Select role...">

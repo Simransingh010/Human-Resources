@@ -2,15 +2,34 @@
     <flux:sidebar sticky stashable class="border-r border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:sidebar.toggle class="lg:hidden" icon="x-mark"/>
 
-        <!-- Logo -->
+        <!-- Logo & Firm Name -->
         <a href="#" wire:click="selectApp(null)" class="mr-5 flex items-center space-x-2">
             <span class="flex items-center justify-center rounded-md">
-                <img
-                    src="https://iqwing.live/assets/images/logo-iqwing.webp"
-                    alt="IQwing Logo"
-                    class="h-10 w-auto"
-                />
+                @if($firmSquareLogo)
+                    <img
+                        src="{{ $firmSquareLogo }}"
+                        alt="{{ $firmShortName ?? $firmName ?? 'Logo' }}"
+                        class="h-10 w-auto"
+                    />
+                @elseif($firmWideLogo)
+                    <img
+                        src="{{ $firmWideLogo }}"
+                        alt="{{ $firmShortName ?? $firmName ?? 'Logo' }}"
+                        class="h-10 w-auto"
+                    />
+                @else
+                    <img
+                        src="https://iqwing.live/assets/images/logo-iqwing.webp"
+                        alt="IQwing Logo"
+                        class="h-10 w-auto"
+                    />
+                @endif
             </span>
+            @if($firmShortName || $firmName)
+                <span class="font-semibold text-sm text-gray-800 dark:text-white truncate max-w-[120px]">
+                    {{ $firmName ?? $firmShortName }}
+                </span>
+            @endif
         </a>
 
         <!-- App Selector -->

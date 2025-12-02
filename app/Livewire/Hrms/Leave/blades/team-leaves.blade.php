@@ -285,6 +285,25 @@
                         @endforeach
                         <flux:table.cell class="table-cell-wrap">
                             @php
+                                // Map status to user-friendly display text
+                                $statusDisplay = match($item->status) {
+                                    'applied' => 'Pending',
+                                    'reviewed' => 'Reviewed',
+                                    'approved' => 'Approved',
+                                    'approved_further' => 'In Progress',
+                                    'partially_approved' => 'Partial',
+                                    'rejected' => 'Rejected',
+                                    'cancelled_employee' => 'Cancelled',
+                                    'cancelled_hr' => 'Cancelled',
+                                    'modified' => 'Modified',
+                                    'escalated' => 'Escalated',
+                                    'delegated' => 'Delegated',
+                                    'hold' => 'On Hold',
+                                    'expired' => 'Expired',
+                                    'withdrawn' => 'Withdrawn',
+                                    'auto_approved' => 'Auto Approved',
+                                    default => ucfirst(str_replace('_', ' ', $item->status))
+                                };
                                 $statusColor = match($item->status) {
                                     'applied' => 'blue',
                                     'reviewed' => 'cyan',
@@ -304,29 +323,29 @@
                                 };
                             @endphp
                             <flux:badge color="{{ $statusColor }}" variant="solid">
-                                {{ ucfirst(str_replace('_', ' ', $item->status)) }}
+                                {{ $statusDisplay }}
                             </flux:badge>
                         </flux:table.cell>
                         <flux:table.cell>
                             <div class="flex mx-1">
-
-
                                 @if($this->canApproveLeave($item))
                                     @if(!in_array($item->status, ['approved', 'rejected', 'cancelled_employee', 'cancelled_hr']))
-                                    <flux:button
-                                    wire:click="edit({{ $item->id }})"
-                                    color="blue"
-                                    variant="primary"
-                                    size="sm"
-
-                                >
-                                    Action
-                                </flux:button>
+                                        <flux:button
+                                            wire:click="edit({{ $item->id }})"
+                                            color="blue"
+                                            variant="primary"
+                                            size="sm"
+                                        >
+                                            Action
+                                        </flux:button>
                                         <div class="p-1"></div>
-
                                     @endif
+                                @elseif($this->isAwaitingPreviousApproval($item))
+                                    <flux:badge color="amber" variant="outline" size="sm">
+                                        Awaiting Prior
+                                    </flux:badge>
                                 @else
-                                    <flux:badge color="blue" variant="solid" class="ml-2">
+                                    <flux:badge color="zinc" variant="outline" size="sm">
                                         View Only
                                     </flux:badge>
                                 @endif
@@ -378,7 +397,7 @@
                         variant="danger"
                         wire:click="handleAction('reject', {{ $id }})"
                     >
-                        {{ ($formData['approval_level'] ?? 1) > 2 ? 'Reject' : 'Reject' }}
+                        Reject
                     </flux:button>
 
                     <flux:button
