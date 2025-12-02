@@ -20,8 +20,8 @@ use Flux;
 
 class SetHeadAmountManually extends Component
 {
-    public $salcomponentEmployees;
-    public $salcomponents;
+    public $salcomponentEmployees = [];
+    public $salcomponents = [];
     public $entries = []; // [employee_id][component_id] = amount
     public $componentRemarks = []; // [employee_id][component_id] = remarks
     public $currentEmployee;
@@ -34,11 +34,20 @@ class SetHeadAmountManually extends Component
     public $assignedMatrix = []; // [employee_id][component_id] = true/false
 
     public $searchName = '';
+    public $readyToLoad = false;
 
     public function mount($payrollSlotId)
     {
         $this->payrollSlotId = $payrollSlotId;
-        $this->slot = PayrollSlot::find($payrollSlotId);
+    }
+
+    public function loadData()
+    {
+        if ($this->readyToLoad) {
+            return;
+        }
+
+        $this->slot = PayrollSlot::find($this->payrollSlotId);
         $this->salary_execution_group_id = $this->slot->salary_execution_group_id;
 
         $employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
@@ -102,6 +111,8 @@ class SetHeadAmountManually extends Component
             'payroll_slot_status' => 'IP',
         ]);
         $this->payroll_slots_cmd_id = $payroll_slots_cmd_rec->id;
+
+        $this->readyToLoad = true;
     }
 
     public function getFilteredSalcomponentEmployeesProperty()

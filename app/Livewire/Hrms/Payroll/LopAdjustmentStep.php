@@ -21,6 +21,7 @@ class LopAdjustmentStep extends Component
     public $sortBy = 'id';
     public $sortDirection = 'desc';
     public $slotId = null;
+    public $readyToLoad = false;
 
     // Edit Modal Properties
     public $showEditModal = false;
@@ -57,16 +58,13 @@ class LopAdjustmentStep extends Component
     public function mount($slotId)
     {
         $this->slotId = $slotId;
-        $this->ensureSalaryDayRowsForSlot();
-        $this->initListsForFields();
-
+        
         // Set default visible fields
         $this->visibleFields = [
             'employee_name',
             'cycle_days',
             'void_days_count',
             'lop_days_count'
-            
         ];
 
         $this->visibleFilterFields = [
@@ -75,6 +73,17 @@ class LopAdjustmentStep extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+
+    public function loadData()
+    {
+        if ($this->readyToLoad) {
+            return;
+        }
+
+        $this->ensureSalaryDayRowsForSlot();
+        $this->initListsForFields();
+        $this->readyToLoad = true;
     }
 
     protected function initListsForFields(): void

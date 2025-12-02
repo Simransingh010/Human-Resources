@@ -23,6 +23,7 @@ class TdsCalculations extends Component
     public $sortDirection = 'desc';
     public $slotId = null;
     public $employeeIds = [];
+    public $readyToLoad = false;
 
     // Edit Modal Properties
     public $showEditModal = false;
@@ -54,19 +55,6 @@ class TdsCalculations extends Component
     public function mount($slotId = null)
     {
         $this->slotId = $slotId;
-        
-        // Get employees from the execution group if slot is provided
-        if ($slotId) {
-            $slot = PayrollSlot::find($slotId);
-            if ($slot) {
-                $this->employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
-                    ->where('salary_execution_group_id', $slot->salary_execution_group_id)
-                    ->pluck('employee_id')
-                    ->toArray();
-            }
-        }
-
-        $this->initListsForFields();
 
         // Set default visible fields
         $this->visibleFields = [
@@ -82,6 +70,27 @@ class TdsCalculations extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+
+    public function loadData()
+    {
+        if ($this->readyToLoad) {
+            return;
+        }
+
+        // Get employees from the execution group if slot is provided
+        if ($this->slotId) {
+            $slot = PayrollSlot::find($this->slotId);
+            if ($slot) {
+                $this->employeeIds = EmployeesSalaryExecutionGroup::where('firm_id', Session::get('firm_id'))
+                    ->where('salary_execution_group_id', $slot->salary_execution_group_id)
+                    ->pluck('employee_id')
+                    ->toArray();
+            }
+        }
+
+        $this->initListsForFields();
+        $this->readyToLoad = true;
     }
 
     protected function initListsForFields(): void

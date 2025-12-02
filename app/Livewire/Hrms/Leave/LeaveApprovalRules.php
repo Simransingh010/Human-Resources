@@ -19,59 +19,34 @@ class LeaveApprovalRules extends Component
 {
     use WithPagination;
 
-    // Specify different pagination names
-    protected string $paginationMainTable = 'page';
     protected string $paginationEmployeeList = 'employees';
 
-    public $perPage = 10;
-    public $sortBy = 'created_at';
-    public $sortDirection = 'desc';
     public $isEditing = false;
     public $statuses = [];
-    public $selectedRuleId = null;
     public $departmentsWithEmployees = [];
     public $filteredDepartmentsWithEmployees = [];
     public $selectedEmployees = [];
     public $employeeSearch = '';
-    public $showEmployeeListModal = false;
-    public $selectedRuleEmployees = [];
     public $selectedRuleForEmployees = null;
     public $employeePerPage = 10;
     public $employeeFilters = [];
-    public $employeeVisibleFields = [];
+    public $deleteRuleId = null;
+    public $readyToLoad = false;
+    public $loadedEmployees = [];
+
     public $employeeFilterFields = [
-        'fname' => ['label' => 'First Name', 'type' => 'text'],
         'department_id' => ['label' => 'Department', 'type' => 'select', 'listKey' => 'departmentlist'],
         'designation_id' => ['label' => 'Designation', 'type' => 'select', 'listKey' => 'designationlist'],
-        'employment_type_id' => ['label' => 'Employment Type', 'type' => 'select', 'listKey' => 'employmentTypelist']
     ];
 
-    // Field configuration for form and table
-    public array $fieldConfig = [
-        'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
-        'approver_id' => ['label' => 'Approver', 'type' => 'select', 'listKey' => 'approvers_list'],
-        'approval_level' => ['label' => 'Approval Level', 'type' => 'number'],
-        'approval_mode' => ['label' => 'Approval Mode', 'type' => 'select', 'listKey' => 'approval_modes'],
-        'auto_approve' => ['label' => 'Auto Approve', 'type' => 'switch'],
-        'min_days' => ['label' => 'Min Days', 'type' => 'number'],
-        'max_days' => ['label' => 'Max Days', 'type' => 'number'],
-        'period_start' => ['label' => 'Period Start', 'type' => 'date'],
-        'period_end' => ['label' => 'Period End', 'type' => 'date'],
-        'is_inactive' => ['label' => 'Status', 'type' => 'switch'],
-    ];
-
-    // Filter fields configuration
     public array $filterFields = [
         'leave_type_id' => ['label' => 'Leave Type', 'type' => 'select', 'listKey' => 'leave_types_list'],
         'approver_id' => ['label' => 'Approver', 'type' => 'select', 'listKey' => 'approvers_list'],
-        'approval_mode' => ['label' => 'Approval Mode', 'type' => 'select', 'listKey' => 'approval_modes'],
         'is_inactive' => ['label' => 'Status', 'type' => 'select', 'listKey' => 'status_list'],
-        'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees_list'],
     ];
 
     public array $listsForFields = [];
     public array $filters = [];
-    public array $visibleFields = [];
     public array $visibleFilterFields = [];
 
     public $formData = [
@@ -101,7 +76,6 @@ class LeaveApprovalRules extends Component
         'formData.period_end' => 'required|date|after:formData.period_start',
         'formData.is_inactive' => 'boolean',
         'selectedEmployees' => 'array',
-        'selectedEmployees.*' => 'exists:employees,id',
     ];
 
     protected $messages = [
@@ -111,32 +85,19 @@ class LeaveApprovalRules extends Component
         'formData.period_end.after' => 'End date must be after start date',
     ];
 
-    public $loadedEmployees = [];
+    public function loadData()
+    {
+        $this->readyToLoad = true;
+    }
 
     public function mount()
     {
         $this->initListsForFields();
-
-        // Set default visible fields
-        $this->visibleFields = ['leave_type_id', 'approver_id', 'approval_level', 'approval_mode', 'auto_approve', 'is_inactive'];
-        $this->visibleFilterFields = ['leave_type_id', 'approver_id', 'approval_mode', 'is_inactive', 'employee_id'];
-
-        // Initialize filters
+        $this->visibleFilterFields = ['leave_type_id', 'approver_id', 'is_inactive'];
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-
-        // Initialize statuses
-        $this->refreshStatuses();
-
-        // Load departments and employees
-        $this->loadDepartmentsWithEmployees();
-
-        // Set default dates
+        $this->employeeFilters = array_fill_keys(array_keys($this->employeeFilterFields), '');
         $this->formData['period_start'] = now()->format('Y-m-d');
         $this->formData['period_end'] = now()->addYear()->format('Y-m-d');
-
-        // Initialize employee filters
-        $this->employeeFilters = array_fill_keys(array_keys($this->employeeFilterFields), '');
-        $this->employeeVisibleFields = ['fname', 'department_id', 'designation_id', 'employment_type_id'];
     }
 
     protected function initListsForFields(): void
@@ -144,20 +105,11 @@ class LeaveApprovalRules extends Component
         $firmId = session('firm_id');
 
         $this->listsForFields['leave_types_list'] = LeaveType::where('firm_id', $firmId)
-            ->pluck('leave_title', 'id')
-            ->toArray();
+            ->pluck('leave_title', 'id')->toArray();
 
-        $this->listsForFields['approvers_list'] = User::whereHas('firms', function ($query) use ($firmId) {
-            $query->where('firms.id', $firmId);
-        })
+        $this->listsForFields['approvers_list'] = User::whereHas('firms', fn($q) => $q->where('firms.id', $firmId))
             ->get(['id', 'name', 'phone'])
-            ->mapWithKeys(function ($user) {
-                $displayName = $user->name;
-                if ($user->phone) {
-                    $displayName .= ' (' . $user->phone . ')';
-                }
-                return [$user->id => $displayName];
-            })
+            ->mapWithKeys(fn($u) => [$u->id => $u->name . ($u->phone ? " ({$u->phone})" : '')])
             ->toArray();
 
         $this->listsForFields['approval_modes'] = [
@@ -167,153 +119,248 @@ class LeaveApprovalRules extends Component
             'view_only' => 'View Only'
         ];
 
-        $this->listsForFields['status_list'] = [
-            '0' => 'Active',
-            '1' => 'Inactive'
-        ];
+        $this->listsForFields['status_list'] = ['0' => 'Active', '1' => 'Inactive'];
 
-        // Add lists for employee filters
-        $this->listsForFields['departmentlist'] = \App\Models\Settings\Department::where('firm_id', $firmId)
-            ->pluck('title', 'id')
-            ->toArray();
+        $this->listsForFields['departmentlist'] = Department::where('firm_id', $firmId)
+            ->pluck('title', 'id')->toArray();
+
         $this->listsForFields['designationlist'] = \App\Models\Settings\Designation::where('firm_id', $firmId)
-            ->pluck('title', 'id')
-            ->toArray();
-        $this->listsForFields['employmentTypelist'] = \App\Models\Settings\EmploymentType::where('firm_id', $firmId)
-            ->pluck('title', 'id')
-            ->toArray();
-
-        // Add employees list for filtering
-        $this->listsForFields['employees_list'] = Employee::where('firm_id', $firmId)
-            ->where('is_inactive', false)
-            ->get(['id', 'fname', 'lname', 'phone'])
-            ->mapWithKeys(function ($employee) {
-                $displayName = $employee->fname . ' ' . $employee->lname;
-                if ($employee->phone) {
-                    $displayName .= ' (' . $employee->phone . ')';
-                }
-                return [$employee->id => $displayName];
-            })
-            ->toArray();
-    }
-
-    public function applyFilters()
-    {
-        $this->resetPage();
-    }
-
-    public function clearFilters()
-    {
-        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
-        $this->resetPage();
-    }
-
-    public function toggleColumn(string $field)
-    {
-        if (in_array($field, $this->visibleFields)) {
-            $this->visibleFields = array_filter(
-                $this->visibleFields,
-                fn($f) => $f !== $field
-            );
-        } else {
-            $this->visibleFields[] = $field;
-        }
-    }
-
-    public function toggleFilterColumn(string $field)
-    {
-        if (in_array($field, $this->visibleFilterFields)) {
-            $this->visibleFilterFields = array_filter(
-                $this->visibleFilterFields,
-                fn($f) => $f !== $field
-            );
-        } else {
-            $this->visibleFilterFields[] = $field;
-        }
+            ->pluck('title', 'id')->toArray();
     }
 
     #[Computed]
-    public function list()
+    public function groupedRules()
     {
-        return LeaveApprovalRule::query()
-            ->with(['leave_type', 'user', 'employees'])
+        if (!$this->readyToLoad) {
+            return collect();
+        }
+
+        // Single optimized query - load everything needed including employee names
+        $rules = LeaveApprovalRule::query()
+            ->select([
+                'id', 'leave_type_id', 'approver_id', 'approval_level', 'approval_mode',
+                'auto_approve', 'min_days', 'max_days', 'period_start', 'period_end', 'is_inactive'
+            ])
+            ->with([
+                'leave_type:id,leave_title',
+                'user:id,name',
+                'employees:id,fname,lname' // Load employee names for search
+            ])
             ->where('firm_id', Session::get('firm_id'))
-            ->when($this->filters['leave_type_id'], fn($query, $value) =>
-                $query->where('leave_type_id', $value))
-            ->when($this->filters['approver_id'], fn($query, $value) =>
-                $query->where('approver_id', $value))
-            ->when($this->filters['approval_mode'], fn($query, $value) =>
-                $query->where('approval_mode', $value))
-            ->when($this->filters['is_inactive'] !== '', fn($query, $value) =>
-                $query->where('is_inactive', $value))
-            ->when($this->filters['employee_id'], fn($query, $value) =>
-                $query->whereHas('employees', function ($q) use ($value) {
-                    $q->where('employee_id', $value);
-                }))
-            ->orderBy($this->sortBy, $this->sortDirection)
-            ->paginate($this->perPage, ['*'], $this->paginationMainTable);
+            ->when($this->filters['leave_type_id'], fn($q, $v) => $q->where('leave_type_id', $v))
+            ->when($this->filters['approver_id'], fn($q, $v) => $q->where('approver_id', $v))
+            ->when($this->filters['is_inactive'] !== '', fn($q) => $q->where('is_inactive', $this->filters['is_inactive']))
+            ->orderBy('leave_type_id')
+            ->orderBy('approval_level')
+            ->get();
+
+        // Update statuses
+        $this->statuses = $rules->pluck('is_inactive', 'id')
+            ->mapWithKeys(fn($v, $k) => [$k => !$v])->toArray();
+
+        // Group by leave type
+        return $rules->groupBy('leave_type_id')->map(function ($leaveTypeRules) {
+            $leaveType = $leaveTypeRules->first()->leave_type;
+
+            // Collect unique approvers for this leave type (for filter dropdown)
+            $approvers = $leaveTypeRules->filter(fn($r) => $r->user)->pluck('user.name', 'user.id')->unique()->toArray();
+
+            return [
+                'leave_type' => $leaveType,
+                'leave_title' => $leaveType->leave_title ?? 'Unknown',
+                'approvers' => $approvers, // For filter dropdown
+                'rules' => $leaveTypeRules->map(fn($r) => [
+                    'id' => $r->id,
+                    'approver_id' => $r->approver_id,
+                    'approver_name' => $r->user->name ?? null,
+                    'approval_level' => $r->approval_level,
+                    'approval_mode' => $r->approval_mode,
+                    'auto_approve' => $r->auto_approve,
+                    'min_days' => $r->min_days,
+                    'max_days' => $r->max_days,
+                    'period_start' => Carbon::parse($r->period_start)->format('d M Y'),
+                    'period_end' => Carbon::parse($r->period_end)->format('d M Y'),
+                    'is_inactive' => $r->is_inactive,
+                    'employees_count' => $r->employees->count(),
+                    'employee_names' => $r->employees->map(fn($e) => $e->fname . ' ' . $e->lname)->implode(', '),
+                ])->values()->toArray(),
+                'total_rules' => $leaveTypeRules->count(),
+                'active_count' => $leaveTypeRules->where('is_inactive', false)->count(),
+                'inactive_count' => $leaveTypeRules->where('is_inactive', true)->count(),
+            ];
+        });
     }
 
-    public function refreshStatuses()
+    public function getLeaveTypeColor($leaveTitle)
     {
-        $this->statuses = LeaveApprovalRule::where('firm_id', session('firm_id'))
-            ->pluck('is_inactive', 'id')
-            ->mapWithKeys(fn($val, $key) => [$key => !(bool) $val])
-            ->toArray();
+        return match ($leaveTitle) {
+            'Sick Leave' => ['bg' => 'bg-amber-50', 'border' => 'border-amber-200', 'badge' => 'amber', 'icon' => 'heart'],
+            'Casual Leave' => ['bg' => 'bg-emerald-50', 'border' => 'border-emerald-200', 'badge' => 'emerald', 'icon' => 'sun'],
+            'Annual Leave' => ['bg' => 'bg-indigo-50', 'border' => 'border-indigo-200', 'badge' => 'indigo', 'icon' => 'calendar'],
+            'Maternity Leave' => ['bg' => 'bg-rose-50', 'border' => 'border-rose-200', 'badge' => 'rose', 'icon' => 'user'],
+            'Paternity Leave' => ['bg' => 'bg-blue-50', 'border' => 'border-blue-200', 'badge' => 'blue', 'icon' => 'user'],
+            'Study Leave' => ['bg' => 'bg-violet-50', 'border' => 'border-violet-200', 'badge' => 'violet', 'icon' => 'academic-cap'],
+            'Unpaid Leave' => ['bg' => 'bg-slate-50', 'border' => 'border-slate-200', 'badge' => 'zinc', 'icon' => 'banknotes'],
+            default => ['bg' => 'bg-gray-50', 'border' => 'border-gray-200', 'badge' => 'gray', 'icon' => 'document-text']
+        };
     }
 
     public function toggleStatus($id)
     {
         $rule = LeaveApprovalRule::find($id);
-        $rule->is_inactive = !$rule->is_inactive;
-        $rule->save();
+        if ($rule) {
+            $rule->is_inactive = !$rule->is_inactive;
+            $rule->save();
+            $this->statuses[$id] = !$rule->is_inactive;
+        }
+    }
 
-        $this->statuses[$id] = !$rule->is_inactive;
-        $this->refreshStatuses();
+    public function applyFilters()
+    {
+        unset($this->groupedRules);
+    }
+
+    public function clearFilters()
+    {
+        $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+        unset($this->groupedRules);
+    }
+
+    public function confirmDelete($ruleId)
+    {
+        $this->deleteRuleId = $ruleId;
+        $this->modal('mdl-confirm-delete')->show();
+    }
+
+    public function executeDelete()
+    {
+        if ($this->deleteRuleId) {
+            $this->delete($this->deleteRuleId);
+            $this->deleteRuleId = null;
+            $this->modal('mdl-confirm-delete')->close();
+            unset($this->groupedRules);
+        }
+    }
+
+    public function delete($id)
+    {
+        try {
+            DB::beginTransaction();
+            $rule = LeaveApprovalRule::findOrFail($id);
+            $rule->employees()->detach();
+            $rule->forceDelete();
+            DB::commit();
+
+            Flux::toast(variant: 'success', heading: 'Deleted', text: 'Rule deleted successfully');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Flux::toast(variant: 'error', heading: 'Error', text: 'Failed to delete: ' . $e->getMessage());
+        }
+    }
+
+    public function edit($id)
+    {
+        $this->isEditing = true;
+        $rule = LeaveApprovalRule::with('employees')->findOrFail($id);
+        $this->formData = $rule->toArray();
+        $this->formData['period_start'] = Carbon::parse($rule->period_start)->format('Y-m-d');
+        $this->formData['period_end'] = Carbon::parse($rule->period_end)->format('Y-m-d');
+        $this->selectedEmployees = $rule->employees->pluck('id')->map(fn($id) => (string) $id)->toArray();
+        $this->loadDepartmentsWithEmployees();
+        $this->modal('mdl-approval-rule')->show();
+    }
+
+    public function create()
+    {
+        $this->resetForm();
+        $this->loadDepartmentsWithEmployees();
+        $this->modal('mdl-approval-rule')->show();
     }
 
     protected function loadDepartmentsWithEmployees()
     {
-        $departments = Department::with([
-            'employees' => function ($query) {
-                $query->where('is_inactive', false);
-            }
-        ])
+        $departments = Department::with(['employees' => fn($q) => $q->where('is_inactive', false)])
             ->where('firm_id', session('firm_id'))
             ->where('is_inactive', false)
             ->get();
 
-        $this->departmentsWithEmployees = $departments->map(function ($department) {
-            return [
-                'id' => $department->id,
-                'title' => $department->title,
-                'employees' => $department->employees->map(function ($employee) {
-                    return [
-                        'id' => (int) $employee->id, // Ensure ID is integer
-                        'fname' => $employee->fname,
-                        'lname' => $employee->lname,
-                        'email' => $employee->email,
-                        'phone' => $employee->phone,
-                    ];
-                })->toArray()
-            ];
-        })->toArray();
+        $this->departmentsWithEmployees = $departments->map(fn($d) => [
+            'id' => $d->id,
+            'title' => $d->title,
+            'employees' => $d->employees->map(fn($e) => [
+                'id' => (int) $e->id,
+                'fname' => $e->fname,
+                'lname' => $e->lname,
+            ])->toArray()
+        ])->toArray();
 
         $this->filteredDepartmentsWithEmployees = $this->departmentsWithEmployees;
     }
 
+    public function store()
+    {
+        $this->validate();
+
+        try {
+            DB::beginTransaction();
+
+            $data = collect($this->formData)->map(fn($v) => $v === '' ? null : $v)->toArray();
+            $data['firm_id'] = session('firm_id');
+
+            if ($data['auto_approve']) {
+                $data['approver_id'] = null;
+                $data['approval_level'] = null;
+                $data['approval_mode'] = null;
+            }
+
+            if ($this->isEditing) {
+                $rule = LeaveApprovalRule::findOrFail($this->formData['id']);
+                $rule->update($data);
+            } else {
+                $rule = LeaveApprovalRule::create($data);
+            }
+
+            $rule->employees()->detach();
+            if (!empty($this->selectedEmployees)) {
+                $employeeData = collect($this->selectedEmployees)
+                    ->mapWithKeys(fn($id) => [(int) $id => ['firm_id' => session('firm_id')]])
+                    ->toArray();
+                $rule->employees()->sync($employeeData);
+            }
+
+            DB::commit();
+            $this->resetForm();
+            $this->modal('mdl-approval-rule')->close();
+            unset($this->groupedRules);
+
+            Flux::toast(variant: 'success', heading: 'Saved', text: 'Rule saved successfully');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Flux::toast(variant: 'error', heading: 'Error', text: 'Failed to save: ' . $e->getMessage());
+        }
+    }
+
+    public function resetForm()
+    {
+        $this->reset(['formData', 'selectedEmployees', 'employeeSearch']);
+        $this->formData = [
+            'id' => null, 'firm_id' => null, 'leave_type_id' => '', 'approver_id' => '',
+            'approval_level' => 1, 'approval_mode' => '', 'auto_approve' => false,
+            'min_days' => null, 'max_days' => null,
+            'period_start' => now()->format('Y-m-d'),
+            'period_end' => now()->addYear()->format('Y-m-d'),
+            'is_inactive' => false,
+        ];
+        $this->isEditing = false;
+        $this->filteredDepartmentsWithEmployees = $this->departmentsWithEmployees;
+        $this->resetErrorBag();
+    }
+
     public function selectAllEmployeesGlobal()
     {
-        $allEmployeeIds = collect($this->departmentsWithEmployees)
-            ->pluck('employees')
-            ->flatten(1)
-            ->pluck('id')
-            ->map(function ($id) {
-                return (string) $id; // Convert to string for consistency with wire:model
-            })
-            ->toArray();
-
-        $this->selectedEmployees = array_unique($allEmployeeIds);
+        $this->selectedEmployees = collect($this->departmentsWithEmployees)
+            ->pluck('employees')->flatten(1)->pluck('id')
+            ->map(fn($id) => (string) $id)->unique()->toArray();
     }
 
     public function deselectAllEmployeesGlobal()
@@ -321,31 +368,21 @@ class LeaveApprovalRules extends Component
         $this->selectedEmployees = [];
     }
 
-    public function selectAllEmployees($departmentId)
+    public function selectAllEmployees($deptId)
     {
-        $department = collect($this->departmentsWithEmployees)->firstWhere('id', $departmentId);
-        if ($department) {
-            $employeeIds = collect($department['employees'])
-                ->pluck('id')
-                ->map(function ($id) {
-                    return (string) $id; // Convert to string for consistency with wire:model
-                })
-                ->toArray();
-            $this->selectedEmployees = array_unique(array_merge($this->selectedEmployees, $employeeIds));
+        $dept = collect($this->departmentsWithEmployees)->firstWhere('id', $deptId);
+        if ($dept) {
+            $ids = collect($dept['employees'])->pluck('id')->map(fn($id) => (string) $id)->toArray();
+            $this->selectedEmployees = array_unique(array_merge($this->selectedEmployees, $ids));
         }
     }
 
-    public function deselectAllEmployees($departmentId)
+    public function deselectAllEmployees($deptId)
     {
-        $department = collect($this->departmentsWithEmployees)->firstWhere('id', $departmentId);
-        if ($department) {
-            $employeeIds = collect($department['employees'])
-                ->pluck('id')
-                ->map(function ($id) {
-                    return (string) $id; // Convert to string for consistency
-                })
-                ->toArray();
-            $this->selectedEmployees = array_values(array_diff($this->selectedEmployees, $employeeIds));
+        $dept = collect($this->departmentsWithEmployees)->firstWhere('id', $deptId);
+        if ($dept) {
+            $ids = collect($dept['employees'])->pluck('id')->map(fn($id) => (string) $id)->toArray();
+            $this->selectedEmployees = array_values(array_diff($this->selectedEmployees, $ids));
         }
     }
 
@@ -357,198 +394,20 @@ class LeaveApprovalRules extends Component
         }
 
         $search = strtolower($this->employeeSearch);
-
         $this->filteredDepartmentsWithEmployees = collect($this->departmentsWithEmployees)
-            ->map(function ($department) use ($search) {
-                $filteredEmployees = collect($department['employees'])
-                    ->filter(function ($employee) use ($search) {
-                        return str_contains(strtolower($employee['fname'] . ' ' . $employee['lname']), $search) ||
-                            str_contains(strtolower($employee['email']), $search) ||
-                            str_contains(strtolower($employee['phone']), $search);
-                    })
-                    ->values()
-                    ->all();
-
-                return [
-                    'id' => $department['id'],
-                    'title' => $department['title'],
-                    'employees' => $filteredEmployees
-                ];
+            ->map(function ($dept) use ($search) {
+                $filtered = collect($dept['employees'])
+                    ->filter(fn($e) => str_contains(strtolower($e['fname'] . ' ' . $e['lname']), $search))
+                    ->values()->all();
+                return ['id' => $dept['id'], 'title' => $dept['title'], 'employees' => $filtered];
             })
-            ->filter(fn($dept) => !empty($dept['employees']))
-            ->values()
-            ->all();
-    }
-
-    public function toggleEmployee($employeeId)
-    {
-        if (in_array($employeeId, $this->selectedEmployees)) {
-            $this->selectedEmployees = array_values(array_diff($this->selectedEmployees, [$employeeId]));
-        } else {
-            $this->selectedEmployees[] = $employeeId;
-        }
-    }
-
-    public function store()
-    {
-        $validatedData = $this->validate();
-
-        try {
-            DB::beginTransaction();
-
-            // If auto_approve is true, ensure approval-related fields are null
-            if ($validatedData['formData']['auto_approve']) {
-                $validatedData['formData']['approver_id'] = null;
-                $validatedData['formData']['approval_level'] = null;
-                $validatedData['formData']['approval_mode'] = null;
-            }
-
-            $validatedData['formData'] = collect($validatedData['formData'])
-                ->map(fn($val) => $val === '' ? null : $val)
-                ->toArray();
-
-            $validatedData['formData']['firm_id'] = session('firm_id');
-
-            if ($this->isEditing) {
-                $rule = LeaveApprovalRule::findOrFail($this->formData['id']);
-                $rule->update($validatedData['formData']);
-            } else {
-                $rule = LeaveApprovalRule::create($validatedData['formData']);
-            }
-
-            // Clear existing employee relationships
-            $rule->employees()->detach();
-
-            // Convert selected employee IDs to integers and prepare data for sync
-            if (!empty($this->selectedEmployees)) {
-                $employeeData = collect($this->selectedEmployees)
-                    ->mapWithKeys(function ($employeeId) {
-                        return [intval($employeeId) => ['firm_id' => session('firm_id')]];
-                    })
-                    ->toArray();
-
-                $rule->employees()->sync($employeeData);
-            }
-
-            DB::commit();
-
-            $this->resetForm();
-            $this->refreshStatuses();
-            $this->modal('mdl-approval-rule')->close();
-
-            Flux::toast(
-                variant: 'success',
-                heading: 'Changes saved.',
-                text: $this->isEditing ? 'Approval rule updated successfully' : 'Approval rule added successfully',
-            );
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to save approval rule: ' . $e->getMessage(),
-            );
-        }
-    }
-
-    public function edit($id)
-    {
-        $this->isEditing = true;
-        $rule = LeaveApprovalRule::with(['employees'])->findOrFail($id);
-        $this->formData = $rule->toArray();
-
-        // Format dates properly for the date inputs
-        if (isset($this->formData['period_start'])) {
-            $this->formData['period_start'] = Carbon::parse($this->formData['period_start'])->format('Y-m-d');
-        }
-
-        if (isset($this->formData['period_end'])) {
-            $this->formData['period_end'] = Carbon::parse($this->formData['period_end'])->format('Y-m-d');
-        }
-
-        // Load selected employees
-        $this->selectedEmployees = $rule->employees()->pluck('employee_id')->toArray();
-
-        $this->modal('mdl-approval-rule')->show();
-    }
-
-    public function resetForm()
-    {
-        $this->reset(['formData', 'selectedEmployees', 'employeeSearch']);
-        $this->formData['approval_level'] = 1;
-        $this->formData['auto_approve'] = false;
-        $this->formData['is_inactive'] = false;
-        $this->formData['period_start'] = now()->format('Y-m-d');
-        $this->formData['period_end'] = now()->addYear()->format('Y-m-d');
-        $this->isEditing = false;
-        $this->filteredDepartmentsWithEmployees = $this->departmentsWithEmployees;
-        $this->resetErrorBag();
-    }
-
-    public function delete($id)
-    {
-        try {
-            $rule = LeaveApprovalRule::findOrFail($id);
-
-            // Begin transaction to ensure all deletes succeed or none do
-            DB::beginTransaction();
-
-            try {
-                // Delete all related employee rules
-                $rule->employees()->detach();
-
-                // Delete the main rule
-                $rule->forceDelete();
-
-                DB::commit();
-
-                Flux::toast(
-                    variant: 'success',
-                    heading: 'Record Deleted.',
-                    text: 'Approval rule and all related records have been deleted successfully',
-                );
-            } catch (\Exception $e) {
-                DB::rollBack();
-                throw $e;
-            }
-        } catch (\Exception $e) {
-            Flux::toast(
-                variant: 'error',
-                heading: 'Error',
-                text: 'Failed to delete approval rule: ' . $e->getMessage(),
-            );
-        }
-    }
-
-    public function updatedFormDataPeriodStart($value)
-    {
-        if (!$value) {
-            return;
-        }
-
-        try {
-            $startDate = Carbon::parse($value);
-
-            // If we have a period start date but no period end date, set default end date to 1 year later
-            if (!$this->formData['period_end']) {
-                $this->formData['period_end'] = $startDate->copy()->addYear()->format('Y-m-d');
-            } else {
-                // If period_end exists and is earlier than period_start, adjust it
-                $endDate = Carbon::parse($this->formData['period_end']);
-                if ($endDate->lte($startDate)) {
-                    $this->formData['period_end'] = $startDate->copy()->addYear()->format('Y-m-d');
-                }
-            }
-        } catch (\Exception $e) {
-            // Handle invalid date format
-            $this->addError('formData.period_start', 'Invalid date format');
-        }
+            ->filter(fn($d) => !empty($d['employees']))
+            ->values()->all();
     }
 
     public function updatedFormDataAutoApprove($value)
     {
         if ($value) {
-            // Reset approval-related fields when auto approve is enabled
             $this->formData['approver_id'] = null;
             $this->formData['approval_level'] = null;
             $this->formData['approval_mode'] = null;
@@ -557,71 +416,41 @@ class LeaveApprovalRules extends Component
 
     public function showEmployeeList($ruleId)
     {
-        $this->selectedRuleForEmployees = LeaveApprovalRule::findOrFail($ruleId);
-
-        // Load all employees with their job profiles at once
-        $this->loadedEmployees = $this->selectedRuleForEmployees->employees()
-            ->with(['emp_job_profile.department', 'emp_job_profile.designation', 'emp_job_profile.employment_type'])
+        $rule = LeaveApprovalRule::findOrFail($ruleId);
+        $this->loadedEmployees = $rule->employees()
+            ->with(['emp_job_profile.department', 'emp_job_profile.designation'])
             ->get();
-
+        $this->selectedRuleForEmployees = $rule;
         $this->resetPage('employees');
         $this->modal('mdl-employee-list')->show();
     }
 
     public function getEmployeeListProperty()
     {
-        if (!$this->selectedRuleForEmployees) {
-            return collect();
-        }
+        if (!$this->selectedRuleForEmployees) return collect();
 
-        $filteredEmployees = collect($this->loadedEmployees);
+        $filtered = collect($this->loadedEmployees);
 
-        // Apply search filter
         if ($this->employeeSearch) {
             $search = strtolower($this->employeeSearch);
-            $filteredEmployees = $filteredEmployees->filter(function ($employee) use ($search) {
-                return str_contains(strtolower($employee->fname . ' ' . $employee->lname), $search) ||
-                    str_contains(strtolower($employee->email), $search);
-            });
+            $filtered = $filtered->filter(fn($e) =>
+                str_contains(strtolower($e->fname . ' ' . $e->lname), $search) ||
+                str_contains(strtolower($e->email ?? ''), $search)
+            );
         }
 
-        // Apply department filter
-        if ($this->employeeFilters['department_id']) {
-            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
-                return $employee->emp_job_profile &&
-                    $employee->emp_job_profile->department_id == $this->employeeFilters['department_id'];
-            });
+        if (!empty($this->employeeFilters['department_id'])) {
+            $filtered = $filtered->filter(fn($e) =>
+                $e->emp_job_profile && $e->emp_job_profile->department_id == $this->employeeFilters['department_id']
+            );
         }
 
-        // Apply designation filter
-        if ($this->employeeFilters['designation_id']) {
-            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
-                return $employee->emp_job_profile &&
-                    $employee->emp_job_profile->designation_id == $this->employeeFilters['designation_id'];
-            });
-        }
-
-        // Apply employment type filter
-        if ($this->employeeFilters['employment_type_id']) {
-            $filteredEmployees = $filteredEmployees->filter(function ($employee) {
-                return $employee->emp_job_profile &&
-                    $employee->emp_job_profile->employment_type_id == $this->employeeFilters['employment_type_id'];
-            });
-        }
-
-        // Manual pagination with specific page name
         $page = $this->getPage($this->paginationEmployeeList);
-        $items = $filteredEmployees->forPage($page, $this->employeePerPage);
+        $items = $filtered->forPage($page, $this->employeePerPage);
 
         return new \Illuminate\Pagination\LengthAwarePaginator(
-            $items,
-            $filteredEmployees->count(),
-            $this->employeePerPage,
-            $page,
-            [
-                'path' => \Illuminate\Support\Facades\Request::url(),
-                'pageName' => $this->paginationEmployeeList
-            ]
+            $items, $filtered->count(), $this->employeePerPage, $page,
+            ['path' => request()->url(), 'pageName' => $this->paginationEmployeeList]
         );
     }
 
@@ -629,11 +458,6 @@ class LeaveApprovalRules extends Component
     {
         $this->employeeFilters = array_fill_keys(array_keys($this->employeeFilterFields), '');
         $this->employeeSearch = '';
-        $this->resetPage($this->paginationEmployeeList);
-    }
-
-    public function applyEmployeeFilters()
-    {
         $this->resetPage($this->paginationEmployeeList);
     }
 

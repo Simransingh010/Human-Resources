@@ -21,7 +21,6 @@
         @livewire('panel.router-wrapper', ['component' => $routeComponent])
 {{--        @livewire('panel.main-content')--}}
     </div>
-</div>
 
 @fluxScripts
 @persist('toast')

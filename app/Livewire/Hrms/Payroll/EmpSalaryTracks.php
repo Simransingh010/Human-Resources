@@ -64,12 +64,12 @@ class EmpSalaryTracks extends Component
     public array $visibleFields = [];
     public array $visibleFilterFields = [];
 
+    public $readyToLoad = false;
+
     public function mount($slotId = null)
     {
-//        dd($slotId);
         $this->resetPage();
         $this->slotId = $slotId;
-        $this->initListsForFields();
 
         // Set default visible fields
         $this->visibleFields = [
@@ -86,6 +86,16 @@ class EmpSalaryTracks extends Component
 
         // Initialize filters
         $this->filters = array_fill_keys(array_keys($this->filterFields), '');
+    }
+
+    public function loadData()
+    {
+        if ($this->readyToLoad) {
+            return;
+        }
+
+        $this->initListsForFields();
+        $this->readyToLoad = true;
     }
 
     protected function initListsForFields(): void

@@ -74,6 +74,11 @@ class Employee extends Model
 		return $this->hasMany(EmpLeaveAllocation::class);
 	}
 
+	public function emp_leave_balances()
+	{
+		return $this->hasMany(EmpLeaveBalance::class);
+	}
+
 	public function emp_leave_requests()
 	{
 		return $this->hasMany(EmpLeaveRequest::class);

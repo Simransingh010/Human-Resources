@@ -1,4 +1,23 @@
-<div class="space-y-6" xmlns:flux="http://www.w3.org/1999/html">
+<div class="space-y-6" xmlns:flux="http://www.w3.org/1999/html" wire:init="loadData">
+    <!-- Loading Skeleton -->
+    @if(!$readyToLoad)
+        <div class="fixed inset-0 bg-white z-50 flex items-center justify-center">
+            <div class="text-center">
+                <div class="inline-block animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+                <p class="mt-4 text-lg font-medium text-gray-700">Loading payroll cycles...</p>
+                <p class="mt-2 text-sm text-gray-500">Please wait</p>
+            </div>
+        </div>
+    @endif
+
+    <!-- Loading Overlay for Actions -->
+    <div wire:loading.flex wire:target="loadPayrollSlots,loadSlotDetails,startPayroll,restartPayroll,completePayroll" class="fixed inset-0 bg-white/80 z-40 items-center justify-center">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+            <p class="mt-4 text-gray-600">Processing...</p>
+        </div>
+    </div>
+
     <!-- Heading Start -->
     <div class="">
         @livewire('panel.component-heading')
@@ -8,46 +27,72 @@
 
     <!-- Filters Start -->
 
-    <flux:card class="">
-        <div class="flex gap-2">
-            <div class="px-4 w-[448px] relative">
-                <!-- Loading Spinner for Cycle Selection -->
+    <flux:card class="overflow-hidden">
+        <div class="flex flex-col lg:flex-row gap-4">
+            {{-- Payroll Cycle Selector --}}
+            <div class="w-full lg:w-64 flex-shrink-0 relative">
                 <div wire:loading.flex wire:target="selectedCycleId" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur rounded">
                     <flux:icon.loading class="w-6 h-6 text-blue-500 animate-spin" />
                 </div>
-                <flux:select wire:model.live="selectedCycleId" label="Select Payroll Cycle" id="industry"
-                             name="industry"
-                             class="">
+                <flux:select wire:model.live="selectedCycleId" label="Select Payroll Cycle" id="industry" name="industry">
                     <option value="">Select Payroll Cycle</option>
                     @foreach($payrollCycles as $cycle)
                         <option value="{{ $cycle->id }}">{{ $cycle->title }}</option>
                     @endforeach
                 </flux:select>
             </div>
+            
+            {{-- Employee Groups Horizontal List --}}
             @if($selectedCycleId)
-    <div class="h-35 max-w-full overflow-x-auto overflow-y-hidden py-2">
-        <flux:radio.group 
-            label="Select Employee Groups" 
-            variant="segmented" 
-            class="flex flex-nowrap gap-2 items-stretch sm:flex-row max-sm:flex-col"
-        >
-            @forelse($executionGroups as $group)
-                <div class="!flex-none min-w-[14rem] max-w-[18rem]">
-                    <flux:radio 
-                        class="truncate table-cell-wrap !flex-none cursor-btn w-full bg-blue-400/20 min-h-[4.5rem] py-3 px-3 
-                               text-center whitespace-normal break-words leading-snug text-sm rounded-xl shadow-sm
-                               hover:bg-blue-400/30 transition-colors duration-200"
-                        wire:click="loadPayrollSlots({{ $group['id'] }})"
-                        label="{{ $group['title'] }}"
-                    />
+                <div class="flex-1 min-w-0" x-data="{ scroll: $refs.groupScroll }">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Employee Groups</label>
+                    <div class="relative flex items-center">
+                        {{-- Left Arrow --}}
+                        <button 
+                            type="button"
+                            @click="scroll.scrollBy({ left: -200, behavior: 'smooth' })"
+                            class="flex-shrink-0 p-1.5 rounded-full bg-gray-100 dark:bg-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors mr-2"
+                        >
+                            <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                            </svg>
+                        </button>
+                        
+                        {{-- Scrollable Container --}}
+                        <div 
+                            x-ref="groupScroll" 
+                            class="flex gap-2 overflow-x-auto scroll-smooth"
+                            style="scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch;"
+                        >
+                            @forelse($executionGroups as $group)
+                                <button 
+                                    type="button"
+                                    wire:click="loadPayrollSlots({{ $group['id'] }})"
+                                    class="flex-shrink-0 py-2 px-4 text-sm font-medium rounded-full border-2 transition-all duration-200 whitespace-nowrap
+                                           {{ $selectedGroupId == $group['id'] 
+                                              ? '!bg-blue-600 !text-white !border-blue-600 shadow-md' 
+                                              : 'bg-gray-50 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-zinc-600 hover:border-blue-500 hover:text-blue-600' }}"
+                                >
+                                    {{ ucwords(strtolower($group['title'])) }}
+                                </button>
+                            @empty
+                                <div class="text-gray-500 py-2">No Groups Available</div>
+                            @endforelse
+                        </div>
+                        
+                        {{-- Right Arrow --}}
+                        <button 
+                            type="button"
+                            @click="scroll.scrollBy({ left: 200, behavior: 'smooth' })"
+                            class="flex-shrink-0 p-1.5 rounded-full bg-gray-100 dark:bg-zinc-700 hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors ml-2"
+                        >
+                            <svg class="w-4 h-4 text-gray-600 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-            @empty
-                <flux:radio label="No Groups Available" value="0"/>
-            @endforelse
-        </flux:radio.group>
-    </div>
-@endif
-
+            @endif
         </div>
         @if($selectedGroupId)
             <div class="flex justify-between mt-4">
@@ -69,8 +114,8 @@
                     </div>
                     @forelse($payrollSlots as $slot)
                         <div wire:click="loadSlotDetails({{$slot->id}})"
-                             class="border cursor-btn flex-shrink-0 min-w-[160px] p-2 rounded-lg text-center relative
-                                                               @if($slot->payroll_slot_status == 'ST') bg-yellow-400/25 @elseif($slot->payroll_slot_status == 'CM') bg-green-400/20 @else bg-red-400/20 @endif">
+                             class="border cursor-btn flex-shrink-0 min-w-[160px] p-2 rounded-lg text-center relative"
+                             style="background-color: @if($slot->payroll_slot_status == 'ST' || $slot->payroll_slot_status == 'RS') #fef9c3 @elseif($slot->payroll_slot_status == 'CM') #dcfce7 @elseif($slot->payroll_slot_status == 'PN') #ffe4e6 @elseif($slot->payroll_slot_status == 'NX') #dbeafe @elseif($slot->payroll_slot_status == 'L') #e5e7eb @elseif($slot->payroll_slot_status == 'PB') #f3e8ff @else #ffe4e6 @endif;">
                             <!-- Loading Spinner for Individual Slot -->
                             <div wire:loading.flex wire:target="loadSlotDetails({{$slot->id}})" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur rounded-lg">
                                 <flux:icon.loading class="w-6 h-6 text-blue-500 animate-spin" />
@@ -114,7 +159,7 @@
     @if($selectedGroupId)
         <div class="flex gap-3">
             <!-- Right: Form Card -->
-            <flux:card class="w-full md:w-2/3 relative ">
+            <flux:card class="w-full md:w-2/3 relative" style="max-height: 500px !important; overflow-y: auto !important;">
                 <!-- Loading Spinner Overlay for Main Content -->
                 <div wire:loading.flex wire:target="loadSlotDetails, loadPayrollSlots" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur">
                     <flux:icon.loading class="w-10 h-10 text-blue-500 animate-spin" />
@@ -168,9 +213,29 @@
                                 elseif($step->step_code_main == 'review_override_components') {
                                     $icon = 'eye';
                                 }
+                                
+                                // Step status styling
+                                $stepStatus = $step->status ?? 'NS';
+                                $statusConfig = match($stepStatus) {
+                                    'CM' => ['label' => 'Completed', 'color' => 'bg-green-500', 'textColor' => 'text-green-700', 'bgLight' => 'bg-green-50', 'icon' => 'check-circle'],
+                                    'RN' => ['label' => 'In Progress', 'color' => 'bg-blue-500', 'textColor' => 'text-blue-700', 'bgLight' => 'bg-blue-50', 'icon' => 'arrow-path'],
+                                    default => ['label' => 'Pending', 'color' => 'bg-gray-400', 'textColor' => 'text-gray-600', 'bgLight' => 'bg-gray-50', 'icon' => 'clock'],
+                                };
                             @endphp
-                            <flux:callout class="mb-2" :icon="$icon" variant="secondary" inline>
-                                <flux:callout.heading>{{ $step->step_title }}</flux:callout.heading>
+                            <flux:callout class="mb-2 {{ $statusConfig['bgLight'] }} border-l-4 {{ $stepStatus === 'CM' ? 'border-l-green-500' : ($stepStatus === 'RN' ? 'border-l-blue-500' : 'border-l-gray-300') }}" :icon="$icon" variant="secondary" inline>
+                                <flux:callout.heading class="flex items-center gap-2">
+                                    {{ $step->step_title }}
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium {{ $statusConfig['color'] }} text-white">
+                                        @if($stepStatus === 'CM')
+                                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                                        @elseif($stepStatus === 'RN')
+                                            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                                        @else
+                                            <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                                        @endif
+                                        {{ $statusConfig['label'] }}
+                                    </span>
+                                </flux:callout.heading>
                                 <x-slot name="actions">
                                     @if($step->step_code_main == 'fetch_attendance')
                                         <flux:tooltip content="Mark Complete">
@@ -418,12 +483,12 @@
                     </div>
                 @endif
             </flux:card>
-            <flux:card class="w-[448px] relative">
+            <flux:card class="w-[448px] relative" style="max-height: 500px !important; overflow-y: auto !important;">
                 <!-- Loading Spinner Overlay for Logs -->
                 <div wire:loading.flex wire:target="loadSlotDetails, loadPayrollSlots" class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur overflow-auto h-24">
                     <flux:icon.loading class="w-8 h-8 text-blue-500 animate-spin" />
                 </div>
-                <h4 class="font-semibold mb-2">Logs</h4>
+                <h4 class="font-semibold mb-2 sticky top-0 bg-white z-20 pb-2" style="background-color: white !important;">Logs</h4>
                 @if(!$payrollSlotDetails)
                     <div class="text-gray-400 text-center py-8">
                         <flux:icon.information-circle class="w-8 h-8 mx-auto mb-2" />
@@ -512,21 +577,23 @@
     </flux:modal>
     <flux:modal name="salary-tracks" title="Salary Tracks" class="max-w-7xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.emp-salary-tracks :slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.emp-salary-tracks lazy :slot-id="$selectedSlotId"
                                                      :wire:key="'emp-salary-tracks-'.$selectedSlotId"/>
         @endif
     </flux:modal>
     <flux:modal name="attendance-step" title="Attendance Step" class="max-w-6xl">
-        <livewire:hrms.payroll.attendance-payroll-step
-                :payroll-slot-id="$payrollSlotDetails?->id"
-                :employee-ids="$selectedEmployees"
-                :from-date="$payrollSlotDetails?->from_date"
-                :to-date="$payrollSlotDetails?->to_date"
-                :wire:key="'attendance-step-'.$payrollSlotDetails?->id"/>
+        @if($payrollSlotDetails?->id)
+            <livewire:hrms.payroll.attendance-payroll-step lazy
+                    :payroll-slot-id="$payrollSlotDetails?->id"
+                    :employee-ids="$selectedEmployees"
+                    :from-date="$payrollSlotDetails?->from_date"
+                    :to-date="$payrollSlotDetails?->to_date"
+                    :wire:key="'attendance-step-'.$payrollSlotDetails?->id"/>
+        @endif
     </flux:modal>
     <flux:modal name="lop-adjustment-steps" title="Lop Adjustment Steps" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.lop-adjustment-step :slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.lop-adjustment-step lazy :slot-id="$selectedSlotId"
                                                        :wire:key="'lop-adjustment-step-'.$selectedSlotId"/>
         @endif
     </flux:modal>
@@ -534,7 +601,7 @@
     <!-- Add TDS Calculations Modal -->
     <flux:modal name="tds-calculations" title="TDS Calculations" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.tds-calculations :slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.tds-calculations lazy :slot-id="$selectedSlotId"
                                                     :wire:key="'tds-calculations-'.$selectedSlotId"/>
         @endif
     </flux:modal>
@@ -542,21 +609,21 @@
     <!-- Add Static Unknown Components Modal -->
     <flux:modal name="set-head-amount-manually" title="Set Head Amount Manually" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.set-head-amount-manually :payroll-slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.set-head-amount-manually lazy :payroll-slot-id="$selectedSlotId"
                                                                :wire:key="'set-head-amount-manually-'.$selectedSlotId"/>
         @endif
     </flux:modal>
 {{--    override amounts modal--}}
 <flux:modal name="override-amounts" title="Override Amounts" class="max-w-7xl">
     @if($selectedSlotId)
-        <livewire:hrms.payroll.override-head-amount-manually :payroll-slot-id="$selectedSlotId"
+        <livewire:hrms.payroll.override-head-amount-manually lazy :payroll-slot-id="$selectedSlotId"
             :wire:key="'override-head-amount-manually-'.$selectedSlotId" />
     @endif
 </flux:modal>
     <!-- Add Employee Tax Components Modal -->
     <flux:modal name="employee-tax-components" title="Employee Tax Components" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.employee-tax-components
+            <livewire:hrms.payroll.employee-tax-components lazy
                     :payroll-slot-id="$selectedSlotId"
                     :wire:key="'employee-tax-components-'.$selectedSlotId"/>
         @endif
@@ -607,7 +674,7 @@
     <!-- Add Salary Holds Modal -->
     <flux:modal name="salary-holds" title="Salary Holds" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.salary-holds :payroll-slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.salary-holds lazy :payroll-slot-id="$selectedSlotId"
                                                :wire:key="'salary-holds-'.$selectedSlotId"/>
         @endif
     </flux:modal>
@@ -615,7 +682,7 @@
     <!-- Add Salary Advances Modal -->
     <flux:modal name="salary-advances" title="Salary Advances" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.salary-advances-step :payroll-slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.salary-advances-step lazy :payroll-slot-id="$selectedSlotId"
                                                       :wire:key="'salary-advances-step-'.$selectedSlotId"/>
         @endif
     </flux:modal>
@@ -623,7 +690,7 @@
     <!-- Add Salary Arrears Modal -->
     <flux:modal name="salary-arrears" title="Salary Arrears" class="max-w-6xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.salary-arrears-step :payroll-slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.salary-arrears-step lazy :payroll-slot-id="$selectedSlotId"
                                                       :wire:key="'salary-arrears-step-'.$selectedSlotId"/>
         @endif
     </flux:modal>
@@ -631,7 +698,7 @@
     <!-- Add Review Override Components Modal -->
     <flux:modal name="review-override-components" title="Review Override Components" class="max-w-7xl">
         @if($selectedSlotId)
-            <livewire:hrms.payroll.review-override-components :payroll-slot-id="$selectedSlotId"
+            <livewire:hrms.payroll.review-override-components lazy :payroll-slot-id="$selectedSlotId"
                                                              :wire:key="'review-override-components-'.$selectedSlotId"/>
         @endif
     </flux:modal>

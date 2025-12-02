@@ -9,7 +9,9 @@
         @endphp
         
         @if($isRouteBased && $routeUrl)
-            <a href="{{ $routeUrl }}" wire:navigate>
+            <a href="{{ $routeUrl }}" wire:navigate
+               @click="$dispatch('navigation-started')"
+               x-on:livewire:navigated.window="$dispatch('navigation-ended')">
                 <flux:button
                     class="{{ $selectedWire === $wireItem['wire'] ? 'bg-primary text-white' : '' }}">
                     {{ $wireItem['name'] }}
@@ -18,6 +20,7 @@
         @else
             <flux:button
                 wire:click="selectWire('{{ $wireItem['wire'] }}')"
+                @click="$dispatch('navigation-started')"
                 class="{{ $selectedWire === $wireItem['wire'] ? 'bg-primary text-white' : '' }}">
                 {{ $wireItem['name'] }}
             </flux:button>

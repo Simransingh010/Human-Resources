@@ -250,6 +250,27 @@
                                             @case('apply_to')
                                                 {{ $item->apply_to ? \Carbon\Carbon::parse($item->apply_to)->format('jS F Y') : 'N/A' }}
                                                 @break
+                                            @case('reason')
+                                                @if($item->reason)
+                                                    <div x-data="{ expanded: false }" class="max-w-xs">
+                                                        <p x-show="!expanded" class="text-sm text-gray-700 line-clamp-2">
+                                                            {{ Str::limit($item->reason, 80) }}
+                                                        </p>
+                                                        <p x-show="expanded" x-cloak class="text-sm text-gray-700">
+                                                            {{ $item->reason }}
+                                                        </p>
+                                                        @if(strlen($item->reason) > 80)
+                                                            <button 
+                                                                @click="expanded = !expanded" 
+                                                                class="text-xs text-blue-600 hover:text-blue-800 mt-1"
+                                                                x-text="expanded ? 'Show less' : 'Read more'"
+                                                            ></button>
+                                                        @endif
+                                                    </div>
+                                                @else
+                                                    <span class="text-gray-400">-</span>
+                                                @endif
+                                                @break
                                             @default
                                                 @if(in_array($field, ['apply_from', 'apply_to']) && $item->$field)
                                                     {{ \Carbon\Carbon::parse($item->$field)->format('jS F Y') }}
@@ -372,12 +393,233 @@
         </div>
     </flux:modal>
 
-    <!-- Leave Request Events Modal -->
-    <flux:modal name="leave-request-events-modal" wire:model="showEventsModal" title="Leave Request Events" @cancel="closeEventsModal" class="max-w-6xl">
+    <!-- Leave Request Events Modal - Timeline View -->
+    <flux:modal name="leave-request-events-modal" wire:model="showEventsModal" @cancel="closeEventsModal" class="max-w-2xl">
         @if($id)
-            <livewire:hrms.leave.emp-leave-requests.leave-request-events
-                :emp-leave-request-id="$id"
-                :key="'leave-request-events-'.$id"/>
+            @php
+                $leaveRequest = \App\Models\Hrms\EmpLeaveRequest::with(['employee', 'leave_type'])->find($id);
+                $events = \App\Models\Hrms\LeaveRequestEvent::with('user')
+                    ->where('emp_leave_request_id', $id)
+                    ->orderBy('created_at', 'asc')
+                    ->get();
+                $employeeName = ($leaveRequest->employee->fname ?? '') . ' ' . ($leaveRequest->employee->lname ?? '');
+                
+                // Get all approval rules for this leave type to show all approvers
+                $allApprovalRules = \App\Models\Hrms\LeaveApprovalRule::with(['user', 'employees'])
+                    ->where('firm_id', session('firm_id'))
+                    ->where('is_inactive', false)
+                    ->where(function($q) use ($leaveRequest) {
+                        $q->whereNull('leave_type_id')
+                          ->orWhere('leave_type_id', $leaveRequest->leave_type_id);
+                    })
+                    ->whereHas('employees', function($q) use ($leaveRequest) {
+                        $q->where('employee_id', $leaveRequest->employee_id);
+                    })
+                    ->orderBy('approval_level')
+                    ->get();
+                
+                // Get approvals that have been made
+                $approvals = \App\Models\Hrms\EmpLeaveRequestApproval::where('emp_leave_request_id', $id)->get();
+                $approvedByUserIds = $approvals->pluck('approver_id')->toArray();
+                
+                // Build timeline items: events + pending approvers
+                $timelineItems = collect();
+                
+                // Add application event first (from events or create one)
+                $applicationEvent = $events->first(function($e) {
+                    return $e->to_status === 'applied' || $e->from_status === null;
+                });
+                if ($applicationEvent) {
+                    $createdAtTs = $applicationEvent->created_at 
+                        ? \Carbon\Carbon::parse($applicationEvent->created_at)->timestamp 
+                        : 0;
+                    $timelineItems->push([
+                        'type' => 'event',
+                        'data' => $applicationEvent,
+                        'level' => 0,
+                        'sort_key' => '0_' . str_pad($createdAtTs, 12, '0', STR_PAD_LEFT)
+                    ]);
+                }
+                
+                // Group rules by level and add to timeline
+                $rulesByLevel = $allApprovalRules->groupBy('approval_level');
+                foreach ($rulesByLevel as $level => $rules) {
+                    foreach ($rules as $rule) {
+                        if (!$rule->user) continue;
+                        
+                        // Check if this approver has taken action
+                        $approval = $approvals->firstWhere('approver_id', $rule->approver_id);
+                        $relatedEvent = $events->first(function($e) use ($rule) {
+                            return $e->user_id === $rule->approver_id && $e->to_status !== 'applied';
+                        });
+                        
+                        if ($relatedEvent) {
+                            // Approver has acted - show their event
+                            $eventTs = $relatedEvent->created_at 
+                                ? \Carbon\Carbon::parse($relatedEvent->created_at)->timestamp 
+                                : 0;
+                            $timelineItems->push([
+                                'type' => 'event',
+                                'data' => $relatedEvent,
+                                'level' => $level,
+                                'sort_key' => $level . '_' . str_pad($eventTs, 12, '0', STR_PAD_LEFT)
+                            ]);
+                        } else {
+                            // Approver hasn't acted yet - show as pending
+                            $timelineItems->push([
+                                'type' => 'pending',
+                                'data' => $rule,
+                                'level' => $level,
+                                'sort_key' => $level . '_999999999999'
+                            ]);
+                        }
+                    }
+                }
+                
+                // Sort by level then by timestamp
+                $timelineItems = $timelineItems->sortBy('sort_key')->values();
+            @endphp
+            
+            <div class="space-y-4">
+                <!-- Header -->
+                <div class="border-b pb-4">
+                    <flux:heading size="lg">Approval History</flux:heading>
+                    @if($leaveRequest)
+                        <div class="mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div><span class="text-gray-500">Employee:</span> <span class="font-medium">{{ $employeeName }}</span></div>
+                                <div><span class="text-gray-500">Leave Type:</span> <flux:badge color="indigo" size="sm">{{ $leaveRequest->leave_type->leave_title ?? 'N/A' }}</flux:badge></div>
+                                <div><span class="text-gray-500">Duration:</span> <span class="font-medium">{{ $leaveRequest->apply_days }} day(s)</span></div>
+                                <div><span class="text-gray-500">Period:</span> <span class="font-medium">{{ \Carbon\Carbon::parse($leaveRequest->apply_from)->format('d M') }} - {{ \Carbon\Carbon::parse($leaveRequest->apply_to)->format('d M Y') }}</span></div>
+                            </div>
+                        </div>
+                    @endif
+                </div>
+
+                <!-- Timeline -->
+                <div class="space-y-0">
+                    @forelse($timelineItems as $index => $item)
+                        @if($item['type'] === 'event')
+                            @php
+                                $event = $item['data'];
+                                $isApproved = str_contains($event->to_status ?? '', 'approved');
+                                $isRejected = $event->to_status === 'rejected';
+                                $isApplication = $event->to_status === 'applied' || $event->from_status === null;
+                                $userName = $event->user->name ?? 'System';
+                                
+                                if ($isApplication) {
+                                    $actionText = "<strong>{$employeeName}</strong> applied for leave";
+                                    $iconBg = 'bg-blue-100 border-blue-400';
+                                    $iconColor = 'text-blue-600';
+                                    $badgeColor = 'blue';
+                                    $badgeText = 'Applied';
+                                } elseif ($isApproved) {
+                                    $actionText = "<strong>{$userName}</strong> approved this request";
+                                    $iconBg = 'bg-green-100 border-green-400';
+                                    $iconColor = 'text-green-600';
+                                    $badgeColor = 'green';
+                                    $badgeText = 'Approved';
+                                } elseif ($isRejected) {
+                                    $actionText = "<strong>{$userName}</strong> rejected this request";
+                                    $iconBg = 'bg-red-100 border-red-400';
+                                    $iconColor = 'text-red-600';
+                                    $badgeColor = 'red';
+                                    $badgeText = 'Rejected';
+                                } else {
+                                    $actionText = "<strong>{$userName}</strong> updated the status";
+                                    $iconBg = 'bg-gray-100 border-gray-400';
+                                    $iconColor = 'text-gray-600';
+                                    $badgeColor = 'zinc';
+                                    $badgeText = ucfirst(str_replace('_', ' ', $event->to_status ?? 'Updated'));
+                                }
+                            @endphp
+                            
+                            <div class="relative flex gap-4 pb-6">
+                                @if(!$loop->last)
+                                    <div class="absolute left-3 top-6 bottom-0 w-0.5 bg-gray-200"></div>
+                                @endif
+                                
+                                <div class="relative z-10 flex-shrink-0 w-6 h-6 rounded-full {{ $iconBg }} border-2 flex items-center justify-center">
+                                    @if($isApplication)
+                                        <flux:icon.paper-airplane class="size-3 {{ $iconColor }}" />
+                                    @elseif($isApproved)
+                                        <flux:icon.check class="size-3 {{ $iconColor }}" />
+                                    @elseif($isRejected)
+                                        <flux:icon.x-mark class="size-3 {{ $iconColor }}" />
+                                    @else
+                                        <flux:icon.arrow-path class="size-3 {{ $iconColor }}" />
+                                    @endif
+                                </div>
+                                
+                                <div class="flex-1 bg-white border rounded-lg p-3 shadow-sm">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div>
+                                            <p class="text-sm text-gray-700">{!! $actionText !!}</p>
+                                            <div class="flex items-center gap-2 mt-1">
+                                                @if($item['level'] > 0)
+                                                    <flux:badge color="zinc" size="sm" variant="outline">Level {{ $item['level'] }}</flux:badge>
+                                                @endif
+                                                <flux:badge color="{{ $badgeColor }}" size="sm">{{ $badgeText }}</flux:badge>
+                                                <span class="text-xs text-gray-400">{{ \Carbon\Carbon::parse($event->created_at)->format('d M Y, h:i A') }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    @if($event->remarks)
+                                        <div x-data="{ expanded: false }" class="mt-3 p-2 bg-gray-50 rounded border-l-2 border-gray-300">
+                                            <p class="text-xs text-gray-500 mb-1">{{ $isApplication ? 'Reason:' : 'Remarks:' }}</p>
+                                            <p x-show="!expanded" class="text-sm text-gray-700 line-clamp-2">{{ Str::limit($event->remarks, 100) }}</p>
+                                            <p x-show="expanded" x-cloak class="text-sm text-gray-700">{{ $event->remarks }}</p>
+                                            @if(strlen($event->remarks) > 100)
+                                                <button @click="expanded = !expanded" class="text-xs text-blue-600 hover:text-blue-800 mt-1" x-text="expanded ? '↑ Less' : '↓ More'"></button>
+                                            @endif
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            {{-- Pending approver --}}
+                            @php
+                                $rule = $item['data'];
+                                $approverName = $rule->user->name ?? 'Unknown';
+                            @endphp
+                            
+                            <div class="relative flex gap-4 pb-6">
+                                @if(!$loop->last)
+                                    <div class="absolute left-3 top-6 bottom-0 w-0.5 bg-gray-200"></div>
+                                @endif
+                                
+                                <div class="relative z-10 flex-shrink-0 w-6 h-6 rounded-full bg-amber-50 border-2 border-amber-300 border-dashed flex items-center justify-center">
+                                    <flux:icon.clock class="size-3 text-amber-500" />
+                                </div>
+                                
+                                <div class="flex-1 bg-amber-50/50 border border-dashed border-amber-200 rounded-lg p-3">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div>
+                                            <p class="text-sm text-gray-600">
+                                                <strong class="text-amber-700">{{ $approverName }}</strong> 
+                                                <span class="text-gray-500">— awaiting action</span>
+                                            </p>
+                                            <div class="flex items-center gap-2 mt-1">
+                                                <flux:badge color="zinc" size="sm" variant="outline">Level {{ $item['level'] }}</flux:badge>
+                                                <flux:badge color="amber" size="sm" variant="outline">Pending</flux:badge>
+                                                @if($rule->approval_mode)
+                                                    <span class="text-xs text-gray-400">{{ ucfirst($rule->approval_mode) }} approval</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                    @empty
+                        <div class="text-center py-8 text-gray-500">
+                            <flux:icon.document-text class="size-12 mx-auto text-gray-300 mb-2" />
+                            <p>No activity recorded yet</p>
+                        </div>
+                    @endforelse
+                </div>
+            </div>
         @endif
     </flux:modal>
 </div>

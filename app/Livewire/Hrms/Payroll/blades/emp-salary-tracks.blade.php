@@ -1,4 +1,13 @@
-<div>
+<div wire:init="loadData">
+    <!-- Loading Skeleton -->
+    @if(!$readyToLoad)
+        <div class="flex items-center justify-center py-12">
+            <div class="text-center">
+                <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-4 border-blue-600"></div>
+                <p class="mt-4 text-lg font-medium text-gray-700">Loading salary tracks...</p>
+            </div>
+        </div>
+    @else
 <div class="space-y-6">
     <!-- Heading Start -->
     <div class="flex justify-between">
@@ -6,8 +15,6 @@
     </div>
     <flux:separator class="mt-2 mb-2" />
     <!-- Heading End -->
-{{--    php artisan make:migration add_firm_id_to_panel_user_table --table=panel_user--}}
-
 
     <!-- Filters Start -->
     <flux:card>
@@ -272,4 +279,5 @@
     </flux:modal>
 
 </div>
+    @endif
 </div>

@@ -1,411 +1,269 @@
-<div class="space-y-6">
-    <!-- Heading Start -->
-    <div class="flex justify-between">
-        @livewire('panel.component-heading')
+<div class="space-y-4">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Leave Balances</h1>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Manage employee leave allocations and balances</p>
+        </div>
+        <flux:modal.trigger name="mdl-leave-balance">
+            <flux:button variant="primary" icon="plus">
+                Add Balance
+            </flux:button>
+        </flux:modal.trigger>
     </div>
-    <flux:separator class="mt-2 mb-2" />
-    <!-- Heading End -->
 
-    <!-- Filters Start -->
-    <flux:card>
-        <flux:heading>Filters</flux:heading>
-        <div class="flex flex-wrap gap-4">
-            @foreach($filterFields as $field => $cfg)
-                @if(in_array($field, $visibleFilterFields))
-                    <div class="w-1/4">
-                        @switch($cfg['type'])
-                            @case('select')
-                                <flux:select
-                                        variant="listbox"
-                                        searchable
-                                        placeholder="All {{ $cfg['label'] }}"
-                                        wire:model="filters.{{ $field }}"
-                                        wire:change="applyFilters"
-                                >
-                                    <flux:select.option value="">All {{ $cfg['label'] }}</flux:select.option>
-                                    @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                        <flux:select.option value="{{ $val }}">{{ $lab }}</flux:select.option>
-                                    @endforeach
-                                </flux:select>
-                                @break
+    <!-- Filters Bar -->
+    <flux:card class="!p-3">
+        <div class="flex items-center gap-4">
+            <!-- Search -->
+            <div class="w-72">
+                <flux:input 
+                    wire:model.live.debounce.300ms="search" 
+                    placeholder="Search employees..." 
+                    icon="magnifying-glass"
+                    clearable
+                />
+            </div>
+            
+            <!-- Period Selector -->
+            <div class="w-56">
+                <flux:select wire:model.live="selectedPeriod" placeholder="Select Period">
+                    @foreach($periods as $key => $label)
+                        <flux:select.option value="{{ $key }}">{{ $label }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
 
-                            @case('number')
-                                <flux:input
-                                        type="number"
-                                        placeholder="Search {{ $cfg['label'] }}"
-                                        wire:model.live.debounce.500ms="filters.{{ $field }}"
-                                        wire:change="applyFilters"
-                                />
-                                @break
-
-                            @default
-                                <flux:input
-                                        placeholder="Search {{ $cfg['label'] }}"
-                                        wire:model.live.debounce.500ms="filters.{{ $field }}"
-                                        wire:change="applyFilters"
-                                />
-                        @endswitch
-                    </div>
-                @endif
-            @endforeach
-
-            <flux:button.group>
-                <flux:button variant="danger" wire:click="clearFilters" tooltip="Clear Filters" icon="x-circle"></flux:button>
-                <flux:modal.trigger name="mdl-show-hide-filters">
-                    <flux:button variant="danger" tooltip="Set Filters" icon="funnel"></flux:button>
-                </flux:modal.trigger>
-                <flux:modal.trigger name="mdl-show-hide-columns">
-                    <flux:button variant="danger" tooltip="Set Columns" icon="bars-3"></flux:button>
-                </flux:modal.trigger>
-            </flux:button.group>
+            <!-- Per Page -->
+            <div class="w-20">
+                <flux:select wire:model.live="perPage">
+                    <flux:select.option value="10">10</flux:select.option>
+                    <flux:select.option value="25">25</flux:select.option>
+                    <flux:select.option value="50">50</flux:select.option>
+                    <flux:select.option value="100">100</flux:select.option>
+                </flux:select>
+            </div>
         </div>
     </flux:card>
 
-    <!-- View Mode Toggle -->
-    <flux:card>
-        <div class="flex items-center justify-between">
-            <flux:heading >View Mode</flux:heading>
-            <flux:button.group>
-                <flux:button
-                        variant="{{ $viewMode === 'accordion' ? 'primary' : 'danger' }}"
-                        wire:click="toggleViewMode"
-
-                >
-                    Accordion View
-                </flux:button>
-                <flux:button
-                        variant="{{ $viewMode === 'table' ? 'primary' : 'danger' }}"
-                        wire:click="toggleViewMode"
-
-                >
-                    Table View
-                </flux:button>
-              
-            </flux:button.group>
+    <!-- Pivot Table -->
+    <flux:card class="!p-0 overflow-hidden relative">
+        <!-- Loading Overlay -->
+        <div wire:loading wire:target="search, selectedPeriod, perPage, gotoPage, previousPage, nextPage" 
+             class="absolute inset-0 bg-white/70 dark:bg-gray-900/70 backdrop-blur-sm z-20 flex items-center justify-center">
+            <div class="flex flex-col items-center gap-2">
+                <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-sm text-gray-600 dark:text-gray-400">Loading...</span>
+            </div>
         </div>
+        
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                    <tr class="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-800 z-10 min-w-[200px]">
+                            Employee
+                        </th>
+                        @foreach($this->leaveTypes as $leaveType)
+                            <th class="px-3 py-3 text-center text-xs font-semibold text-gray-600 dark:text-gray-300 uppercase tracking-wider min-w-[120px]">
+                                <div class="flex flex-col items-center gap-1">
+                                    <span>{{ $leaveType->leave_title }}</span>
+                                    @if($leaveType->leave_code)
+                                        <span class="text-[10px] font-normal text-gray-400">({{ $leaveType->leave_code }})</span>
+                                    @endif
+                                </div>
+                            </th>
+                        @endforeach
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+                    @forelse($this->pivotData as $employee)
+                        <tr class="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
+                            <!-- Employee Name (Sticky) -->
+                            <td class="px-4 py-3 sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 text-sm font-medium">
+                                        {{ strtoupper(substr($employee->fname ?? 'N', 0, 1)) }}
+                                    </div>
+                                    <div>
+                                        <div class="font-medium text-gray-900 dark:text-white">
+                                            {{ $employee->fname }} {{ $employee->lname }}
+                                        </div>
+                                        @if($employee->email)
+                                            <div class="text-xs text-gray-500">{{ $employee->email }}</div>
+                                        @endif
+                                    </div>
+                                </div>
+                            </td>
+                            
+                            <!-- Leave Type Cells -->
+                            @foreach($this->leaveTypes as $leaveType)
+                                @php
+                                    $balance = $this->getBalanceForEmployee($employee, $leaveType->id);
+                                @endphp
+                                <td class="px-2 py-2">
+                                    <button 
+                                        wire:click="editCell({{ $employee->id }}, {{ $leaveType->id }})"
+                                        class="w-full group"
+                                    >
+                                        <div class="rounded-lg p-2 {{ $this->getBalanceBgClass($balance) }} hover:ring-2 hover:ring-blue-500/50 transition-all cursor-pointer">
+                                            @if($balance)
+                                                <div class="text-center">
+                                                    <!-- Balance Value -->
+                                                    <div class="text-lg font-bold {{ $this->getBalanceColorClass($balance) }}">
+                                                        {{ number_format($balance->balance, 1) }}
+                                                    </div>
+                                                    <!-- Breakdown -->
+                                                    <div class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                                        {{ number_format($balance->consumed_days, 0) }} / {{ number_format($balance->allocated_days, 0) }} used
+                                                    </div>
+                                                    <!-- Edit hint on hover -->
+                                                    <div class="opacity-0 group-hover:opacity-100 transition-opacity mt-1">
+                                                        <span class="text-[10px] text-blue-600 dark:text-blue-400">Click to edit</span>
+                                                    </div>
+                                                </div>
+                                            @else
+                                                <div class="text-center py-2">
+                                                    <div class="text-gray-400 dark:text-gray-600">—</div>
+                                                    <div class="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span class="text-[10px] text-blue-600 dark:text-blue-400">Click to add</span>
+                                                    </div>
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </button>
+                                </td>
+                            @endforeach
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="{{ count($this->leaveTypes) + 1 }}" class="px-4 py-12 text-center">
+                                <div class="flex flex-col items-center gap-2">
+                                    <flux:icon name="users" class="w-12 h-12 text-gray-300 dark:text-gray-600" />
+                                    <p class="text-gray-500 dark:text-gray-400">No employees found</p>
+                                    @if($search)
+                                        <flux:button variant="ghost" wire:click="$set('search', '')" size="sm">
+                                            Clear search
+                                        </flux:button>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        @if($this->pivotData->hasPages())
+            <div class="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
+                {{ $this->pivotData->links() }}
+            </div>
+        @endif
     </flux:card>
 
-    <!-- Filter Fields Show/Hide Modal -->
-    <flux:modal name="mdl-show-hide-filters" variant="flyout">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">Show/Hide Filters</flux:heading>
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-                <flux:checkbox.group>
-                    @foreach($filterFields as $field => $cfg)
-                        <flux:checkbox
-                                :checked="in_array($field, $visibleFilterFields)"
-                                label="{{ $cfg['label'] }}"
-                                wire:click="toggleFilterColumn('{{ $field }}')"
-                        />
-                    @endforeach
-                </flux:checkbox.group>
-            </div>
+    <!-- Legend -->
+    <div class="flex items-center gap-6 text-xs text-gray-500 dark:text-gray-400">
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-emerald-100 dark:bg-emerald-900/30"></div>
+            <span>Good (>5 days)</span>
         </div>
-    </flux:modal>
-
-    <!-- Columns Show/Hide Modal -->
-    <flux:modal name="mdl-show-hide-columns" variant="flyout" position="right">
-        <div class="space-y-6">
-            <div>
-                <flux:heading size="lg">Show/Hide Columns</flux:heading>
-            </div>
-            <div class="flex flex-wrap items-center gap-4">
-                <flux:checkbox.group>
-                    @foreach($fieldConfig as $field => $cfg)
-                        <flux:checkbox
-                                :checked="in_array($field, $visibleFields)"
-                                label="{{ $cfg['label'] }}"
-                                wire:click="toggleColumn('{{ $field }}')"
-                        />
-                    @endforeach
-                </flux:checkbox.group>
-            </div>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-amber-100 dark:bg-amber-900/30"></div>
+            <span>Low (1-5 days)</span>
         </div>
-    </flux:modal>
+        <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded bg-red-100 dark:bg-red-900/30"></div>
+            <span>Exhausted (≤0 days)</span>
+        </div>
+    </div>
 
-    <!-- Add/Edit Leave Balance Modal -->
-    <flux:modal name="mdl-leave-balance" @cancel="resetForm">
+    <!-- Edit Modal -->
+    <flux:modal name="mdl-leave-balance" class="max-w-lg" @close="resetForm">
         <form wire:submit.prevent="store">
             <div class="space-y-6">
                 <div>
                     <flux:heading size="lg">
-                        @if($isEditing) Edit Leave Balance @else Add Leave Balance @endif
+                        {{ $isEditing ? 'Edit Leave Balance' : 'Add Leave Balance' }}
                     </flux:heading>
                     <flux:subheading>
-                        @if($isEditing) Update @else Add new @endif leave balance details.
+                        {{ $isEditing ? 'Update the leave balance details' : 'Create a new leave balance entry' }}
                     </flux:subheading>
                 </div>
 
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    @foreach($fieldConfig as $field => $cfg)
-                        <div class="@if($cfg['type'] === 'textarea') col-span-2 @endif">
-                            @switch($cfg['type'])
-                                @case('select')
-                                    <flux:select
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                    >
-                                        <option value="">Select {{ $cfg['label'] }}</option>
-                                        @foreach($listsForFields[$cfg['listKey']] as $val => $lab)
-                                            <option value="{{ $val }}">{{ $lab }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                    @break
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Employee -->
+                    <div class="col-span-2">
+                        <flux:select 
+                            label="Employee" 
+                            wire:model="formData.employee_id"
+                            :disabled="$isEditing"
+                        >
+                            <flux:select.option value="">Select Employee</flux:select.option>
+                            @foreach($listsForFields['employees'] as $id => $name)
+                                <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    </div>
 
-                                @case('date')
-                                    <flux:input
-                                            type="date"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                    />
-                                    @break
+                    <!-- Leave Type -->
+                    <div class="col-span-2">
+                        <flux:select 
+                            label="Leave Type" 
+                            wire:model="formData.leave_type_id"
+                            :disabled="$isEditing"
+                        >
+                            <flux:select.option value="">Select Leave Type</flux:select.option>
+                            @foreach($listsForFields['leave_types'] as $id => $name)
+                                <flux:select.option value="{{ $id }}">{{ $name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    </div>
 
-                                @case('number')
-                                    <flux:input
-                                            type="number"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                            step="0.01"
-                                    />
-                                    @break
+                    <!-- Period -->
+                    <flux:input type="date" label="Period Start" wire:model="formData.period_start" />
+                    <flux:input type="date" label="Period End" wire:model="formData.period_end" />
 
-                                @default
-                                    <flux:input
-                                            type="{{ $cfg['type'] }}"
-                                            label="{{ $cfg['label'] }}"
-                                            wire:model.live="formData.{{ $field }}"
-                                    />
-                            @endswitch
+                    <!-- Days -->
+                    <flux:input type="number" label="Allocated Days" wire:model="formData.allocated_days" step="0.5" min="0" />
+                    <flux:input type="number" label="Consumed Days" wire:model="formData.consumed_days" step="0.5" min="0" />
+                    <flux:input type="number" label="Carry Forward" wire:model="formData.carry_forwarded_days" step="0.5" min="0" />
+                    <flux:input type="number" label="Lapsed Days" wire:model="formData.lapsed_days" step="0.5" min="0" />
+
+                    <!-- Balance (calculated, shown for reference) -->
+                    <div class="col-span-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-600 dark:text-gray-400">Calculated Balance:</span>
+                            <span class="text-lg font-bold text-gray-900 dark:text-white">
+                                {{ number_format(($formData['allocated_days'] ?? 0) + ($formData['carry_forwarded_days'] ?? 0) - ($formData['consumed_days'] ?? 0) - ($formData['lapsed_days'] ?? 0), 1) }}
+                            </span>
                         </div>
-                    @endforeach
+                        <p class="text-xs text-gray-500 mt-1">= Allocated + Carry Forward - Consumed - Lapsed</p>
+                    </div>
                 </div>
 
-                <div class="flex justify-end pt-4">
+                <div class="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <flux:modal.close>
+                        <flux:button variant="ghost">Cancel</flux:button>
+                    </flux:modal.close>
                     <flux:button type="submit" variant="primary">
-                        Save
+                        {{ $isEditing ? 'Update' : 'Create' }}
                     </flux:button>
                 </div>
             </div>
         </form>
     </flux:modal>
 
-    <!-- Data Table -->
-    @if($viewMode === 'table')
-        <flux:table :paginate="$this->list" class="w-full">
-            <flux:table.columns>
-                @foreach($fieldConfig as $field => $cfg)
-                    @if(in_array($field, $visibleFields))
-                        <flux:table.column>{{ $cfg['label'] }}</flux:table.column>
-                    @endif
-                @endforeach
-                <flux:table.column>Actions</flux:table.column>
-            </flux:table.columns>
-
-            <flux:table.rows>
-                @foreach($this->list as $item)
-                    <flux:table.row :key="$item->id">
-                        @foreach($fieldConfig as $field => $cfg)
-                            @if(in_array($field, $visibleFields))
-                                <flux:table.cell>
-                                    @switch($cfg['type'])
-                                        @case('date')
-                                            {{ $item->$field?->format('jS F Y') }}
-                                            @break
-                                        @case('number')
-                                            {{ number_format($item->$field, 2) }}
-                                            @break
-                                        @case('select')
-                                            @if($field === 'employee_id')
-                                                {{ $item->employee->fname ?? 'N/A' }}
-                                            @elseif($field === 'leave_type_id')
-                                                {{ $item->leave_type->leave_title ?? 'N/A' }}
-                                            @else
-                                                {{ $item->$field }}
-                                            @endif
-                                            @break
-                                        @default
-                                            {{ $item->$field }}
-                                    @endswitch
-                                </flux:table.cell>
-                            @endif
-                        @endforeach
-                        <flux:table.cell>
-                            <div class="flex space-x-2">
-                                <flux:button
-                                        variant="primary"
-                                        class="p-1"
-                                        icon="pencil"
-                                        wire:click="edit({{ $item->id }})"
-                                />
-                                <flux:button
-                                        wire:click="showLeaveTransactions({{ $item->id }})"
-                                        color="green"
-                                        size="sm"
-                                        icon="information-circle"
-                                >
-                                    Transactions
-                                </flux:button>
-                            </div>
-
-                            <!-- Delete Confirmation Modal -->
-                            <flux:modal name="delete-{{ $item->id }}" class="min-w-[22rem]">
-                                <div class="space-y-6">
-                                    <div>
-                                        <flux:heading size="lg">Delete Leave Balance?</flux:heading>
-                                        <flux:text class="mt-2">
-                                            <p>You're about to delete this leave balance. This action cannot be undone.</p>
-                                            <p class="mt-2 text-red-500">Note: Leave balances with related records cannot be deleted.</p>
-                                        </flux:text>
-                                    </div>
-                                    <div class="flex gap-2">
-                                        <flux:spacer/>
-                                        <flux:modal.close>
-                                            <flux:button variant="danger">Cancel</flux:button>
-                                        </flux:modal.close>
-                                        <flux:button variant="danger" icon="trash" wire:click="delete({{ $item->id }})"/>
-                                    </div>
-                                </div>
-                            </flux:modal>
-                        </flux:table.cell>
-                    </flux:table.row>
-                @endforeach
-            </flux:table.rows>
-        </flux:table>
-    @endif
-
-    <!-- Accordion View -->
-    @if($viewMode === 'accordion')
-        <div class="space-y-6">
-            @foreach($this->groupedLeaveData as $employeeId => $employeeData)
-                <flux:accordion exclusive>
-                    <flux:accordion.item>
-                        <flux:accordion.heading>
-                            <div class="flex items-center justify-between w-full">
-                                <div class="flex items-center space-x-3">
-                                    <flux:avatar :src="$employeeData['employee']->profile_photo_url ?? null">
-                                        {{ substr($employeeData['employee']->fname ?? 'N/A', 0, 1) }}
-                                    </flux:avatar>
-                                    <div>
-                                        <div class="font-bold text-lg text-gray-900 dark:text-white">
-                                            {{ $employeeData['employee']->fname ?? 'N/A' }} {{ $employeeData['employee']->lname ?? '' }}
-                                        </div>
-
-                                    </div>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <flux:badge variant="solid" color="blue">
-                                        {{ count($employeeData['leave_types']) }} Leave Types
-                                    </flux:badge></div>
-                            </div>
-                        </flux:accordion.heading>
-
-                        <flux:accordion.content>
-                            <div class="space-y-4 pt-4">
-
-                                <!-- Leave Types Grid -->
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    @foreach($employeeData['leave_types'] as $leaveTypeId => $leaveTypeData)
-                                        <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
-                                            <div class="flex items-center justify-between mb-3">
-                                                <div class="flex items-center space-x-2">
-                                                    <flux:icon name="calendar" class="w-5 h-5 text-blue-500" />
-                                                    <h4 class="font-semibold text-gray-900 dark:text-white">
-                                                        {{ $leaveTypeData['leave_type']->leave_title ?? 'N/A' }}
-                                                    </h4>
-                                                    @if(count($leaveTypeData['periods']) > 1)
-                                                        <flux:badge variant="filled" color="purple">
-                                                            {{ count($leaveTypeData['periods']) }} Periods
-                                                        </flux:badge>
-                                                    @endif
-                                                </div>
-                                            </div>
-
-                                            <div class="grid grid-cols-1 gap-4">
-                                                @foreach($leaveTypeData['periods'] as $balance)
-                                                    <flux:card class="hover:shadow-md transition-shadow">
-                                                        <div class="p-4">
-                                                            <div class="flex items-center justify-between mb-3">
-                                                                <flux:badge variant="filled" color="gray">
-                                                                    {{ $this->getPeriodLabel($balance) }}
-                                                                </flux:badge>
-                                                                <div class="flex space-x-1">
-                                                                    <flux:button
-                                                                            variant="danger"
-                                                                            icon="pencil"
-                                                                            wire:click="edit({{ $balance->id }})"
-                                                                            class="p-1"
-                                                                    />
-                                                                    <flux:button
-                                                                            variant="danger"
-                                                                            icon="information-circle"
-                                                                            wire:click="showLeaveTransactions({{ $balance->id }})"
-                                                                            class="text-green-600 hover:text-green-700"
-                                                                    ></flux:button>
-                                                                </div>
-                                                            </div>
-
-                                                            <div class="space-y-2">
-                                                                <div class="flex justify-between text-sm">
-                                                                    <span class="text-gray-600 dark:text-gray-400">Allocated:</span>
-                                                                    <span class="font-medium">{{ number_format($balance->allocated_days, 1) }}</span>
-                                                                </div>
-                                                                <div class="flex justify-between text-sm">
-                                                                    <span class="text-gray-600 dark:text-gray-400">Consumed:</span>
-                                                                    <span class="font-medium text-red-600">{{ number_format($balance->consumed_days, 1) }}</span>
-                                                                </div>
-                                                                <div class="flex justify-between text-sm">
-                                                                    <span class="text-gray-600 dark:text-gray-400">Carry Forward:</span>
-                                                                    <span class="font-medium text-blue-600">{{ number_format($balance->carry_forwarded_days, 1) }}</span>
-                                                                </div>
-                                                                <div class="flex justify-between text-sm">
-                                                                    <span class="text-gray-600 dark:text-gray-400">Lapsed:</span>
-                                                                    <span class="font-medium text-gray-600">{{ number_format($balance->lapsed_days, 1) }}</span>
-                                                                </div>
-                                                                <div class="border-t pt-2">
-                                                                    <div class="flex justify-between items-center">
-                                                                        <span class="font-semibold text-gray-900 dark:text-white">Balance:</span>
-                                                                        <div class="text-right">
-                                                                            <span class="font-bold text-lg {{ $this->getBalanceColor($balance) }}">
-                                                                                {{ number_format($balance->balance, 1) }}
-                                                                            </span>
-
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </flux:card>
-                                                @endforeach
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </flux:accordion.content>
-                    </flux:accordion.item>
-                </flux:accordion>
-            @endforeach
-
-            @if(empty($this->groupedLeaveData))
-                <flux:card class="text-center py-12">
-                    <flux:icon name="inbox" class="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <flux:heading size="lg" class="text-gray-900 dark:text-white mb-2">No Leave Balances Found</flux:heading>
-                    <flux:text class="text-gray-500 mb-4">
-                        No leave balances match your current filters. Try adjusting your search criteria.
-                    </flux:text>
-                    <flux:button variant="outline" wire:click="clearFilters">
-                        Clear Filters
-                    </flux:button>
-                </flux:card>
-            @endif
-        </div>
-    @endif
-    <flux:modal name="leave-transactions" title="Leave Transactions" class="max-w-6xl">
+    <!-- Transactions Modal -->
+    <flux:modal name="leave-transactions" class="max-w-4xl">
         @if($selectedId)
-            <livewire:hrms.leave.EmpLeaveBalance.emp-leave-transactions :bala-id="$selectedId"
-                                                                        :wire:key="'emp-leave-transactions-'.$selectedId"/>
+            <livewire:hrms.leave.EmpLeaveBalance.emp-leave-transactions 
+                :bala-id="$selectedId"
+                :wire:key="'emp-leave-transactions-'.$selectedId"
+            />
         @endif
     </flux:modal>
 </div>

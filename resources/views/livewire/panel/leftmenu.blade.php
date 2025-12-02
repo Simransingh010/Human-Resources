@@ -33,7 +33,8 @@
                 @foreach ($modules as $module)
                     <flux:navlist.item
                         wire:click="selectModule({{ $module['id'] }})"
-                        class="{{ $selectedModuleId === $module['id'] ? 'bg-blue-500 text-white' : 'bg-transparent text-black dark:text-white' }}"
+                        @click="$dispatch('navigation-started')"
+                        class="{{ $selectedModuleId === $module['id'] ? 'bg-pink-500 !text-white rounded-lg' : 'bg-transparent text-black dark:text-white' }}"
                     >
                         <div class="flex items-center gap-2">
                             @if(!empty($module['icon']))

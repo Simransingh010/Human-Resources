@@ -16,8 +16,8 @@ use Flux;
 
 class OverrideHeadAmountManually extends Component
 {
-    public $salcomponentEmployees;
-    public $salcomponents;
+    public $salcomponentEmployees = [];
+    public $salcomponents = [];
 
     public $entries = []; // [employee_id][component_id] = amount
     public $dirtyCells = []; // ["employeeId:componentId" => true]
@@ -81,6 +81,11 @@ class OverrideHeadAmountManually extends Component
             'payroll_slot_status' => 'IP',
         ]);
         $this->payroll_slots_cmd_id = $payroll_slots_cmd_rec->id;
+    }
+
+    public function placeholder()
+    {
+        return view('livewire.placeholder-loading');
     }
 
     public function getFilteredSalcomponentEmployeesProperty()

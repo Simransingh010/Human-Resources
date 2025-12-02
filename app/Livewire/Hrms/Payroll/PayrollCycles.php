@@ -42,7 +42,7 @@ use Illuminate\Support\Facades\DB;
 #WHEN WE CHANGE THE COMPONENT TYPE OF COMPONENT IN COMPONENTS AND SALARY_COMPONENTS_EMPLOYEES TABLE, THE PAYROLL CALCULATION CONSIDERS AMOUNT_TYPE ALSO TO BE CHANGED SYSTEM WIDE BECAUSE IN THIS SCREEN WE ARE CHECKING COMPONENT_TYPE AND AMOUNT_tYPE BOTH TO TAKE AMOUNTS FROM EMPLOYEE SALARY TRACK TABLE OTHERWISE SYSTEM WILL FORCE IT BE ZERO
 class PayrollCycles extends Component
 {
-    public $payrollCycles;
+    public $payrollCycles = [];
     public $executionGroups = [];
     public $selectedCycleId;
     public $selectedGroupId;
@@ -56,6 +56,7 @@ class PayrollCycles extends Component
     public $selectedEmployees = [];
     public $stepLogs;
     public $lockConfirmation = '';
+    public $readyToLoad = false;
 
     protected $rules = [
         'lockConfirmation' => 'required|in:LOCK'
@@ -68,8 +69,16 @@ class PayrollCycles extends Component
 
     public function mount()
     {
-        // dd(Session::get('LOP_deduction_type'));
+        // Defer loading - don't load data in mount
+    }
+
+    public function loadData()
+    {
+        if ($this->readyToLoad) {
+            return;
+        }
         $this->payrollCycles = SalaryCycle::where('firm_id', Session::get('firm_id'))->get();
+        $this->readyToLoad = true;
     }
 
     public function updatedSelectedCycleId($value)
