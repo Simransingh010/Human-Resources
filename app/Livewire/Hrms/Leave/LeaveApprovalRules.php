@@ -34,6 +34,11 @@ class LeaveApprovalRules extends Component
     public $readyToLoad = false;
     public $loadedEmployees = [];
 
+    // Employee-specific edit mode
+    public $isEmployeeSpecificEdit = false;
+    public $originalRuleId = null;
+    public $editingEmployeeIds = [];
+
     public $employeeFilterFields = [
         'department_id' => ['label' => 'Department', 'type' => 'select', 'listKey' => 'departmentlist'],
         'designation_id' => ['label' => 'Designation', 'type' => 'select', 'listKey' => 'designationlist'],
@@ -182,7 +187,10 @@ class LeaveApprovalRules extends Component
                     'period_end' => Carbon::parse($r->period_end)->format('d M Y'),
                     'is_inactive' => $r->is_inactive,
                     'employees_count' => $r->employees->count(),
-                    'employee_names' => $r->employees->map(fn($e) => $e->fname . ' ' . $e->lname)->implode(', '),
+                    'employees_list' => $r->employees->map(fn($e) => [
+                        'id' => $e->id,
+                        'name' => trim($e->fname . ' ' . $e->lname),
+                    ])->values()->toArray(),
                 ])->values()->toArray(),
                 'total_rules' => $leaveTypeRules->count(),
                 'active_count' => $leaveTypeRules->where('is_inactive', false)->count(),
@@ -261,11 +269,39 @@ class LeaveApprovalRules extends Component
     public function edit($id)
     {
         $this->isEditing = true;
+        $this->isEmployeeSpecificEdit = false;
+        $this->originalRuleId = null;
+        $this->editingEmployeeIds = [];
+
         $rule = LeaveApprovalRule::with('employees')->findOrFail($id);
         $this->formData = $rule->toArray();
         $this->formData['period_start'] = Carbon::parse($rule->period_start)->format('Y-m-d');
         $this->formData['period_end'] = Carbon::parse($rule->period_end)->format('Y-m-d');
         $this->selectedEmployees = $rule->employees->pluck('id')->map(fn($id) => (string) $id)->toArray();
+        $this->loadDepartmentsWithEmployees();
+        $this->modal('mdl-approval-rule')->show();
+    }
+
+    /**
+     * Edit rule for specific employees only (when searching)
+     * If changes are made, creates new rule for these employees and removes them from original
+     */
+    public function editForEmployees($ruleId, array $employeeIds)
+    {
+        $this->isEditing = true;
+        $this->isEmployeeSpecificEdit = true;
+        $this->originalRuleId = $ruleId;
+        $this->editingEmployeeIds = array_map('intval', $employeeIds);
+
+        $rule = LeaveApprovalRule::findOrFail($ruleId);
+        $this->formData = $rule->toArray();
+        $this->formData['id'] = null; // Will create new if changed
+        $this->formData['period_start'] = Carbon::parse($rule->period_start)->format('Y-m-d');
+        $this->formData['period_end'] = Carbon::parse($rule->period_end)->format('Y-m-d');
+
+        // Only select the specific employees being edited
+        $this->selectedEmployees = collect($employeeIds)->map(fn($id) => (string) $id)->toArray();
+
         $this->loadDepartmentsWithEmployees();
         $this->modal('mdl-approval-rule')->show();
     }
@@ -313,19 +349,11 @@ class LeaveApprovalRules extends Component
                 $data['approval_mode'] = null;
             }
 
-            if ($this->isEditing) {
-                $rule = LeaveApprovalRule::findOrFail($this->formData['id']);
-                $rule->update($data);
+            // Handle employee-specific edit mode
+            if ($this->isEmployeeSpecificEdit && $this->originalRuleId) {
+                $this->storeEmployeeSpecificEdit($data);
             } else {
-                $rule = LeaveApprovalRule::create($data);
-            }
-
-            $rule->employees()->detach();
-            if (!empty($this->selectedEmployees)) {
-                $employeeData = collect($this->selectedEmployees)
-                    ->mapWithKeys(fn($id) => [(int) $id => ['firm_id' => session('firm_id')]])
-                    ->toArray();
-                $rule->employees()->sync($employeeData);
+                $this->storeRegularEdit($data);
             }
 
             DB::commit();
@@ -337,6 +365,144 @@ class LeaveApprovalRules extends Component
         } catch (\Exception $e) {
             DB::rollBack();
             Flux::toast(variant: 'error', heading: 'Error', text: 'Failed to save: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Regular edit/create - updates the whole rule
+     */
+    protected function storeRegularEdit(array $data): void
+    {
+        if ($this->isEditing && $this->formData['id']) {
+            $rule = LeaveApprovalRule::findOrFail($this->formData['id']);
+            $rule->update($data);
+        } else {
+            $rule = LeaveApprovalRule::create($data);
+        }
+
+        $rule->employees()->detach();
+        if (!empty($this->selectedEmployees)) {
+            $employeeData = collect($this->selectedEmployees)
+                ->mapWithKeys(fn($id) => [(int) $id => ['firm_id' => session('firm_id')]])
+                ->toArray();
+            $rule->employees()->sync($employeeData);
+        }
+    }
+
+    /**
+     * Employee-specific edit - creates new rule if changed, removes employees from original
+     */
+    protected function storeEmployeeSpecificEdit(array $data): void
+    {
+        $originalRule = LeaveApprovalRule::with('employees')->findOrFail($this->originalRuleId);
+        $employeeIdsToMove = array_map('intval', $this->selectedEmployees);
+
+        // Check if rule settings changed
+        $ruleChanged = $this->hasRuleChanged($originalRule, $data);
+
+        if ($ruleChanged) {
+            // Find or create matching rule for the new settings
+            $targetRule = $this->findOrCreateMatchingRule($data);
+
+            // Move employees to target rule
+            $this->moveEmployeesToRule($employeeIdsToMove, $originalRule, $targetRule);
+        } else {
+            // No changes to rule settings, just update employee selection if needed
+            // This handles case where user might add more employees
+            $newEmployeeIds = array_diff($employeeIdsToMove, $this->editingEmployeeIds);
+            if (!empty($newEmployeeIds)) {
+                $employeeData = collect($newEmployeeIds)
+                    ->mapWithKeys(fn($id) => [(int) $id => ['firm_id' => session('firm_id')]])
+                    ->toArray();
+                $originalRule->employees()->syncWithoutDetaching($employeeData);
+            }
+        }
+
+        // Clean up original rule if no employees left
+        $this->cleanupEmptyRule($originalRule);
+    }
+
+    /**
+     * Check if rule settings have changed from original
+     */
+    protected function hasRuleChanged(LeaveApprovalRule $original, array $newData): bool
+    {
+        $compareFields = [
+            'leave_type_id', 'approver_id', 'approval_level', 'approval_mode',
+            'auto_approve', 'min_days', 'max_days', 'period_start', 'period_end', 'is_inactive'
+        ];
+
+        foreach ($compareFields as $field) {
+            $originalValue = $original->{$field};
+            $newValue = $newData[$field] ?? null;
+
+            // Normalize for comparison
+            if ($field === 'period_start' || $field === 'period_end') {
+                $originalValue = Carbon::parse($originalValue)->format('Y-m-d');
+                $newValue = $newValue ? Carbon::parse($newValue)->format('Y-m-d') : null;
+            }
+
+            if ($originalValue != $newValue) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Find existing rule with same settings or create new one
+     */
+    protected function findOrCreateMatchingRule(array $data): LeaveApprovalRule
+    {
+        unset($data['id']);
+
+        // Try to find existing rule with exact same settings
+        $existingRule = LeaveApprovalRule::where('firm_id', $data['firm_id'])
+            ->where('leave_type_id', $data['leave_type_id'])
+            ->where('approver_id', $data['approver_id'])
+            ->where('approval_level', $data['approval_level'])
+            ->where('approval_mode', $data['approval_mode'])
+            ->where('auto_approve', $data['auto_approve'])
+            ->where('min_days', $data['min_days'])
+            ->where('max_days', $data['max_days'])
+            ->whereDate('period_start', $data['period_start'])
+            ->whereDate('period_end', $data['period_end'])
+            ->where('is_inactive', $data['is_inactive'])
+            ->first();
+
+        if ($existingRule) {
+            return $existingRule;
+        }
+
+        return LeaveApprovalRule::create($data);
+    }
+
+    /**
+     * Move employees from one rule to another
+     */
+    protected function moveEmployeesToRule(array $employeeIds, LeaveApprovalRule $fromRule, LeaveApprovalRule $toRule): void
+    {
+        $firmId = session('firm_id');
+
+        // Remove from original rule
+        $fromRule->employees()->detach($employeeIds);
+
+        // Add to target rule
+        $employeeData = collect($employeeIds)
+            ->mapWithKeys(fn($id) => [(int) $id => ['firm_id' => $firmId]])
+            ->toArray();
+        $toRule->employees()->syncWithoutDetaching($employeeData);
+    }
+
+    /**
+     * Delete rule if it has no employees
+     */
+    protected function cleanupEmptyRule(LeaveApprovalRule $rule): void
+    {
+        $rule->refresh();
+        if ($rule->employees()->count() === 0) {
+            $rule->forceDelete();
         }
     }
 
@@ -352,6 +518,9 @@ class LeaveApprovalRules extends Component
             'is_inactive' => false,
         ];
         $this->isEditing = false;
+        $this->isEmployeeSpecificEdit = false;
+        $this->originalRuleId = null;
+        $this->editingEmployeeIds = [];
         $this->filteredDepartmentsWithEmployees = $this->departmentsWithEmployees;
         $this->resetErrorBag();
     }

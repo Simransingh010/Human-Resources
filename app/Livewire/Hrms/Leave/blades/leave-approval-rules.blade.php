@@ -56,15 +56,26 @@
                         searchQuery: '',
                         selectedApprover: '',
                         get filteredRules() {
-                            return this.rules.filter(rule => {
-                                const matchesSearch = !this.searchQuery || 
-                                    (rule.approver_name && rule.approver_name.toLowerCase().includes(this.searchQuery.toLowerCase())) ||
-                                    (rule.employee_names && rule.employee_names.toLowerCase().includes(this.searchQuery.toLowerCase()));
-                                const matchesApprover = !this.selectedApprover || 
-                                    String(rule.approver_id) === String(this.selectedApprover) ||
-                                    (this.selectedApprover === 'auto' && rule.auto_approve);
-                                return matchesSearch && matchesApprover;
-                            });
+                            const query = this.searchQuery.toLowerCase().trim();
+                            return this.rules
+                                .map(rule => {
+                                    // Find matching employees for this rule
+                                    let matchingEmployees = [];
+                                    if (query && rule.employees_list) {
+                                        matchingEmployees = rule.employees_list.filter(emp => 
+                                            emp.name.toLowerCase().includes(query)
+                                        );
+                                    }
+                                    return { ...rule, matchingEmployees };
+                                })
+                                .filter(rule => {
+                                    // Only filter by employees when searching (not approver name)
+                                    const matchesSearch = !query || rule.matchingEmployees.length > 0;
+                                    const matchesApprover = !this.selectedApprover || 
+                                        String(rule.approver_id) === String(this.selectedApprover) ||
+                                        (this.selectedApprover === 'auto' && rule.auto_approve);
+                                    return matchesSearch && matchesApprover;
+                                });
                         },
                         clearFilters() {
                             this.searchQuery = '';
@@ -197,22 +208,33 @@
                                                 <span x-text="rule.period_start + ' → ' + rule.period_end"></span>
                                             </td>
                                             <td class="px-4 py-3 text-center">
-                                                <button
-                                                    x-show="rule.employees_count > 0"
-                                                    x-data="{ loading: false }"
-                                                    @click="loading = true; $wire.showEmployeeList(rule.id).then(() => loading = false)"
-                                                    :disabled="loading"
-                                                    class="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm transition disabled:opacity-50"
-                                                >
-                                                    <template x-if="!loading">
-                                                        <flux:icon.users class="size-4" />
-                                                    </template>
-                                                    <template x-if="loading">
-                                                        <flux:icon.loading class="size-4" />
-                                                    </template>
-                                                    <span x-text="rule.employees_count"></span>
-                                                </button>
-                                                <span x-show="!rule.employees_count || rule.employees_count === 0" class="text-gray-400">-</span>
+                                                <!-- When searching: show matching employees -->
+                                                <template x-if="searchQuery && rule.matchingEmployees && rule.matchingEmployees.length > 0">
+                                                    <div class="text-left">
+                                                        <template x-for="emp in rule.matchingEmployees.slice(0, 3)" :key="emp.id">
+                                                            <span class="inline-block px-2 py-0.5 mr-1 mb-1 text-xs bg-blue-100 text-blue-700 rounded" x-text="emp.name"></span>
+                                                        </template>
+                                                        <span x-show="rule.matchingEmployees.length > 3" class="text-xs text-gray-500" x-text="'+' + (rule.matchingEmployees.length - 3) + ' more'"></span>
+                                                    </div>
+                                                </template>
+                                                <!-- When not searching: show count button -->
+                                                <template x-if="!searchQuery && rule.employees_count > 0">
+                                                    <button
+                                                        x-data="{ loading: false }"
+                                                        @click="loading = true; $wire.showEmployeeList(rule.id).then(() => loading = false)"
+                                                        :disabled="loading"
+                                                        class="inline-flex items-center gap-1 px-2 py-1 rounded bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm transition disabled:opacity-50"
+                                                    >
+                                                        <template x-if="!loading">
+                                                            <flux:icon.users class="size-4" />
+                                                        </template>
+                                                        <template x-if="loading">
+                                                            <flux:icon.loading class="size-4" />
+                                                        </template>
+                                                        <span x-text="rule.employees_count"></span>
+                                                    </button>
+                                                </template>
+                                                <span x-show="!searchQuery && (!rule.employees_count || rule.employees_count === 0)" class="text-gray-400">-</span>
                                             </td>
                                             <td class="px-4 py-3 text-center">
                                                 <flux:switch

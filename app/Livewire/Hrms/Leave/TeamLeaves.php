@@ -38,32 +38,6 @@ class TeamLeaves extends Component
     public $selectedLeaveRequestId = null;
     public $showEventsModal = false;
 
-    // Add Livewire hooks for debugging
-//    public function booted()
-//    {
-//        $this->dispatch('console-log', message: 'TeamLeaves component booted');
-//    }
-//
-//    public function hydrate()
-//    {
-//        $this->dispatch('console-log', message: 'TeamLeaves component hydrated');
-//    }
-//
-//    public function dehydrate()
-//    {
-//        $this->dispatch('console-log', message: 'TeamLeaves component dehydrated');
-//    }
-//
-//    public function updating($name, $value)
-//    {
-//        $this->dispatch('console-log', message: "Updating {$name}", data: ['value' => $value]);
-//    }
-//
-//    public function updated($name, $value)
-//    {
-//        $this->dispatch('console-log', message: "Updated {$name}", data: ['value' => $value]);
-//    }
-
     // Field configuration for form and table
     public array $fieldConfig = [
         'employee_id' => ['label' => 'Employee', 'type' => 'select', 'listKey' => 'employees'],
@@ -306,13 +280,16 @@ class TeamLeaves extends Component
 
     public function edit($id)
     {
-
         $this->isEditing = true;
         $this->id = $id;
 
         $leave = EmpLeaveRequest::findOrFail($id);
         $this->formData = $leave->toArray();
         $this->formData['acted_at'] = now()->format('Y-m-d');
+        
+        // Get the current user's approval level from their rule
+        $this->formData['approval_level'] = $this->getApprovalLevel($leave);
+        
         $this->modal('mdl-leave-action')->show();
     }
 
@@ -473,14 +450,32 @@ class TeamLeaves extends Component
     public function canApproveLeave($leaveRequest)
     {
         // Get approval rules for the current user
-        $approvalRules = LeaveApprovalRule::where('firm_id', session('firm_id'))
+        $approvalRules = LeaveApprovalRule::with(['employees', 'departments.employees'])
+            ->where('firm_id', session('firm_id'))
             ->where('approver_id', Auth::id())
             ->where(function ($query) use ($leaveRequest) {
                 $query->where('leave_type_id', $leaveRequest->leave_type_id)
                     ->orWhereNull('leave_type_id');
             })
             ->where('is_inactive', false)
+            ->whereDate('period_start', '<=', now())
+            ->whereDate('period_end', '>=', now())
             ->get();
+        
+        // Debug logging
+        \Log::info('canApproveLeave check', [
+            'leave_request_id' => $leaveRequest->id,
+            'employee_id' => $leaveRequest->employee_id,
+            'user_id' => Auth::id(),
+            'rules_count' => $approvalRules->count(),
+            'rules' => $approvalRules->map(fn($r) => [
+                'id' => $r->id,
+                'level' => $r->approval_level,
+                'mode' => $r->approval_mode,
+                'employees_count' => $r->employees->count(),
+                'has_employee' => $r->employees->contains('id', $leaveRequest->employee_id),
+            ])
+        ]);
 
         // If no rules found, user cannot approve
         if ($approvalRules->isEmpty()) {
@@ -507,14 +502,34 @@ class TeamLeaves extends Component
                 continue;
             }
 
-            // Check if this approval level is currently needed
-            $currentApprovals = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
-                ->where('status', 'approved')
-                ->count();
-
-            // For sequential approval, check if it's this approver's turn
-            if ($rule->approval_mode === 'sequential' && $currentApprovals + 1 !== $rule->approval_level) {
-                continue;
+            // For sequential approval, check if all previous levels have been approved
+            if ($rule->approval_mode === 'sequential') {
+                // Get all rules with lower approval levels for this leave request
+                $lowerLevelRules = LeaveApprovalRule::where('firm_id', session('firm_id'))
+                    ->where('approval_level', '<', $rule->approval_level)
+                    ->where('is_inactive', false)
+                    ->where('approval_mode', '!=', 'view_only')
+                    ->where(function ($q) use ($leaveRequest) {
+                        $q->where('leave_type_id', $leaveRequest->leave_type_id)
+                            ->orWhereNull('leave_type_id');
+                    })
+                    ->whereHas('employees', function ($q) use ($leaveRequest) {
+                        $q->where('employee_id', $leaveRequest->employee_id);
+                    })
+                    ->pluck('approver_id')
+                    ->unique();
+                
+                // Check if all lower level approvers have approved
+                foreach ($lowerLevelRules as $lowerApproverId) {
+                    $hasApproved = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
+                        ->where('approver_id', $lowerApproverId)
+                        ->where('status', 'approved')
+                        ->exists();
+                    
+                    if (!$hasApproved) {
+                        continue 2; // Skip to next rule in outer loop
+                    }
+                }
             }
 
             // For parallel approval, check if this approver hasn't already approved
@@ -531,6 +546,63 @@ class TeamLeaves extends Component
             // Check if employee is in rule's scope
             if ($this->isEmployeeInRuleScope($leaveRequest->employee_id, $rule)) {
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if user is waiting for previous level approvals (for sequential flow)
+     */
+    public function isAwaitingPreviousApproval($leaveRequest)
+    {
+        // Get the current user's rule
+        $userRule = LeaveApprovalRule::with(['employees'])
+            ->where('firm_id', session('firm_id'))
+            ->where('approver_id', Auth::id())
+            ->where(function ($query) use ($leaveRequest) {
+                $query->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->where('is_inactive', false)
+            ->whereDate('period_start', '<=', now())
+            ->whereDate('period_end', '>=', now())
+            ->first();
+
+        if (!$userRule || $userRule->approval_mode !== 'sequential') {
+            return false;
+        }
+
+        // Check if employee is in this rule's scope
+        if (!$userRule->employees->contains('id', $leaveRequest->employee_id)) {
+            return false;
+        }
+
+        // Get all rules with lower approval levels
+        $lowerLevelApprovers = LeaveApprovalRule::where('firm_id', session('firm_id'))
+            ->where('approval_level', '<', $userRule->approval_level)
+            ->where('is_inactive', false)
+            ->where('approval_mode', '!=', 'view_only')
+            ->where(function ($q) use ($leaveRequest) {
+                $q->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->orWhereNull('leave_type_id');
+            })
+            ->whereHas('employees', function ($q) use ($leaveRequest) {
+                $q->where('employee_id', $leaveRequest->employee_id);
+            })
+            ->pluck('approver_id')
+            ->unique();
+
+        // Check if any lower level approver hasn't approved yet
+        foreach ($lowerLevelApprovers as $approverId) {
+            $hasApproved = EmpLeaveRequestApproval::where('emp_leave_request_id', $leaveRequest->id)
+                ->where('approver_id', $approverId)
+                ->where('status', 'approved')
+                ->exists();
+
+            if (!$hasApproved) {
+                return true; // Still waiting for previous approval
             }
         }
 

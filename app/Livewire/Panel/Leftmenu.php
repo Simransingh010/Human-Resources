@@ -16,6 +16,8 @@ class Leftmenu extends Component
     public $firmLogo = null;
     public $firmWideLogo = null;
     public $firmSquareLogo = null;
+    public $firmName = null;
+    public $firmShortName = null;
 
     public function mount()
     {
@@ -33,7 +35,7 @@ class Leftmenu extends Component
         $this->modules = MenuCoordinator::getAppModules($this->selectedAppId);
         $this->selectedModuleId = MenuCoordinator::getSelectedModuleId();
 
-        // Get the firm's logo through user relationship
+        // Get the firm's logo and name through user relationship
         $user = auth()->user();
         if ($user) {
             $firm = $user->firms()->where('firms.id', Session::get('firm_id'))->first();
@@ -41,6 +43,8 @@ class Leftmenu extends Component
                 $this->firmLogo = $firm->getMedia('squareLogo')->first()?->getUrl();
                 $this->firmWideLogo = $firm->getMedia('wideLogo')->first()?->getUrl();
                 $this->firmSquareLogo = $firm->getMedia('squareLogo')->first()?->getUrl();
+                $this->firmName = $firm->name;
+                $this->firmShortName = $firm->short_name;
             }
         }
     }
