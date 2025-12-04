@@ -187,10 +187,7 @@
     
     <!-- Performance Monitor (Remove in production) -->
     @if(config('app.debug'))
-        <div class="fixed bottom-4 right-4 bg-black/80 text-white px-4 py-2 rounded text-xs" id="perf-monitor">
-            <div>DOM: <span id="dom-count">-</span></div>
-            <div>Load: <span id="load-time">-</span>ms</div>
-        </div>
+      
         <script>
             document.addEventListener('DOMContentLoaded', function() {
                 const updateStats = () => {

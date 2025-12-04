@@ -423,6 +423,14 @@
                     ->get();
                 $employeeName = ($leaveRequest->employee->fname ?? '') . ' ' . ($leaveRequest->employee->lname ?? '');
                 
+                // Get current leave balance for this employee and leave type
+                $leaveBalance = \App\Models\Hrms\EmpLeaveBalance::where('firm_id', session('firm_id'))
+                    ->where('employee_id', $leaveRequest->employee_id)
+                    ->where('leave_type_id', $leaveRequest->leave_type_id)
+                    ->where('period_start', '<=', $leaveRequest->apply_from)
+                    ->where('period_end', '>=', $leaveRequest->apply_to)
+                    ->first();
+                
                 // Get all approval rules for this leave type to show all approvers
                 $allApprovalRules = \App\Models\Hrms\LeaveApprovalRule::with(['user', 'employees'])
                     ->where('firm_id', session('firm_id'))
@@ -511,6 +519,37 @@
                                 <div><span class="text-gray-500">Duration:</span> <span class="font-medium">{{ $leaveRequest->apply_days }} day(s)</span></div>
                                 <div><span class="text-gray-500">Period:</span> <span class="font-medium">{{ \Carbon\Carbon::parse($leaveRequest->apply_from)->format('d M') }} - {{ \Carbon\Carbon::parse($leaveRequest->apply_to)->format('d M Y') }}</span></div>
                             </div>
+                        </div>
+                        
+                        <!-- Leave Balance Card -->
+                        <div class="mt-3 p-3 rounded-lg border-2 {{ $leaveBalance ? ($leaveBalance->balance >= $leaveRequest->apply_days ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200') : 'bg-yellow-50 border-yellow-200' }}">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-xs text-gray-500 uppercase tracking-wide">Current Leave Balance</p>
+                                    <p class="text-lg font-bold {{ $leaveBalance ? ($leaveBalance->balance >= $leaveRequest->apply_days ? 'text-green-700' : 'text-red-700') : 'text-yellow-700' }}">
+                                        @if($leaveBalance)
+                                            {{ number_format($leaveBalance->balance, 1) }} days
+                                        @else
+                                            No balance record
+                                        @endif
+                                    </p>
+                                </div>
+                                @if($leaveBalance)
+                                    <div class="text-right text-xs text-gray-500">
+                                        <div>Allocated: <span class="font-medium text-gray-700">{{ number_format($leaveBalance->allocated_days ?? 0, 1) }}</span></div>
+                                        <div>Consumed: <span class="font-medium text-gray-700">{{ number_format($leaveBalance->consumed_days ?? 0, 1) }}</span></div>
+                                        @if(($leaveBalance->carry_forwarded_days ?? 0) > 0)
+                                            <div>Carried Forward: <span class="font-medium text-gray-700">{{ number_format($leaveBalance->carry_forwarded_days, 1) }}</span></div>
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
+                            @if($leaveBalance && $leaveBalance->balance < $leaveRequest->apply_days)
+                                <p class="mt-2 text-xs text-red-600">
+                                    <flux:icon.exclamation-triangle class="size-3 inline" />
+                                    Insufficient balance! Requested {{ $leaveRequest->apply_days }} days but only {{ number_format($leaveBalance->balance, 1) }} available.
+                                </p>
+                            @endif
                         </div>
                     @endif
                 </div>

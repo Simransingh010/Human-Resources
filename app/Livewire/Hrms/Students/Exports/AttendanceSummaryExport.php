@@ -9,6 +9,7 @@ use App\Models\Saas\Firm;
 use Carbon\Carbon;
 use Carbon\CarbonPeriod;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithCustomStartCell;
 use Maatwebsite\Excel\Concerns\WithEvents;
@@ -28,12 +29,23 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 	protected array $dates = [];
 	protected Collection $rows;
 	protected string $firmName = '';
+	protected ?int $firmId;
 
-	public function __construct(array $filters)
+	public function __construct(array $filters, ?int $firmId = null)
 	{
 		$this->filters = $filters;
+		$this->firmId = $firmId ?? session('firm_id');
 		$this->resolveDateRange();
-		$this->firmName = optional(Firm::find(session('firm_id')))->name ?? '—';
+		$this->firmName = optional(Firm::find($this->firmId))->name ?? '—';
+
+		Log::info('AttendanceSummaryExport::__construct', [
+			'firmId' => $this->firmId,
+			'firmName' => $this->firmName,
+			'filters' => $this->filters,
+			'start' => $this->start->toDateString(),
+			'end' => $this->end->toDateString(),
+			'dates_count' => count($this->dates),
+		]);
 	}
 
 	public function collection(): Collection
@@ -163,33 +175,98 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 
 	protected function buildRows(): Collection
 	{
-		$firmId = session('firm_id');
+		// Debug: Check total students in DB for this firm
+		$totalStudentsInDb = Student::where('firm_id', $this->firmId)->count();
+		Log::info('AttendanceSummaryExport::buildRows - Total students in DB', [
+			'firmId' => $this->firmId,
+			'totalStudentsInDb' => $totalStudentsInDb,
+		]);
 
-		$students = Student::query()
+		// Debug: Check without any filters first
+		$studentsWithoutFilters = Student::where('firm_id', $this->firmId)->count();
+		Log::info('AttendanceSummaryExport::buildRows - Students without filters', [
+			'count' => $studentsWithoutFilters,
+		]);
+
+		// Debug: Check what study_centre_ids exist for students in this firm
+		$existingStudyCentreIds = Student::where('firm_id', $this->firmId)
+			->whereNotNull('study_centre_id')
+			->distinct()
+			->pluck('study_centre_id')
+			->toArray();
+		Log::info('AttendanceSummaryExport::buildRows - Existing study_centre_ids in students table', [
+			'study_centre_ids' => $existingStudyCentreIds,
+		]);
+
+		// Debug: Check how many students have study_centre_id = 2
+		$studentsWithCentre2 = Student::where('firm_id', $this->firmId)
+			->where('study_centre_id', 2)
+			->count();
+		Log::info('AttendanceSummaryExport::buildRows - Students with study_centre_id=2', [
+			'count' => $studentsWithCentre2,
+		]);
+
+		// Debug: Check how many students have NULL study_centre_id
+		$studentsWithNullCentre = Student::where('firm_id', $this->firmId)
+			->whereNull('study_centre_id')
+			->count();
+		Log::info('AttendanceSummaryExport::buildRows - Students with NULL study_centre_id', [
+			'count' => $studentsWithNullCentre,
+		]);
+
+		$query = Student::query()
 			->with([
-				'study_centre:id,name',
 				'study_groups:id,name',
-				'student_education_detail:student_id,student_code',
+				'student_education_detail',
+				'student_education_detail.study_centre:id,name',
 				'student_attendances' => function ($query) {
 					$query->whereBetween('attendance_date', [$this->start, $this->end])
 						->orderBy('attendance_date')
 						->with(['student_punches' => fn($punches) => $punches->orderBy('punch_datetime')]);
 				},
 			])
-			->where('firm_id', $firmId)
-			->when(! empty($this->filters['student_ids']), fn($query) => $query->whereIn('id', $this->filters['student_ids']))
-			->when(! empty($this->filters['study_centre_ids']), fn($query) => $query->whereIn('study_centre_id', $this->filters['study_centre_ids']))
-			->when(! empty($this->filters['study_group_ids']), function ($query) {
-				$query->whereHas('study_groups', fn($groupQuery) => $groupQuery->whereIn('study_groups.id', $this->filters['study_group_ids']));
+			->where('firm_id', $this->firmId);
+
+		// Log the filters being applied
+		Log::info('AttendanceSummaryExport::buildRows - Filters', [
+			'student_ids' => $this->filters['student_ids'] ?? [],
+			'study_centre_ids' => $this->filters['study_centre_ids'] ?? [],
+			'study_group_ids' => $this->filters['study_group_ids'] ?? [],
+			'status_codes' => $this->filters['status_codes'] ?? [],
+		]);
+
+		// Cast filter values to integers to avoid string/int comparison issues
+		$studentIds = array_map('intval', array_filter($this->filters['student_ids'] ?? []));
+		$studyCentreIds = array_map('intval', array_filter($this->filters['study_centre_ids'] ?? []));
+		$studyGroupIds = array_map('intval', array_filter($this->filters['study_group_ids'] ?? []));
+
+		$query->when(! empty($studentIds), fn($q) => $q->whereIn('id', $studentIds))
+			->when(! empty($studyCentreIds), function ($q) use ($studyCentreIds) {
+				// Filter by study_centre_id from student_education_details table
+				$q->whereHas('student_education_detail', fn($eduQuery) => $eduQuery->whereIn('study_centre_id', $studyCentreIds));
 			})
-			->when(! empty($this->filters['status_codes']), function ($query) {
-				$query->whereHas('student_attendances', function ($attendanceQuery) {
+			->when(! empty($studyGroupIds), function ($q) use ($studyGroupIds) {
+				$q->whereHas('study_groups', fn($groupQuery) => $groupQuery->whereIn('study_groups.id', $studyGroupIds));
+			})
+			->when(! empty($this->filters['status_codes']), function ($q) {
+				$q->whereHas('student_attendances', function ($attendanceQuery) {
 					$attendanceQuery->whereBetween('attendance_date', [$this->start, $this->end])
 						->whereIn('attendance_status_main', $this->filters['status_codes']);
 				});
-			})
-			->orderBy('fname')
-			->get();
+			});
+
+		// Log the SQL query
+		Log::info('AttendanceSummaryExport::buildRows - SQL', [
+			'sql' => $query->toSql(),
+			'bindings' => $query->getBindings(),
+		]);
+
+		$students = $query->orderBy('fname')->get();
+
+		Log::info('AttendanceSummaryExport::buildRows - Students fetched', [
+			'count' => $students->count(),
+			'student_ids' => $students->pluck('id')->toArray(),
+		]);
 
 		return $students->map(function ($student) {
 			$attendanceByDate = $student->student_attendances
@@ -222,9 +299,9 @@ class AttendanceSummaryExport implements FromCollection, WithHeadings, WithMappi
 
 			return [
 				'student_id' => $student->id,
-				'student_code' => $student->student_education_detail->student_code ?? $student->id,
+				'student_code' => $student->student_education_detail?->student_code ?? $student->id,
 				'student_name' => trim("{$student->fname} {$student->lname}"),
-				'study_centre' => $student->study_centre->name ?? 'Unassigned',
+				'study_centre' => $student->student_education_detail?->study_centre?->name ?? 'Unassigned',
 				'study_groups' => $student->study_groups->pluck('name')->implode(', ') ?: '—',
 				'email' => $student->email,
 				'phone' => $student->phone,

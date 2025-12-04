@@ -3,8 +3,8 @@
 namespace App\Livewire\Panel;
 
 use Livewire\Component;
+use Livewire\Attributes\On;
 use App\Services\MenuCoordinator;
-use App\Models\Saas\Firm;
 use Illuminate\Support\Facades\Session;
 
 class Leftmenu extends Component
@@ -22,20 +22,35 @@ class Leftmenu extends Component
     public function mount()
     {
         $this->apps = MenuCoordinator::getApps();
-        $this->selectedAppId = MenuCoordinator::getSelectedAppId() ?? $this->apps[0]['id'] ?? null;
         
-        // Only initialize if no app is selected yet
-        if (!MenuCoordinator::getSelectedAppId()) {
-            $firstModuleId = MenuCoordinator::selectApp($this->selectedAppId);
-            if ($firstModuleId) {
-                $this->dispatch('moduleSelected', $firstModuleId);
-            }
+        // Read from session (already set by blade template for route-based navigation)
+        $this->selectedAppId = MenuCoordinator::getSelectedAppId();
+        $this->selectedModuleId = MenuCoordinator::getSelectedModuleId();
+        
+        // If no app selected, use first app
+        if (!$this->selectedAppId && !empty($this->apps)) {
+            $this->selectedAppId = $this->apps[0]['id'];
+            session(['selectedAppId' => $this->selectedAppId]);
         }
         
-        $this->modules = MenuCoordinator::getAppModules($this->selectedAppId);
-        $this->selectedModuleId = MenuCoordinator::getSelectedModuleId();
+        // Load modules for selected app
+        if ($this->selectedAppId) {
+            $this->modules = MenuCoordinator::getAppModules($this->selectedAppId);
+        }
+        
+        // If no module selected and we have modules, select first
+        // But DON'T dispatch events - just set session
+        if (!$this->selectedModuleId && !empty($this->modules)) {
+            $this->selectedModuleId = $this->modules[0]['id'];
+            session(['selectedModuleId' => $this->selectedModuleId]);
+        }
 
-        // Get the firm's logo and name through user relationship
+        // Load firm branding
+        $this->loadFirmBranding();
+    }
+
+    protected function loadFirmBranding(): void
+    {
         $user = auth()->user();
         if ($user) {
             $firm = $user->firms()->where('firms.id', Session::get('firm_id'))->first();
@@ -49,57 +64,55 @@ class Leftmenu extends Component
         }
     }
 
+    /**
+     * Listen for wireSelected to sync sidebar highlighting
+     */
+    #[On('wireSelected')]
+    public function onWireSelected($wire): void
+    {
+        $moduleId = MenuCoordinator::findModuleIdForWire($wire);
+        if ($moduleId && $moduleId !== $this->selectedModuleId) {
+            $this->selectedModuleId = $moduleId;
+            session(['selectedModuleId' => $moduleId]);
+        }
+    }
+
+    /**
+     * Handle app selection from UI (user click)
+     */
     public function selectApp($appId)
     {
         $this->selectedAppId = $appId;
+        session(['selectedAppId' => $appId]);
+        
         $this->modules = MenuCoordinator::getAppModules($appId);
 
         if (!empty($this->modules)) {
             $firstModuleId = $this->modules[0]['id'];
-            $this->dispatch('moduleSelected', $firstModuleId); // Load Topmenu
+            $this->selectedModuleId = $firstModuleId;
+            session(['selectedModuleId' => $firstModuleId]);
+            $this->dispatch('moduleSelected', $firstModuleId);
         } else {
             MenuCoordinator::resetAll();
-            MenuCoordinator::selectWire(session('defaultwire'));
-            $this->dispatch('moduleSelected', null); // ❗ Clear topmenu
             $this->dispatch('wireSelected', session('defaultwire'));
         }
     }
 
-    public function selectWire($wire)
-    {
-        MenuCoordinator::selectWire($wire);
-        $this->selectedWire = $wire;
-        $this->dispatch('wireSelected', $wire);
-    }
-
-//    public function selectApp($appId)
-//    {
-//        $this->selectedAppId = $appId;
-//        $firstModuleId = MenuCoordinator::selectApp($appId);
-//        $this->modules = MenuCoordinator::getAppModules($appId);
-//
-//        if ($firstModuleId) {
-//            $this->dispatch('moduleSelected', $firstModuleId);
-//        }
-//    }
-
+    /**
+     * Handle module selection from UI (user click)
+     */
     public function selectModule($moduleId)
     {
         if (!$moduleId) {
-            MenuCoordinator::resetAll();
-            $this->dispatch('wireSelected', session('defaultwire'));
             return;
         }
 
-        // Save and update selections via MenuCoordinator
+        $this->selectedModuleId = $moduleId;
         session(['selectedModuleId' => $moduleId]);
-        $wire = MenuCoordinator::selectModule($moduleId);
-
-        // Dispatch to Topmenu and MainContent components
-        $this->dispatch('moduleSelected', $moduleId); // Refresh Topmenu
-        $this->dispatch('wireSelected', $wire);       // Refresh MainContent
+        
+        // Dispatch to Topmenu to load wires for this module
+        $this->dispatch('moduleSelected', $moduleId);
     }
-
 
     public function render()
     {

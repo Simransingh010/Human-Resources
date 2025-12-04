@@ -91,8 +91,10 @@ class AttendanceSummary extends Component
 			'filters.date_range.end' => 'required|date|after_or_equal:filters.date_range.start',
 		]);
 
+		$firmId = session('firm_id');
+
 		return Excel::download(
-			new AttendanceSummaryExport($this->filters),
+			new AttendanceSummaryExport($this->filters, $firmId),
 			'student-attendance-summary-' . now()->format('Ymd_His') . '.xlsx'
 		);
 	}
@@ -160,10 +162,17 @@ class AttendanceSummary extends Component
 		}
 
 		$firmId = session('firm_id');
+
+		// Cast filter values to integers
+		$studentIds = array_map('intval', array_filter($this->filters['student_ids'] ?? []));
+		$studyCentreIds = array_map('intval', array_filter($this->filters['study_centre_ids'] ?? []));
+		$studyGroupIds = array_map('intval', array_filter($this->filters['study_group_ids'] ?? []));
+
 		$students = Student::query()
 			->with([
-				'study_centre:id,name',
 				'study_groups:id,name',
+				'student_education_detail',
+				'student_education_detail.study_centre:id,name',
 				'student_attendances' => function ($query) use ($start, $end) {
 					$query->whereBetween('attendance_date', [$start, $end])
 						->orderBy('attendance_date')
@@ -171,12 +180,13 @@ class AttendanceSummary extends Component
 				},
 			])
 			->where('firm_id', $firmId)
-			->when(! empty($this->filters['student_ids']), fn($query) => $query->whereIn('id', $this->filters['student_ids']))
-			->when(! empty($this->filters['study_centre_ids']), function ($query) {
-				$query->whereIn('study_centre_id', $this->filters['study_centre_ids']);
+			->when(! empty($studentIds), fn($query) => $query->whereIn('id', $studentIds))
+			->when(! empty($studyCentreIds), function ($query) use ($studyCentreIds) {
+				// Filter by study_centre_id from student_education_details table
+				$query->whereHas('student_education_detail', fn($eduQuery) => $eduQuery->whereIn('study_centre_id', $studyCentreIds));
 			})
-			->when(! empty($this->filters['study_group_ids']), function ($query) {
-				$query->whereHas('study_groups', fn($groupQuery) => $groupQuery->whereIn('study_groups.id', $this->filters['study_group_ids']));
+			->when(! empty($studyGroupIds), function ($query) use ($studyGroupIds) {
+				$query->whereHas('study_groups', fn($groupQuery) => $groupQuery->whereIn('study_groups.id', $studyGroupIds));
 			})
 			->when(! empty($this->filters['status_codes']), function ($query) use ($start, $end) {
 				$query->whereHas('student_attendances', function ($attendanceQuery) use ($start, $end) {
@@ -228,7 +238,7 @@ class AttendanceSummary extends Component
 			$rows[] = [
 				'student_id' => $student->id,
 				'student_name' => trim("{$student->fname} {$student->lname}"),
-				'study_centre' => $student->study_centre->name ?? 'Unassigned',
+				'study_centre' => $student->student_education_detail?->study_centre?->name ?? 'Unassigned',
 				'study_groups' => $student->study_groups->pluck('name')->implode(', ') ?: '—',
 				'email' => $student->email,
 				'phone' => $student->phone,

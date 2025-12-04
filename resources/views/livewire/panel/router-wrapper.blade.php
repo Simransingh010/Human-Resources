@@ -1,7 +1,9 @@
-<div class="flex-1 p-4 relative" x-data="{ loading: false }" 
+<div class="flex-1 p-4 relative" 
+     x-data="{ loading: false }" 
      @navigation-started.window="loading = true"
      @navigation-ended.window="loading = false"
-     x-on:livewire:navigated.window="loading = false">
+     x-on:livewire:navigated.window="loading = false"
+     wire:key="router-wrapper-container">
     
     {{-- Loading Overlay --}}
     <div x-show="loading" 
@@ -22,7 +24,7 @@
         </div>
     </div>
     
-    {{-- Livewire loading indicator for wire:click actions --}}
+    {{-- Livewire loading indicator --}}
     <div wire:loading.delay class="absolute inset-0 bg-white/80 dark:bg-zinc-800/80 z-50 flex items-center justify-center backdrop-blur-sm">
         <div class="flex flex-col items-center gap-3">
             <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -33,16 +35,19 @@
         </div>
     </div>
 
-    @if($componentToRender)
-        @livewire($componentToRender, [], key($componentKey))
-    @elseif($errorMessage ?? false)
-        <div class="flex items-center justify-center h-64 text-center">
-            <div>
-                <div class="text-red-500 mb-2">{{ $errorMessage }}</div>
-                <a href="{{ route('dashboard') }}" class="text-blue-500 hover:underline">Back to Dashboard</a>
+    {{-- Content Area --}}
+    <div wire:key="content-{{ $componentKey }}">
+        @if($componentToRender)
+            @livewire($componentToRender, [], key($componentKey))
+        @elseif($errorMessage ?? false)
+            <div class="flex items-center justify-center h-64 text-center">
+                <div>
+                    <div class="text-red-500 mb-2">{{ $errorMessage }}</div>
+                    <a href="{{ route('panel') }}" class="text-blue-500 hover:underline">Back to Panel</a>
+                </div>
             </div>
-        </div>
-    @else
-        <div class="text-gray-500 text-center py-16">No content selected</div>
-    @endif
+        @else
+            <div class="text-gray-500 text-center py-16">No content selected</div>
+        @endif
+    </div>
 </div>
